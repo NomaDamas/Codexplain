@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "detail": "deep",
+  "style": "plain",
+  "theme": "ocean",
+  "frame": "unicode",
+  "audience": "general",
+  "preferredStructure": "auto",
+  "explanationMoves": [
+    "tldr",
+    "answer-first",
+    "plain-language",
+    "paired-visuals",
+    "evidence",
+    "next-step"
+  ],
+  "feedback": {
+    "positive": 0,
+    "negative": 0,
+    "revisions": 0,
+    "signals": []
+  }
+}

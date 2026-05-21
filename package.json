@@ -1,0 +1,36 @@
+{
+  "name": "claudex",
+  "version": "0.1.0",
+  "description": "Claude-like readability and terminal UX layer for Codex responses",
+  "type": "module",
+  "bin": {
+    "claudex": "bin/claudex.js",
+    "claudex-codex": "bin/claudex-codex.js"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "check": "node --test test/*.test.js",
+    "demo": "node bin/claudex.js demo"
+  },
+  "keywords": [
+    "codex",
+    "claude-like",
+    "terminal",
+    "ux",
+    "explainability",
+    "readability"
+  ],
+  "author": "NomaDamas",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NomaDamas/claudex.git"
+  },
+  "homepage": "https://github.com/NomaDamas/claudex#readme",
+  "bugs": {
+    "url": "https://github.com/NomaDamas/claudex/issues"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  }
+}
