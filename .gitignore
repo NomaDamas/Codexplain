@@ -4,5 +4,6 @@ coverage/
 .env
 .env.*
 .codex/
+.codexplain/state/
 .claudex/state/
 dist/

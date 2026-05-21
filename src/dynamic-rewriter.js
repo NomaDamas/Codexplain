@@ -18,13 +18,13 @@ function envFlag(value) {
 function clampInput(text, maxChars) {
   const value = String(text ?? "");
   if (value.length <= maxChars) return value;
-  return `${value.slice(0, maxChars)}\n\n[Claudex: input truncated for rewrite safety]`;
+  return `${value.slice(0, maxChars)}\n\n[Codexplain: input truncated for rewrite safety]`;
 }
 
 function buildRewritePrompt({ prompt, response, uxProfile = DEFAULT_UX_PROFILE }) {
   const profile = resolveUxProfile({ prompt, profile: uxProfile });
   return [
-    "You are Claudex, a post-response readability layer for Codex.",
+    "You are Codexplain, a post-response readability layer for Codex.",
     "",
     "Rewrite the completed answer for lower cognitive load without changing facts.",
     "",
@@ -33,7 +33,7 @@ function buildRewritePrompt({ prompt, response, uxProfile = DEFAULT_UX_PROFILE }
     "Hard constraints:",
     "- Preserve commands, file paths, code identifiers, test evidence, risks, dates, and claims exactly.",
     "- Do not add new technical facts, fake verification, or hide uncertainty.",
-    "- Do not mention Claudex, hooks, policy, provider, or this rewrite instruction.",
+    "- Do not mention Codexplain, hooks, policy, provider, or this rewrite instruction.",
     "- If the user wrote Korean, answer Korean-first with short natural sentences.",
     "- Prefer TLDR / current state / evidence / next step over long process narration.",
     "- Put TLDR before details unless the user requested an exact artifact.",
@@ -57,12 +57,12 @@ function buildRewritePrompt({ prompt, response, uxProfile = DEFAULT_UX_PROFILE }
   ].join("\n");
 }
 
-function runCommandProvider({ command, payload, timeoutMs }) {
+function runCommandProvider({ command, payload, timeoutMs, env = process.env }) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, {
       shell: true,
       stdio: ["pipe", "pipe", "pipe"],
-      env: process.env,
+      env,
     });
     let stdout = "";
     let stderr = "";
@@ -164,20 +164,27 @@ export function preservesProtectedElements({ original, rewritten }) {
 }
 
 export function dynamicRewriteConfigured(env = process.env) {
-  return Boolean(env.CLAUDEX_REWRITE_COMMAND || env.OPENAI_API_KEY);
+  return Boolean(env.CODEXPLAIN_REWRITE_COMMAND || env.CLAUDEX_REWRITE_COMMAND || env.OPENAI_API_KEY);
 }
 
 export async function rewriteAnswerDynamic({
   prompt = "",
   response = "",
   uxProfile = DEFAULT_UX_PROFILE,
-  mode = envFlag(process.env.CLAUDEX_DYNAMIC),
-  model = process.env.CLAUDEX_MODEL || DEFAULT_MODEL,
-  timeoutMs = Number(process.env.CLAUDEX_TIMEOUT_MS || DEFAULT_TIMEOUT_MS),
-  maxInputChars = Number(process.env.CLAUDEX_MAX_INPUT_CHARS || DEFAULT_MAX_INPUT_CHARS),
-  width = Number(process.env.CLAUDEX_WIDTH || process.stdout?.columns || process.env.COLUMNS || 80),
+  mode,
+  model,
+  timeoutMs,
+  maxInputChars,
+  width,
   env = process.env,
 } = {}) {
+  const resolvedMode = mode ?? envFlag(env.CODEXPLAIN_DYNAMIC ?? env.CLAUDEX_DYNAMIC);
+  const resolvedModel = model || env.CODEXPLAIN_MODEL || env.CLAUDEX_MODEL || DEFAULT_MODEL;
+  const resolvedTimeoutMs = Number(timeoutMs || env.CODEXPLAIN_TIMEOUT_MS || env.CLAUDEX_TIMEOUT_MS || DEFAULT_TIMEOUT_MS);
+  const resolvedMaxInputChars = Number(
+    maxInputChars || env.CODEXPLAIN_MAX_INPUT_CHARS || env.CLAUDEX_MAX_INPUT_CHARS || DEFAULT_MAX_INPUT_CHARS,
+  );
+  const resolvedWidth = Number(width || env.CODEXPLAIN_WIDTH || env.CLAUDEX_WIDTH || process.stdout?.columns || env.COLUMNS || 80);
   const original = String(response ?? "");
   if (!original.trim()) return "";
   if (shouldBackOff({ prompt, response: original })) return original;
@@ -187,31 +194,33 @@ export async function rewriteAnswerDynamic({
     const shaped = shapeAnswer({ prompt, response: original, uxProfile: profile, width, env });
     return preservesProtectedElements({ original, rewritten: shaped }) ? shaped : original;
   };
-  if (mode === "off") return deterministic();
+  if (resolvedMode === "off") return deterministic();
 
   const input = buildRewritePrompt({
-    prompt: clampInput(prompt, maxInputChars),
-    response: clampInput(original, maxInputChars),
+    prompt: clampInput(prompt, resolvedMaxInputChars),
+    response: clampInput(original, resolvedMaxInputChars),
     uxProfile: profile,
   });
   const payload = { prompt, response: original, uxProfile: profile, instruction: input };
 
   try {
     let rewritten = "";
-    if (env.CLAUDEX_REWRITE_COMMAND) {
+    const rewriteCommand = env.CODEXPLAIN_REWRITE_COMMAND || env.CLAUDEX_REWRITE_COMMAND;
+    if (rewriteCommand) {
       rewritten = await runCommandProvider({
-        command: env.CLAUDEX_REWRITE_COMMAND,
+        command: rewriteCommand,
         payload,
-        timeoutMs,
+        timeoutMs: resolvedTimeoutMs,
+        env,
       });
     } else if (env.OPENAI_API_KEY) {
       rewritten = await runOpenAIProvider({
         apiKey: env.OPENAI_API_KEY,
-        model,
+        model: resolvedModel,
         input,
-        timeoutMs,
+        timeoutMs: resolvedTimeoutMs,
       });
-    } else if (mode === "require") {
+    } else if (resolvedMode === "require") {
       return deterministic();
     } else {
       return deterministic();

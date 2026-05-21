@@ -1,9 +1,11 @@
 #!/usr/bin/env node
+import { basename } from "node:path";
 import { readFile } from "node:fs/promises";
 import {
   rewriteAnswerDynamic,
   dynamicRewriteConfigured,
   buildGuidance,
+  buildRlhfSummary,
   renderDemo,
   initProject,
   installCodexProject,
@@ -18,30 +20,42 @@ import {
   UX_PROFILE_PATH,
 } from "../src/index.js";
 
-function usage() {
+function commandName() {
+  const name = basename(process.argv[1] ?? "codexplain").replace(/\.js$/, "");
+  return name || "codexplain";
+}
+
+function brandName(name = commandName()) {
+  return name.startsWith("claudex") ? "Claudex (legacy alias for Codexplain)" : "Codexplain";
+}
+
+function usage(name = commandName()) {
+  const codexName = name.startsWith("claudex") ? "claudex-codex" : "codexplain-codex";
   return [
-    "Claudex",
+    brandName(name),
     "",
     "Usage:",
-    "  claudex guide --prompt <text>",
-    "  claudex shape --prompt <text> --response <text>",
-    "  claudex shape --prompt <text> --response-file <path>",
-    "  claudex shape --dynamic --prompt <text> --response <text>",
-    "  claudex shape --width <columns> --prompt <text> --response <text>",
-    "  claudex post-response --prompt <text> [--local-shape]",
-    "  claudex profile --show",
-    "  claudex profile --set-style <plain|tutorial|concise|executive|technical|review>",
-    "  claudex profile --detail <brief|balanced|deep>",
-    `  claudex profile --theme <${themeNames().join("|")}>`,
-    "  claudex profile --frame <unicode|ascii>",
-    "  claudex feedback --rating <1-5> --comment <text>",
-    "  claudex init --local [--force]",
-    "  claudex install-codex --local [--force]",
-    "  claudex codex --prompt <text> [codex exec args...]",
-    "  claudex demo",
+    `  ${name} guide --prompt <text>`,
+    `  ${name} shape --prompt <text> --response <text>`,
+    `  ${name} shape --prompt <text> --response-file <path>`,
+    `  ${name} shape --dynamic --prompt <text> --response <text>`,
+    `  ${name} shape --width <columns> --prompt <text> --response <text>`,
+    `  ${name} post-response --prompt <text> [--local-shape]`,
+    `  ${name} profile --show`,
+    `  ${name} profile --set-style <plain|tutorial|concise|executive|technical|review>`,
+    `  ${name} profile --detail <brief|balanced|deep>`,
+    `  ${name} profile --theme <${themeNames().join("|")}>`,
+    `  ${name} profile --frame <unicode|ascii>`,
+    `  ${name} feedback --rating <1-5> --comment <text>`,
+    `  ${name} rlhf --rating <1-5> --comment <text>`,
+    `  ${name} init --local [--force]`,
+    `  ${name} install-codex --local [--force]`,
+    `  ${name} codex --prompt <text> [codex exec args...]`,
+    `  ${codexName} --prompt <text> [codex exec args...]`,
+    `  ${name} demo`,
     "",
     "Stdin:",
-    "  echo '<answer>' | claudex shape --prompt '현재 상태 보기 쉽게'",
+    `  echo '<answer>' | ${name} shape --prompt '현재 상태 보기 쉽게'`,
   ].join("\n");
 }
 
@@ -56,6 +70,7 @@ function readArg(name, args) {
 function readWidth(args) {
   const value =
     readArg("--width", args) ??
+    process.env.CODEXPLAIN_WIDTH ??
     process.env.CLAUDEX_WIDTH ??
     process.stdout?.columns ??
     process.env.COLUMNS ??
@@ -73,9 +88,10 @@ async function readStdin() {
 
 async function main() {
   const [command, ...args] = process.argv.slice(2);
+  const cliName = commandName();
 
   if (!command || command === "--help" || command === "-h") {
-    console.log(usage());
+    console.log(usage(cliName));
     return;
   }
 
@@ -86,7 +102,7 @@ async function main() {
 
   if (command === "init") {
     if (!args.includes("--local")) {
-      console.error("Claudex only supports project-local init. Pass --local.");
+      console.error("Codexplain only supports project-local init. Pass --local.");
       process.exitCode = 2;
       return;
     }
@@ -96,7 +112,7 @@ async function main() {
       console.log(`Created ${written.join(", ")}`);
     } catch (error) {
       if (error?.code === "EEXIST") {
-        console.error("Local Claudex files already exist. Re-run with --force to overwrite.");
+        console.error("Local Codexplain files already exist. Re-run with --force to overwrite.");
         process.exitCode = 1;
         return;
       }
@@ -107,7 +123,7 @@ async function main() {
 
   if (command === "install-codex") {
     if (!args.includes("--local")) {
-      console.error("Claudex only installs Codex integration project-locally. Pass --local.");
+      console.error("Codexplain only installs Codex integration project-locally. Pass --local.");
       process.exitCode = 2;
       return;
     }
@@ -117,7 +133,7 @@ async function main() {
       console.log(`Installed project-local Codex UX: ${written.join(", ")}`);
     } catch (error) {
       if (error?.code === "EEXIST") {
-        console.error("Local Claudex files already exist. Re-run with --force to overwrite.");
+        console.error("Local Codexplain files already exist. Re-run with --force to overwrite.");
         process.exitCode = 1;
         return;
       }
@@ -151,7 +167,7 @@ async function main() {
     return;
   }
 
-  if (command === "feedback") {
+  if (command === "feedback" || command === "rlhf") {
     const current = await loadProjectUxProfile();
     const next = evolveUxProfileFromFeedback(current, {
       rating: readArg("--rating", args),
@@ -160,7 +176,11 @@ async function main() {
       style: readArg("--style", args),
     });
     const saved = await saveProjectUxProfile(next);
-    console.log(`Updated ${UX_PROFILE_PATH}: detail=${saved.detail}, style=${saved.style}`);
+    if (command === "rlhf") {
+      console.log(`Updated ${UX_PROFILE_PATH}\n${buildRlhfSummary(saved)}`);
+    } else {
+      console.log(`Updated ${UX_PROFILE_PATH}: detail=${saved.detail}, style=${saved.style}`);
+    }
     return;
   }
 
@@ -206,7 +226,7 @@ async function main() {
   if (command === "post-response") {
     const input = await readStdin();
     if (!input.trim()) return;
-    const fallbackPrompt = prompt || process.env.CLAUDEX_PROMPT || "";
+    const fallbackPrompt = prompt || process.env.CODEXPLAIN_PROMPT || process.env.CLAUDEX_PROMPT || "";
 
     let payload;
     try {
@@ -221,7 +241,10 @@ async function main() {
       prompt: payload.prompt ?? payload.userPrompt ?? fallbackPrompt,
       profile: payload.uxProfile ?? storedProfile,
     });
-    if (!dynamicRewriteConfigured(process.env) && (args.includes("--local-shape") || process.env.CLAUDEX_LOCAL_SHAPE)) {
+    if (
+      !dynamicRewriteConfigured(process.env) &&
+      (args.includes("--local-shape") || process.env.CODEXPLAIN_LOCAL_SHAPE || process.env.CLAUDEX_LOCAL_SHAPE)
+    ) {
       const shaped = await rewriteAnswerDynamic({
         prompt: payload.prompt ?? payload.userPrompt ?? fallbackPrompt,
         response,
@@ -247,10 +270,10 @@ async function main() {
     return;
   }
 
-  console.error(`Unknown command: ${command}`);
-  console.error("");
-  console.error(usage());
-  process.exitCode = 2;
+    console.error(`Unknown command: ${command}`);
+    console.error("");
+    console.error(usage(cliName));
+    process.exitCode = 2;
 }
 
 main().catch((error) => {

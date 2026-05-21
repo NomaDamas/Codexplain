@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
   buildUxContract,
+  buildRlhfSummary,
   evolveUxProfileFromFeedback,
   loadProjectUxProfile,
   resolveUxProfile,
@@ -48,6 +49,7 @@ describe("evolution profile", () => {
     assert.equal(profile.detail, "deep");
     assert.equal(profile.style, "plain");
     assert.equal(profile.feedback.negative, 1);
+    assert.equal(profile.feedback.rewardScore, -1);
     assert.equal(profile.feedback.signals[0].signal, "needs-more-detail");
     assert.doesNotMatch(JSON.stringify(profile), /설명이 부족/);
   });
@@ -60,6 +62,7 @@ describe("evolution profile", () => {
       assert.equal(profile.detail, "deep");
       assert.equal(profile.style, "tutorial");
       assert.match(buildUxContract(profile), /Adaptive explanation contract/);
+      assert.match(buildRlhfSummary(profile), /Preference reward/);
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }

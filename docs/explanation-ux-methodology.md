@@ -1,6 +1,6 @@
-# Claudex Explanation UX Methodology
+# Codexplain Explanation UX Methodology
 
-Claudex explanation shaping follows these project defaults:
+Codexplain explanation shaping follows these project defaults:
 
 - Start with a TLDR for non-artifact explanations.
 - Put the most important answer first, then evidence and next action.

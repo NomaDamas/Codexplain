@@ -7,24 +7,24 @@ import { CODEX_GUIDANCE, installCodexProject } from "../src/codex-install.js";
 
 describe("codex install", () => {
   it("installs project-local Codex guidance and adapter files", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "claudex-codex-"));
+    const cwd = await mkdtemp(join(tmpdir(), "codexplain-codex-"));
     try {
       const written = await installCodexProject({ cwd });
-      assert.deepEqual(written, [".claudex/post-response.mjs", ".claudex/README.md", "AGENTS.md"]);
+      assert.deepEqual(written, [".codexplain/post-response.mjs", ".codexplain/README.md", "AGENTS.md"]);
 
       const agents = await readFile(join(cwd, "AGENTS.md"), "utf8");
-      assert.match(agents, /Claudex Response UX/);
+      assert.match(agents, /Codexplain Response UX/);
       assert.match(agents, /Do not show internal mode names/);
 
-      const adapter = await readFile(join(cwd, ".claudex/post-response.mjs"), "utf8");
-      assert.match(adapter, /claudex/);
+      const adapter = await readFile(join(cwd, ".codexplain/post-response.mjs"), "utf8");
+      assert.match(adapter, /codexplain/);
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }
   });
 
-  it("replaces an existing Claudex block without deleting other AGENTS content", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "claudex-agents-"));
+  it("replaces an existing Codexplain block without deleting other AGENTS content", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "codexplain-agents-"));
     try {
       await writeFile(join(cwd, "AGENTS.md"), `Project rules\n\n${CODEX_GUIDANCE}\n\nKeep this line.\n`);
       await installCodexProject({ cwd });
@@ -32,7 +32,7 @@ describe("codex install", () => {
       const agents = await readFile(join(cwd, "AGENTS.md"), "utf8");
       assert.match(agents, /Project rules/);
       assert.match(agents, /Keep this line/);
-      assert.equal((agents.match(/Claudex Response UX/g) ?? []).length, 1);
+      assert.equal((agents.match(/Codexplain Response UX/g) ?? []).length, 1);
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }

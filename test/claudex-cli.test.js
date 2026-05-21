@@ -8,12 +8,25 @@ import { describe, it } from "node:test";
 function withoutRewriteEnv(extra = {}) {
   const env = { ...process.env };
   delete env.OPENAI_API_KEY;
+  delete env.CODEXPLAIN_REWRITE_COMMAND;
+  delete env.CODEXPLAIN_DYNAMIC;
+  delete env.CODEXPLAIN_LOCAL_SHAPE;
   delete env.CLAUDEX_REWRITE_COMMAND;
   delete env.CLAUDEX_DYNAMIC;
   return { ...env, ...extra };
 }
 
 describe("claudex cli post-response", () => {
+  it("exposes the codexplain command alias", () => {
+    const result = spawnSync(process.execPath, [join(process.cwd(), "bin/codexplain.js"), "demo"], {
+      encoding: "utf8",
+      env: withoutRewriteEnv(),
+    });
+
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /TLDR|요약|핵심/);
+  });
+
   it("prints the original response unchanged when rewrite is not configured", () => {
     const original = "작업이 완료됐습니다. 검증은 `npm test`로 했습니다.";
     const result = spawnSync(
@@ -39,8 +52,8 @@ describe("claudex cli post-response", () => {
         input: JSON.stringify({ prompt: "설명해줘", response: "작업이 완료됐습니다." }),
         encoding: "utf8",
         env: withoutRewriteEnv({
-          CLAUDEX_DYNAMIC: "1",
-          CLAUDEX_REWRITE_COMMAND: `${process.execPath} -e "process.stdin.resume(); process.stdin.on('end',()=>process.stdout.write('TLDR: 작업 완료'))"`,
+          CODEXPLAIN_DYNAMIC: "1",
+          CODEXPLAIN_REWRITE_COMMAND: `${process.execPath} -e "process.stdin.resume(); process.stdin.on('end',()=>process.stdout.write('TLDR: 작업 완료'))"`,
         }),
       },
     );
@@ -69,7 +82,7 @@ describe("claudex cli post-response", () => {
   });
 
   it("records feedback as a project-local ux profile", () => {
-    const cwd = mkdtempSync(join(tmpdir(), "claudex-cli-"));
+    const cwd = mkdtempSync(join(tmpdir(), "codexplain-cli-"));
     try {
       const result = spawnSync(
         process.execPath,
@@ -90,7 +103,7 @@ describe("claudex cli post-response", () => {
   });
 
   it("prints a project-local profile with a theme", () => {
-    const cwd = mkdtempSync(join(tmpdir(), "claudex-theme-"));
+    const cwd = mkdtempSync(join(tmpdir(), "codexplain-theme-"));
     try {
       const result = spawnSync(
         process.execPath,
@@ -110,7 +123,7 @@ describe("claudex cli post-response", () => {
   });
 
   it("prints a project-local profile with an ASCII frame", () => {
-    const cwd = mkdtempSync(join(tmpdir(), "claudex-frame-"));
+    const cwd = mkdtempSync(join(tmpdir(), "codexplain-frame-"));
     try {
       const result = spawnSync(
         process.execPath,
@@ -124,6 +137,27 @@ describe("claudex cli post-response", () => {
 
       assert.equal(result.status, 0);
       assert.match(result.stdout, /"frame": "ascii"/);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("records RLHF-lite reward feedback", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "codexplain-rlhf-"));
+    try {
+      const result = spawnSync(
+        process.execPath,
+        [join(process.cwd(), "bin/codexplain.js"), "rlhf", "--rating", "5", "--comment", "이 설명 방식이 좋아"],
+        {
+          cwd,
+          encoding: "utf8",
+          env: withoutRewriteEnv(),
+        },
+      );
+
+      assert.equal(result.status, 0);
+      assert.match(result.stdout, /Preference reward: positive/);
+      assert.match(result.stdout, /rewardScore: 2/);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

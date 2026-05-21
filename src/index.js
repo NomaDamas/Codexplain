@@ -30,6 +30,7 @@ export {
 export {
   DEFAULT_UX_PROFILE,
   UX_PROFILE_PATH,
+  buildRlhfSummary,
   buildUxContract,
   evolveUxProfileFromFeedback,
   loadProjectUxProfile,

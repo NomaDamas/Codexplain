@@ -2,7 +2,9 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { normalizeTheme } from "./theme.js";
 
-export const UX_PROFILE_PATH = ".claudex/ux-profile.json";
+export const UX_PROFILE_DIR = ".codexplain";
+export const UX_PROFILE_PATH = `${UX_PROFILE_DIR}/ux-profile.json`;
+export const LEGACY_UX_PROFILE_PATH = ".claudex/ux-profile.json";
 
 const DETAIL_LEVELS = new Set(["brief", "balanced", "deep"]);
 const STYLE_LEVELS = new Set(["plain", "tutorial", "concise", "executive", "technical", "review"]);
@@ -21,6 +23,7 @@ export const DEFAULT_UX_PROFILE = Object.freeze({
     positive: 0,
     negative: 0,
     revisions: 0,
+    rewardScore: 0,
     signals: [],
   },
 });
@@ -85,6 +88,7 @@ export function sanitizeUxProfile(profile = {}) {
       positive: Number(feedback.positive || 0),
       negative: Number(feedback.negative || 0),
       revisions: Number(feedback.revisions || 0),
+      rewardScore: Number(feedback.rewardScore || 0),
       signals: Array.isArray(feedback.signals) ? feedback.signals.slice(-12) : [],
     },
   };
@@ -95,13 +99,18 @@ export async function loadProjectUxProfile({ cwd = process.cwd() } = {}) {
     const raw = await readFile(join(cwd, UX_PROFILE_PATH), "utf8");
     return sanitizeUxProfile(JSON.parse(raw));
   } catch {
-    return sanitizeUxProfile(DEFAULT_UX_PROFILE);
+    try {
+      const raw = await readFile(join(cwd, LEGACY_UX_PROFILE_PATH), "utf8");
+      return sanitizeUxProfile(JSON.parse(raw));
+    } catch {
+      return sanitizeUxProfile(DEFAULT_UX_PROFILE);
+    }
   }
 }
 
 export async function saveProjectUxProfile(profile, { cwd = process.cwd() } = {}) {
   const safeProfile = sanitizeUxProfile(profile);
-  await mkdir(join(cwd, ".claudex"), { recursive: true });
+  await mkdir(join(cwd, UX_PROFILE_DIR), { recursive: true });
   await writeFile(join(cwd, UX_PROFILE_PATH), `${JSON.stringify(safeProfile, null, 2)}\n`);
   return safeProfile;
 }
@@ -124,12 +133,12 @@ export function resolveUxProfile({ prompt = "", profile = DEFAULT_UX_PROFILE, en
   const base = sanitizeUxProfile(profile);
   const resolved = {
     ...base,
-    detail: normalizeDetail(env.CLAUDEX_DETAIL, base.detail),
-    style: normalizeStyle(env.CLAUDEX_STYLE, base.style),
-    theme: normalizeTheme(env.CLAUDEX_THEME ?? env.CLAUDEX_COLOR, base.theme),
-    frame: normalizeFrame(env.CLAUDEX_FRAME, base.frame),
-    audience: cleanString(env.CLAUDEX_AUDIENCE, base.audience),
-    preferredStructure: normalizeStructure(env.CLAUDEX_STRUCTURE, base.preferredStructure),
+    detail: normalizeDetail(env.CODEXPLAIN_DETAIL ?? env.CLAUDEX_DETAIL, base.detail),
+    style: normalizeStyle(env.CODEXPLAIN_STYLE ?? env.CLAUDEX_STYLE, base.style),
+    theme: normalizeTheme(env.CODEXPLAIN_THEME ?? env.CODEXPLAIN_COLOR ?? env.CLAUDEX_THEME ?? env.CLAUDEX_COLOR, base.theme),
+    frame: normalizeFrame(env.CODEXPLAIN_FRAME ?? env.CLAUDEX_FRAME, base.frame),
+    audience: cleanString(env.CODEXPLAIN_AUDIENCE ?? env.CLAUDEX_AUDIENCE, base.audience),
+    preferredStructure: normalizeStructure(env.CODEXPLAIN_STRUCTURE ?? env.CLAUDEX_STRUCTURE, base.preferredStructure),
   };
   return sanitizeUxProfile({ ...resolved, ...promptSignals(prompt) });
 }
@@ -170,6 +179,7 @@ export function evolveUxProfileFromFeedback(profile, { rating, comment = "", det
   if (Number.isFinite(score) && score >= 4) next.feedback.positive += 1;
   if (Number.isFinite(score) && score <= 2) next.feedback.negative += 1;
   next.feedback.revisions += 1;
+  next.feedback.rewardScore += Number.isFinite(score) ? score - 3 : 0;
 
   next.detail = normalizeDetail(detail, inferred.detail || next.detail);
   next.style = normalizeStyle(style, inferred.style || next.style);
@@ -183,6 +193,25 @@ export function evolveUxProfileFromFeedback(profile, { rating, comment = "", det
   ].slice(-12);
 
   return sanitizeUxProfile(next);
+}
+
+export function buildRlhfSummary(profile = DEFAULT_UX_PROFILE) {
+  const resolved = sanitizeUxProfile(profile);
+  const reward =
+    resolved.feedback.rewardScore > 0
+      ? "positive"
+      : resolved.feedback.rewardScore < 0
+        ? "needs-adjustment"
+        : "neutral";
+  return [
+    `Preference reward: ${reward}`,
+    `- revisions: ${resolved.feedback.revisions}`,
+    `- positive: ${resolved.feedback.positive}`,
+    `- negative: ${resolved.feedback.negative}`,
+    `- rewardScore: ${resolved.feedback.rewardScore}`,
+    `- next detail: ${resolved.detail}`,
+    `- next style: ${resolved.style}`,
+  ].join("\n");
 }
 
 export function buildUxContract(profile = DEFAULT_UX_PROFILE) {

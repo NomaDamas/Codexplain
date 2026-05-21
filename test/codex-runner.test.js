@@ -9,13 +9,16 @@ import { parseCodexWrapperArgs } from "../src/codex-runner.js";
 function withoutRewriteEnv(extra = {}) {
   const env = { ...process.env };
   delete env.OPENAI_API_KEY;
+  delete env.CODEXPLAIN_REWRITE_COMMAND;
+  delete env.CODEXPLAIN_DYNAMIC;
+  delete env.CODEXPLAIN_LOCAL_SHAPE;
   delete env.CLAUDEX_REWRITE_COMMAND;
   delete env.CLAUDEX_DYNAMIC;
   return { ...env, ...extra };
 }
 
 async function withFakeCodex(callback) {
-  const cwd = await mkdtemp(join(tmpdir(), "claudex-codex-"));
+  const cwd = await mkdtemp(join(tmpdir(), "codexplain-codex-"));
   try {
     const codexPath = join(cwd, "codex");
     await writeFile(
@@ -30,10 +33,19 @@ async function withFakeCodex(callback) {
 }
 
 describe("codex runner", () => {
-  it("extracts Claudex prompt without swallowing Codex args", () => {
+  it("extracts Codexplain prompt without swallowing Codex args", () => {
     assert.deepEqual(parseCodexWrapperArgs(["--prompt", "흐름도로 설명해줘", "exec", "작업해"]), {
       prompt: "흐름도로 설명해줘",
       codexArgs: ["exec", "작업해"],
+      localShape: false,
+    });
+  });
+
+  it("extracts local shaping without passing it to Codex", () => {
+    assert.deepEqual(parseCodexWrapperArgs(["--local-shape", "--prompt", "설명해줘", "exec", "작업해"]), {
+      prompt: "설명해줘",
+      codexArgs: ["exec", "작업해"],
+      localShape: true,
     });
   });
 
@@ -42,7 +54,7 @@ describe("codex runner", () => {
       const original = "작업이 완료됐습니다. 검증은 `npm test`로 했습니다.";
       const result = spawnSync(
         process.execPath,
-        [join(process.cwd(), "bin/claudex-codex.js"), "--prompt", "설명해줘", "exec", "상태 확인"],
+        [join(process.cwd(), "bin/codexplain-codex.js"), "--prompt", "설명해줘", "exec", "상태 확인"],
         {
           encoding: "utf8",
           env: withoutRewriteEnv({
@@ -62,12 +74,12 @@ describe("codex runner", () => {
     await withFakeCodex(async (cwd) => {
       const result = spawnSync(
         process.execPath,
-        [join(process.cwd(), "bin/claudex-codex.js"), "--prompt", "설명해줘", "exec", "상태 확인"],
+        [join(process.cwd(), "bin/codexplain-codex.js"), "--prompt", "설명해줘", "exec", "상태 확인"],
         {
           encoding: "utf8",
           env: withoutRewriteEnv({
-            CLAUDEX_DYNAMIC: "1",
-            CLAUDEX_REWRITE_COMMAND: `${process.execPath} -e "process.stdin.resume(); process.stdin.on('end',()=>process.stdout.write('TLDR: 작업 완료'))"`,
+            CODEXPLAIN_DYNAMIC: "1",
+            CODEXPLAIN_REWRITE_COMMAND: `${process.execPath} -e "process.stdin.resume(); process.stdin.on('end',()=>process.stdout.write('TLDR: 작업 완료'))"`,
             FAKE_CODEX_OUTPUT: "작업이 완료됐습니다.",
             PATH: `${cwd}${delimiter}${process.env.PATH ?? ""}`,
           }),
@@ -76,6 +88,27 @@ describe("codex runner", () => {
 
       assert.equal(result.status, 0);
       assert.equal(result.stdout, "TLDR: 작업 완료");
+      assert.equal(result.stderr, "");
+    });
+  });
+
+  it("can locally shape captured Codex stdout without a provider", async () => {
+    await withFakeCodex(async (cwd) => {
+      const result = spawnSync(
+        process.execPath,
+        [join(process.cwd(), "bin/codexplain-codex.js"), "--local-shape", "--prompt", "쉽게 요약해줘", "exec", "상태 확인"],
+        {
+          encoding: "utf8",
+          env: withoutRewriteEnv({
+            FAKE_CODEX_OUTPUT: "작업이 완료됐습니다. 검증은 `npm test`로 했습니다.",
+            PATH: `${cwd}${delimiter}${process.env.PATH ?? ""}`,
+          }),
+        },
+      );
+
+      assert.equal(result.status, 0);
+      assert.match(result.stdout, /요약하면|핵심/);
+      assert.match(result.stdout, /`npm test`/);
       assert.equal(result.stderr, "");
     });
   });

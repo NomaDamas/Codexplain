@@ -24,7 +24,7 @@ describe("dynamic rewriter", () => {
       prompt: "return only valid JSON",
       response: '  {"ok":true}\n',
       env: {
-        CLAUDEX_REWRITE_COMMAND: `${process.execPath} -e "process.stdin.resume(); process.stdin.on('end',()=>console.log('rewritten'))"`,
+        CODEXPLAIN_REWRITE_COMMAND: `${process.execPath} -e "process.stdin.resume(); process.stdin.on('end',()=>console.log('rewritten'))"`,
       },
     });
     assert.equal(output, '  {"ok":true}\n');
@@ -36,7 +36,7 @@ describe("dynamic rewriter", () => {
       prompt: "설명해줘",
       response: "작업이 완료됐습니다.",
       env: {
-        CLAUDEX_REWRITE_COMMAND: `${process.execPath} -e "process.stdin.resume(); process.stdin.on('end',()=>console.log('TLDR: 작업 완료'))"`,
+        CODEXPLAIN_REWRITE_COMMAND: `${process.execPath} -e "process.stdin.resume(); process.stdin.on('end',()=>console.log('TLDR: 작업 완료'))"`,
       },
     });
     assert.equal(output, "TLDR: 작업 완료");
@@ -48,7 +48,7 @@ describe("dynamic rewriter", () => {
       prompt: "설명해줘",
       response: "작업이 완료됐습니다. 검증은 `npm test`로 했습니다.",
       env: {
-        CLAUDEX_REWRITE_COMMAND: `${process.execPath} -e "process.exit(7)"`,
+        CODEXPLAIN_REWRITE_COMMAND: `${process.execPath} -e "process.exit(7)"`,
       },
     });
     assert.match(output, /요약하면/);
@@ -62,7 +62,7 @@ describe("dynamic rewriter", () => {
       response: "작업이 완료됐습니다.",
       timeoutMs: 20,
       env: {
-        CLAUDEX_REWRITE_COMMAND: `${process.execPath} -e "setTimeout(()=>{}, 1000)"`,
+        CODEXPLAIN_REWRITE_COMMAND: `${process.execPath} -e "setTimeout(()=>{}, 1000)"`,
       },
     });
     assert.match(output, /요약하면/);
@@ -81,7 +81,7 @@ describe("dynamic rewriter", () => {
       prompt: "설명해줘",
       response,
       env: {
-        CLAUDEX_REWRITE_COMMAND: `${process.execPath} -e "process.stdin.resume(); process.stdin.on('end',()=>console.log('검증 완료'))"`,
+        CODEXPLAIN_REWRITE_COMMAND: `${process.execPath} -e "process.stdin.resume(); process.stdin.on('end',()=>console.log('검증 완료'))"`,
       },
     });
     assert.match(output, /요약하면/);

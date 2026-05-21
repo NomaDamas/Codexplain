@@ -3,11 +3,13 @@ import { constants } from "node:fs";
 import { join } from "node:path";
 import { initProject } from "./project-init.js";
 
-const START = "<!-- CLAUDEX:START -->";
-const END = "<!-- CLAUDEX:END -->";
+const START = "<!-- CODEXPLAIN:START -->";
+const END = "<!-- CODEXPLAIN:END -->";
+const LEGACY_START = "<!-- CLAUDEX:START -->";
+const LEGACY_END = "<!-- CLAUDEX:END -->";
 
 export const CODEX_GUIDANCE = `${START}
-# Claudex Response UX
+# Codexplain Response UX
 
 For this repository only, shape user-facing answers with a clear, Claude-like
 reading experience while preserving Codex's coding precision.
@@ -19,7 +21,7 @@ Default answer style:
 - Use connected Unicode boxes or tables when structure helps scanning.
 - Do not show internal mode names, prompt-layer labels, or rewrite mechanics.
 - Keep commands, paths, risks, test evidence, and exact technical facts intact.
-- Respect project-local Claudex UX preferences when present, including detail
+- Respect project-local Codexplain UX preferences when present, including detail
   level, audience, requested explanation style, terminal color theme, and frame
   style.
 
@@ -44,10 +46,11 @@ async function exists(path) {
 }
 
 function replaceBlock(text, block) {
-  const startIndex = text.indexOf(START);
-  const endIndex = text.indexOf(END);
+  const startIndex = text.indexOf(START) >= 0 ? text.indexOf(START) : text.indexOf(LEGACY_START);
+  const endMarker = text.indexOf(END) >= 0 ? END : LEGACY_END;
+  const endIndex = text.indexOf(endMarker);
   if (startIndex >= 0 && endIndex > startIndex) {
-    return `${text.slice(0, startIndex).trimEnd()}\n\n${block}\n${text.slice(endIndex + END.length).trimStart()}`;
+    return `${text.slice(0, startIndex).trimEnd()}\n\n${block}\n${text.slice(endIndex + endMarker.length).trimStart()}`;
   }
   return `${text.trimEnd()}\n\n${block}\n`;
 }
@@ -67,6 +70,6 @@ export async function installCodexProject({ cwd = process.cwd(), force = false }
     await writeFile(agentsPath, `${CODEX_GUIDANCE}\n`);
   }
 
-  await mkdir(join(cwd, ".claudex"), { recursive: true });
+  await mkdir(join(cwd, ".codexplain"), { recursive: true });
   return [...written, "AGENTS.md"];
 }

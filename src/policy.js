@@ -68,7 +68,7 @@ export function shouldBackOff({ prompt = "", response = "" } = {}) {
 export function buildGuidance(prompt, uxProfile) {
   const { language, intent, structure } = classifyPrompt(prompt);
   const lines = [
-    "Claudex answer guidance:",
+    "Codexplain answer guidance:",
     "- Keep the technical facts, commands, paths, risks, and verification status unchanged.",
     "- Start non-artifact explanations with a TLDR.",
     "- Prefer conclusion first, then the smallest useful explanation.",

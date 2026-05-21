@@ -1,20 +1,22 @@
 {
-  "name": "claudex",
+  "name": "codexplain",
   "version": "0.1.0",
-  "description": "Claude-like readability and terminal UX layer for Codex responses",
+  "description": "Readable explanation UX layer for Codex responses",
   "type": "module",
   "bin": {
+    "codexplain": "bin/codexplain.js",
+    "codexplain-codex": "bin/codexplain-codex.js",
     "claudex": "bin/claudex.js",
     "claudex-codex": "bin/claudex-codex.js"
   },
   "scripts": {
     "test": "node --test test/*.test.js",
     "check": "node --test test/*.test.js",
-    "demo": "node bin/claudex.js demo"
+    "demo": "node bin/codexplain.js demo",
+    "on": "node bin/codexplain.js install-codex --local --force"
   },
   "keywords": [
     "codex",
-    "claude-like",
     "terminal",
     "ux",
     "explainability",
@@ -23,11 +25,11 @@
   "author": "NomaDamas",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/NomaDamas/claudex.git"
+    "url": "git+https://github.com/NomaDamas/Codexplain.git"
   },
-  "homepage": "https://github.com/NomaDamas/claudex#readme",
+  "homepage": "https://github.com/NomaDamas/Codexplain#readme",
   "bugs": {
-    "url": "https://github.com/NomaDamas/claudex/issues"
+    "url": "https://github.com/NomaDamas/Codexplain/issues"
   },
   "license": "MIT",
   "engines": {
