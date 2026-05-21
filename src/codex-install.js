@@ -32,6 +32,9 @@ Default answer style:
 - Respect project-local Codexplain UX preferences when present, including detail
   level, audience, requested explanation style, terminal color theme, and frame
   style.
+- Respect project-local storage safety preferences in
+  \`.codexplain/config.json\`, including \`storageCheck.minFree.value\`, when
+  invoking \`codexplain storage-check\`.
 - Respect abstraction range preferences such as concrete..implementation,
   implementation..architecture, or architecture..strategy.
 

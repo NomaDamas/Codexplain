@@ -6,7 +6,12 @@ function normalizeWidth(width) {
 }
 
 function frameChars(frame = "unicode") {
-  return frame === "ascii"
+  const selected = ["ascii", "plain-ascii", "fallback", "non-unicode", "no-unicode"].includes(
+    String(frame ?? "").trim().toLowerCase(),
+  )
+    ? "ascii"
+    : "unicode";
+  return selected === "ascii"
     ? {
         horizontal: "-",
         vertical: "|",
@@ -240,6 +245,7 @@ export function renderIndexedList({ items, width = 80, theme = "none", frame = "
   const terminalWidth = normalizeWidth(width);
   const indexWidth = String(items.length).length + 1;
   const contentWidth = Math.max(10, terminalWidth - indexWidth - 3);
+  const chars = frameChars(frame);
   return items
     .map((item, index) => {
       const lines = wrapText(item, contentWidth);
@@ -248,7 +254,7 @@ export function renderIndexedList({ items, width = 80, theme = "none", frame = "
       return lines
         .map((line, lineIndex) => {
           const marker = lineIndex === 0 ? prefix : continuation;
-          const gutter = colorize(frame === "ascii" ? "|" : "│", "border", theme);
+          const gutter = colorize(chars.vertical, "border", theme);
           return `${marker} ${gutter} ${colorize(line, cellRole(line, "accent"), theme)}`;
         })
         .join("\n");

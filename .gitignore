@@ -6,5 +6,7 @@ coverage/
 .codex/
 .codexplain/state/
 .claudex/state/
+.ouroboros/
+.ouroboros_eval_artifact.md
 dist/
 target/

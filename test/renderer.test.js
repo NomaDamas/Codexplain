@@ -98,6 +98,23 @@ describe("renderer", () => {
     assert.doesNotMatch(`${table}\n${flow}`, /┌|┬|┐|│|└|┴|┘|▼/);
   });
 
+  it("renders ASCII frames for fallback mode aliases", () => {
+    const table = renderBoxTable({
+      headers: ["Part", "Role"],
+      rows: [["CLI", "Input"]],
+      width: 40,
+      frame: "fallback",
+    });
+    const list = renderIndexedList({
+      items: ["first", "second"],
+      width: 40,
+      frame: "non-unicode",
+    });
+    assert.match(table, /\+[-+]+\+/);
+    assert.match(list, /1\. \| first/);
+    assert.doesNotMatch(`${table}\n${list}`, /┌|┬|┐|│|└|┴|┘|▼/);
+  });
+
   it("wraps long cells instead of falling back from ASCII tables", () => {
     const table = renderBoxTable({
       headers: ["Part", "Role"],

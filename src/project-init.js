@@ -64,12 +64,29 @@ Adaptive explanation preferences, including terminal color theme and ASCII frame
 style, are stored project-locally in
 \`.codexplain/ux-profile.json\` when users run \`codexplain profile\`,
 \`codexplain feedback\`, or \`codexplain rlhf\`.
+
+Storage safety preferences are stored in \`.codexplain/config.json\`. Adjust
+\`storageCheck.minFree.value\` to override the project-local threshold used by
+\`codexplain storage-check\`; the \`--min-free-gb\` CLI flag still wins for one
+command invocation.
+`;
+
+const CONFIG = `{
+  "schemaVersion": 1,
+  "storageCheck": {
+    "minFree": {
+      "value": 5,
+      "unit": "gb"
+    }
+  }
+}
 `;
 
 export function localAdapterFiles() {
   return {
     ".codexplain/post-response.mjs": POST_RESPONSE_ADAPTER,
     ".codexplain/README.md": README,
+    ".codexplain/config.json": CONFIG,
   };
 }
 

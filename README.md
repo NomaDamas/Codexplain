@@ -7,7 +7,20 @@ make Codex answers easier to understand across model versions by adding a
 stable explanation contract, terminal-friendly rendering, and feedback-driven
 preference tuning.
 
-## One-Line Setup
+## 🧭 Index
+
+- [⚡ One-Line Setup](#-one-line-setup)
+- [🚀 One-Line Use](#-one-line-use)
+- [✨ What It Improves](#-what-it-improves)
+- [🧠 Model-Agnostic Goal](#-model-agnostic-goal)
+- [👍 RLHF-Lite](#-rlhf-lite)
+- [🎛️ CLI](#️-cli)
+- [🦀 Rust Core](#-rust-core)
+- [💾 Storage Safety](#-storage-safety)
+- [📁 Project Files](#-project-files)
+- [✅ Verification](#-verification)
+
+## ⚡ One-Line Setup
 
 Install from this repository and enable it in the current project:
 
@@ -22,9 +35,9 @@ npm run on
 ```
 
 After setup, Codex in that project receives `AGENTS.md` guidance for clearer
-answers. The setup is project-local; it does not edit global Codex config.
+answers. Setup is project-local; it does not edit global Codex config.
 
-## One-Line Use
+## 🚀 One-Line Use
 
 Run Codex through Codexplain and locally shape the captured output:
 
@@ -51,7 +64,7 @@ Use `--theme ocean`, `forest`, or `warm` to make Codexplain terminal output
 color-highlight important labels. Use `--theme none` when copy/paste-safe plain
 text is more important than visual scanning.
 
-Available color themes:
+Available color themes include:
 
 ```text
 none, ocean, forest, warm, sunset, grape, slate, rose, mono
@@ -63,7 +76,7 @@ Give feedback after an answer:
 codexplain rlhf --rating 5 --comment "이 정도 깊이와 쉬운 말이 좋다"
 ```
 
-## What It Improves
+## ✨ What It Improves
 
 Codexplain improves the explanation layer, not the underlying coding model.
 
@@ -101,7 +114,7 @@ The result should be:
 - Side-by-side table/flow panels only when terminal width allows it.
 - Exact commands, file paths, risks, test evidence, and dates preserved.
 
-## Model-Agnostic Goal
+## 🧠 Model-Agnostic Goal
 
 Codexplain is designed to work whether Codex is backed by a newer or older GPT
 model. The model may change; the UX contract stays stable.
@@ -119,7 +132,7 @@ Codexplain explanation contract
 Consistent user-facing explanation style
 ```
 
-## RLHF-Lite
+## 👍 RLHF-Lite
 
 This project does not train a full RLHF model. Full RLHF needs preference data,
 reward modeling, offline evaluation, and model fine-tuning.
@@ -142,7 +155,7 @@ Next answer uses adjusted detail and style
 The profile stores compact preference signals only. It does not store raw answer
 text.
 
-## CLI
+## 🎛️ CLI
 
 ```bash
 codexplain demo
@@ -169,21 +182,57 @@ export CODEXPLAIN_REWRITE_COMMAND="node ./my-rewriter.mjs"
 Legacy `claudex` and `claudex-codex` command names remain as compatibility
 aliases, but `codexplain` is the official command.
 
-## Rust Prototype
+## 🦀 Rust Core
 
-The repository also includes a small Rust renderer prototype. It is intentionally
-dependency-free and keeps build output under ignored `target/`.
+The primary `codexplain` CLI routes core explanation and terminal rendering
+commands through the Rust binary. Node remains as a thin compatibility layer for
+npm distribution, project installation, and Codex wrapper integration while the
+remaining wrapper pieces are ported.
+
+The Rust core is dependency-free, fast to start, and keeps build output under
+ignored `target/`.
 
 ```bash
-cargo run --bin codexplain-rs -- pros-cons
-cargo run --bin codexplain-rs -- formula --frame ascii
+cargo run --bin codexplain -- pros-cons
+cargo run --bin codexplain -- formula --frame ascii
+cargo run --bin codexplain -- storage-check --min-free-gb 5
+cargo run --bin codexplain -- storage-check --min-free-gb 5 --clean
 cargo test
 ```
 
-The current product CLI remains Node-based while the Rust surface proves which
-terminal rendering pieces can move into a single-binary core later.
+## 💾 Storage Safety
 
-## Project Files
+The default threshold is configured as `5 GB` in the Rust configuration layer.
+Projects may override it in `.codexplain/config.json`:
+
+```json
+{
+  "storageCheck": {
+    "minFree": { "value": 5, "unit": "gb" }
+  }
+}
+```
+
+Invalid values or unsupported units are ignored and fall back to the safe
+default of `5 GB`; the CLI flag `--min-free-gb` still overrides configuration.
+
+`storage-check` resolves the effective threshold from the CLI flag, then
+project config, then the Rust default. It prints both the compatibility
+`min_free_gb` field and `effective_min_free_gb`, and its pass/fail `message`
+uses that effective value. If free storage drops below the configured
+threshold, it reports cleanup candidates such as `target/`, `dist/`, and
+`node_modules/`. With `--clean`, it only removes `target/`, which is regenerated
+by Cargo. The command prints stable `key=value` lines beginning with
+`contract=codexplain.storage-check.v1` for script-safe parsing.
+
+This cleanup rule is intentionally narrow:
+
+- `target/` can be deleted because Cargo can rebuild it.
+- `dist/` is reported but never removed automatically.
+- `node_modules/` is reported but never removed automatically.
+- Cleanup only runs when available storage is below the effective threshold.
+
+## 📁 Project Files
 
 Setup writes:
 
@@ -191,6 +240,7 @@ Setup writes:
 AGENTS.md
 .codexplain/post-response.mjs
 .codexplain/README.md
+.codexplain/config.json
 .codexplain/ux-profile.json
 ```
 
@@ -204,12 +254,16 @@ src/evolution.js         UX profile and feedback loop
 src/shaper.js            deterministic answer shaping
 src/renderer.js          Unicode tables, flows, responsive panels
 src/dynamic-rewriter.js  provider-backed rewrite layer
-rust/codexplain.rs       dependency-free Rust renderer prototype
+rust/codexplain.rs       dependency-free Rust CLI core
 ```
 
-## Verification
+## ✅ Verification
 
 ```bash
 npm test
 npm run check
+cargo fmt --check
+cargo test
+cargo build --release
+node bin/codexplain.js storage-check --min-free-gb 5
 ```

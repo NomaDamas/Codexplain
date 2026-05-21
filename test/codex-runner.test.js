@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { describe, it } from "node:test";
@@ -110,6 +110,46 @@ describe("codex runner", () => {
       assert.match(result.stdout, /요약하면|핵심/);
       assert.match(result.stdout, /`npm test`/);
       assert.equal(result.stderr, "");
+    });
+  });
+
+  it("applies project-local renderer preferences to locally shaped Codex stdout", async () => {
+    await withFakeCodex(async (fakeBin) => {
+      const project = await mkdtemp(join(tmpdir(), "codexplain-project-"));
+      try {
+        await mkdir(join(project, ".codexplain"));
+        await writeFile(
+          join(project, ".codexplain", "ux-profile.json"),
+          JSON.stringify({
+            schemaVersion: 1,
+            theme: "none",
+            frame: "unicode",
+            preferredStructure: "flow",
+          }),
+        );
+
+        const result = spawnSync(
+          process.execPath,
+          [join(process.cwd(), "bin/codexplain-codex.js"), "--local-shape", "--prompt", "표로 정리해줘", "exec", "상태 확인"],
+          {
+            cwd: project,
+            encoding: "utf8",
+            env: withoutRewriteEnv({
+              FAKE_CODEX_OUTPUT: "작업이 완료됐습니다. 검증은 `npm test`로 했습니다.",
+              PATH: `${fakeBin}${delimiter}${process.env.PATH ?? ""}`,
+            }),
+          },
+        );
+
+        assert.equal(result.status, 0);
+        assert.match(result.stdout, /입력/);
+        assert.match(result.stdout, /UX 프로필/);
+        assert.match(result.stdout, /▼/);
+        assert.doesNotMatch(result.stdout, /구분\s*│\s*내용/);
+        assert.equal(result.stderr, "");
+      } finally {
+        await rm(project, { recursive: true, force: true });
+      }
     });
   });
 });

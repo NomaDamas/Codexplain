@@ -11,11 +11,21 @@ describe("project init", () => {
     const cwd = await mkdtemp(join(tmpdir(), "codexplain-init-"));
     try {
       const written = await initProject({ cwd });
-      assert.deepEqual(written, [".codexplain/post-response.mjs", ".codexplain/README.md"]);
+      assert.deepEqual(written, [
+        ".codexplain/post-response.mjs",
+        ".codexplain/README.md",
+        ".codexplain/config.json",
+      ]);
 
       const adapter = await readFile(join(cwd, ".codexplain/post-response.mjs"), "utf8");
       assert.match(adapter, /CODEXPLAIN_BIN/);
       assert.doesNotMatch(adapter, /global/i);
+
+      const config = JSON.parse(await readFile(join(cwd, ".codexplain/config.json"), "utf8"));
+      assert.deepEqual(config.storageCheck.minFree, { value: 5, unit: "gb" });
+
+      const readme = await readFile(join(cwd, ".codexplain/README.md"), "utf8");
+      assert.match(readme, /storageCheck\.minFree\.value/);
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }
@@ -58,6 +68,30 @@ describe("project init", () => {
       });
       assert.equal(result.status, 0);
       assert.equal(result.stdout, '  {"ok":true}\n');
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("allows generated project config to override the storage-check threshold", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "codexplain-init-storage-"));
+    try {
+      await initProject({ cwd });
+      await writeFile(
+        join(cwd, ".codexplain", "config.json"),
+        JSON.stringify({ storageCheck: { minFree: { value: 2, unit: "gb" } } }),
+      );
+
+      const result = spawnSync(process.execPath, [join(process.cwd(), "bin/codexplain.js"), "storage-check"], {
+        cwd,
+        encoding: "utf8",
+        env: { ...process.env, CODEXPLAIN_PROJECT_DIR: cwd },
+      });
+
+      assert.equal(result.status, 0);
+      assert.match(result.stdout, /^min_free_gb=2$/m);
+      assert.match(result.stdout, /^effective_min_free_gb=2$/m);
+      assert.match(result.stdout, /^message=.*effective_min_free_gb 2$/m);
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }

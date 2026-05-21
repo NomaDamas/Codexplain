@@ -10,14 +10,23 @@ describe("codex install", () => {
     const cwd = await mkdtemp(join(tmpdir(), "codexplain-codex-"));
     try {
       const written = await installCodexProject({ cwd });
-      assert.deepEqual(written, [".codexplain/post-response.mjs", ".codexplain/README.md", "AGENTS.md"]);
+      assert.deepEqual(written, [
+        ".codexplain/post-response.mjs",
+        ".codexplain/README.md",
+        ".codexplain/config.json",
+        "AGENTS.md",
+      ]);
 
       const agents = await readFile(join(cwd, "AGENTS.md"), "utf8");
       assert.match(agents, /Codexplain Response UX/);
       assert.match(agents, /Do not show internal mode names/);
+      assert.match(agents, /storageCheck\.minFree\.value/);
 
       const adapter = await readFile(join(cwd, ".codexplain/post-response.mjs"), "utf8");
       assert.match(adapter, /codexplain/);
+
+      const config = JSON.parse(await readFile(join(cwd, ".codexplain/config.json"), "utf8"));
+      assert.deepEqual(config.storageCheck.minFree, { value: 5, unit: "gb" });
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }

@@ -13,7 +13,10 @@
     "test": "node --test test/*.test.js",
     "check": "node --test test/*.test.js",
     "demo": "node bin/codexplain.js demo",
-    "on": "node bin/codexplain.js install-codex --local --force"
+    "build:rust": "cargo build --release",
+    "test:rust": "cargo test",
+    "storage-check": "node bin/codexplain.js storage-check",
+    "on": "node bin/claudex.js install-codex --local --force"
   },
   "keywords": [
     "codex",

@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 import { basename } from "node:path";
 import { readFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
 import {
   rewriteAnswerDynamic,
   dynamicRewriteConfigured,
   buildGuidance,
   buildRlhfSummary,
-  renderDemo,
   initProject,
   installCodexProject,
   buildUxContract,
@@ -51,6 +51,7 @@ function usage(name = commandName()) {
     `  ${name} profile --layers <tldr,summary,architecture,implementation,evidence,next-step>`,
     `  ${name} feedback --rating <1-5> --comment <text>`,
     `  ${name} rlhf --rating <1-5> --comment <text>`,
+    `  ${name} storage-check [--min-free-gb 5] [--clean]`,
     `  ${name} init --local [--force]`,
     `  ${name} install-codex --local [--force]`,
     `  ${name} codex --prompt <text> [codex exec args...]`,
@@ -89,6 +90,17 @@ async function readStdin() {
   return Buffer.concat(chunks).toString("utf8");
 }
 
+function runRustCore(args, input = undefined) {
+  const result = spawnSync(process.execPath, [new URL("./codexplain.js", import.meta.url).pathname, ...args], {
+    input,
+    encoding: input == null ? undefined : "utf8",
+    stdio: input == null ? "inherit" : ["pipe", "inherit", "inherit"],
+    env: process.env,
+  });
+  process.exitCode = result.status ?? (result.error ? 1 : 0);
+  if (result.error) console.error(result.error.message);
+}
+
 async function main() {
   const [command, ...args] = process.argv.slice(2);
   const cliName = commandName();
@@ -99,7 +111,7 @@ async function main() {
   }
 
   if (command === "demo") {
-    console.log(renderDemo());
+    runRustCore([command, ...args]);
     return;
   }
 
@@ -152,35 +164,12 @@ async function main() {
   }
 
   if (command === "profile") {
-    const current = await loadProjectUxProfile();
-    const next = {
-      ...current,
-      style: readArg("--set-style", args) ?? current.style,
-      detail: readArg("--detail", args) ?? current.detail,
-      theme: readArg("--theme", args) ?? current.theme,
-      frame: readArg("--frame", args) ?? current.frame,
-      audience: readArg("--audience", args) ?? current.audience,
-      preferredStructure: readArg("--structure", args) ?? current.preferredStructure,
-      abstractionRange:
-        readArg("--abstraction-range", args) ??
-        (readArg("--abstraction", args)
-          ? { min: current.abstractionRange?.min ?? "concrete", max: readArg("--abstraction", args) }
-          : current.abstractionRange),
-      detailLayers: readArg("--layers", args) ?? current.detailLayers,
-    };
-    const shouldWrite = [
-      "--set-style",
-      "--detail",
-      "--theme",
-      "--frame",
-      "--audience",
-      "--structure",
-      "--abstraction",
-      "--abstraction-range",
-      "--layers",
-    ].some((item) => args.includes(item));
-    const profile = shouldWrite ? await saveProjectUxProfile(next) : current;
-    console.log(JSON.stringify(profile, null, 2));
+    runRustCore([command, ...args]);
+    return;
+  }
+
+  if (command === "storage-check") {
+    runRustCore([command, ...args]);
     return;
   }
 
@@ -216,6 +205,10 @@ async function main() {
   }
 
   if (command === "shape") {
+    if (!dynamicRewriteConfigured(process.env) && !args.includes("--dynamic")) {
+      runRustCore([command, ...args]);
+      return;
+    }
     const responseFile = readArg("--response-file", args);
     const response =
       readArg("--response", args) ??
@@ -243,6 +236,10 @@ async function main() {
   if (command === "post-response") {
     const input = await readStdin();
     if (!input.trim()) return;
+    if (!dynamicRewriteConfigured(process.env)) {
+      runRustCore([command, ...args], input);
+      return;
+    }
     const fallbackPrompt = prompt || process.env.CODEXPLAIN_PROMPT || process.env.CLAUDEX_PROMPT || "";
 
     let payload;

@@ -59,6 +59,13 @@ describe("evolution profile", () => {
     assert.equal(profile.frame, "ascii");
   });
 
+  it("normalizes fallback frame modes for compatibility", () => {
+    assert.equal(resolveUxProfile({ env: { CODEXPLAIN_FRAME: "fallback" } }).frame, "ascii");
+    assert.equal(resolveUxProfile({ env: { CODEXPLAIN_FRAME: "non-unicode" } }).frame, "ascii");
+    assert.equal(resolveUxProfile({ env: { CODEXPLAIN_FRAME: "auto", LANG: "C" } }).frame, "ascii");
+    assert.equal(resolveUxProfile({ env: { CODEXPLAIN_FRAME: "auto", LANG: "en_US.UTF-8" } }).frame, "unicode");
+  });
+
   it("evolves profile from feedback without storing raw answer text", () => {
     const profile = evolveUxProfileFromFeedback(
       { detail: "balanced", style: "technical", feedback: { signals: [] } },

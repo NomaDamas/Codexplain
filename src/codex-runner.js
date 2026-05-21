@@ -1,12 +1,17 @@
 import { spawn } from "node:child_process";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { dynamicRewriteConfigured, rewriteAnswerDynamic } from "./dynamic-rewriter.js";
 import { loadProjectUxProfile, resolveUxProfile } from "./evolution.js";
 
+const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+
 function run(command, args, options = {}) {
   return new Promise((resolve) => {
+    const { input, ...spawnOptions } = options;
     const child = spawn(command, args, {
-      ...options,
-      env: { ...process.env, ...options.env },
+      ...spawnOptions,
+      env: { ...process.env, ...spawnOptions.env },
     });
     let stdout = "";
     let stderr = "";
@@ -17,9 +22,31 @@ function run(command, args, options = {}) {
     child.stderr?.on("data", (chunk) => {
       stderr += chunk;
     });
+    if (input != null) {
+      child.stdin?.end(input);
+    }
     child.on("error", (error) => resolve({ error, status: 1, stdout, stderr }));
     child.on("close", (status) => resolve({ status: status ?? 1, stdout, stderr }));
   });
+}
+
+async function shapeWithRust({ prompt, response, env }) {
+  const projectDir = env.CODEXPLAIN_PROJECT_DIR || process.cwd();
+  const result = await run(
+    process.execPath,
+    [join(root, "bin", "codexplain.js"), "shape", "--prompt", prompt || ""],
+    {
+      cwd: root,
+      input: response,
+      stdio: ["pipe", "pipe", "pipe"],
+      env: { ...env, CODEXPLAIN_PROJECT_DIR: projectDir },
+    },
+  );
+  if (result.status !== 0) {
+    if (result.stderr) process.stderr.write(result.stderr);
+    return response;
+  }
+  return result.stdout;
 }
 
 export function parseCodexWrapperArgs(args) {
@@ -40,15 +67,19 @@ export async function runCodexWithClaudex({ args, codexArgs: parsedArgs, prompt 
   if (result.stderr) process.stderr.write(result.stderr);
   if (result.stdout) {
     if (dynamicRewriteConfigured(env) || localShape || env.CODEXPLAIN_LOCAL_SHAPE || env.CLAUDEX_LOCAL_SHAPE) {
-      const storedProfile = await loadProjectUxProfile();
-      const uxProfile = resolveUxProfile({ prompt: prompt || codexArgs.join(" "), profile: storedProfile, env });
-      const shaped = await rewriteAnswerDynamic({
-        prompt: prompt || codexArgs.join(" "),
-        response: result.stdout,
-        uxProfile,
-        mode: dynamicRewriteConfigured(env) ? undefined : "off",
-        env,
-      });
+      const effectivePrompt = prompt || codexArgs.join(" ");
+      const shaped = dynamicRewriteConfigured(env)
+        ? await rewriteAnswerDynamic({
+            prompt: effectivePrompt,
+            response: result.stdout,
+            uxProfile: resolveUxProfile({
+              prompt: effectivePrompt,
+              profile: await loadProjectUxProfile(),
+              env,
+            }),
+            env,
+          })
+        : await shapeWithRust({ prompt: effectivePrompt, response: result.stdout, env });
       process.stdout.write(shaped);
     } else {
       process.stdout.write(result.stdout);

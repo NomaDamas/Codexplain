@@ -74,11 +74,24 @@ function normalizeStructure(value, fallback = "auto") {
   return fallback;
 }
 
-function normalizeFrame(value, fallback = "unicode") {
+function normalizeFrame(value, fallback = "unicode", env = process.env) {
   const text = String(value ?? "").trim().toLowerCase();
-  if (text === "box" || text === "unicode") return "unicode";
-  if (text === "ascii" || text === "plain-ascii") return "ascii";
+  if (text === "box" || text === "unicode" || text === "utf8" || text === "utf-8") return "unicode";
+  if (["ascii", "plain-ascii", "fallback", "non-unicode", "no-unicode"].includes(text)) return "ascii";
+  if (text === "auto" || text === "terminal") return terminalSupportsUnicode(env) ? "unicode" : "ascii";
   return FRAME_STYLES.has(text) ? text : fallback;
+}
+
+function envFlagEnabled(value) {
+  return ["1", "true", "yes", "on"].includes(String(value ?? "").trim().toLowerCase());
+}
+
+function terminalSupportsUnicode(env = process.env) {
+  if (envFlagEnabled(env.CODEXPLAIN_NO_UNICODE) || envFlagEnabled(env.NO_UNICODE)) return false;
+  if (env.TERM === "dumb") return false;
+  const locale = [env.LC_ALL, env.LC_CTYPE, env.LANG].find((item) => String(item ?? "").trim());
+  if (!locale) return true;
+  return /utf-?8/iu.test(String(locale));
 }
 
 function normalizeAbstraction(value, fallback = "architecture") {
@@ -223,7 +236,7 @@ export function resolveUxProfile({ prompt = "", profile = DEFAULT_UX_PROFILE, en
     detail: normalizeDetail(env.CODEXPLAIN_DETAIL ?? env.CLAUDEX_DETAIL, base.detail),
     style: normalizeStyle(env.CODEXPLAIN_STYLE ?? env.CLAUDEX_STYLE, base.style),
     theme: normalizeTheme(env.CODEXPLAIN_THEME ?? env.CODEXPLAIN_COLOR ?? env.CLAUDEX_THEME ?? env.CLAUDEX_COLOR, base.theme),
-    frame: normalizeFrame(env.CODEXPLAIN_FRAME ?? env.CLAUDEX_FRAME, base.frame),
+    frame: normalizeFrame(env.CODEXPLAIN_FRAME ?? env.CLAUDEX_FRAME, base.frame, env),
     audience: cleanString(env.CODEXPLAIN_AUDIENCE ?? env.CLAUDEX_AUDIENCE, base.audience),
     preferredStructure: normalizeStructure(env.CODEXPLAIN_STRUCTURE ?? env.CLAUDEX_STRUCTURE, base.preferredStructure),
     abstractionRange: normalizeAbstractionRange(
