@@ -27,9 +27,27 @@ describe("evolution profile", () => {
     const profile = resolveUxProfile({
       prompt: "설명해줘",
       profile: { theme: "none" },
-      env: { CLAUDEX_THEME: "forest" },
+      env: { CODEXPLAIN_THEME: "sunset" },
     });
-    assert.equal(profile.theme, "forest");
+    assert.equal(profile.theme, "sunset");
+  });
+
+  it("defaults to colored terminal output", () => {
+    const profile = resolveUxProfile({ prompt: "설명해줘", env: {} });
+    assert.equal(profile.theme, "ocean");
+  });
+
+  it("applies abstraction range and detail layers", () => {
+    const profile = resolveUxProfile({
+      prompt: "설명해줘",
+      env: {
+        CODEXPLAIN_ABSTRACTION_RANGE: "implementation:strategy",
+        CODEXPLAIN_LAYERS: "tldr,summary,architecture,evidence",
+      },
+    });
+    assert.deepEqual(profile.abstractionRange, { min: "implementation", max: "strategy" });
+    assert.deepEqual(profile.detailLayers, ["tldr", "summary", "architecture", "evidence"]);
+    assert.match(buildUxContract(profile), /implementation\.\.strategy/);
   });
 
   it("applies ASCII frame from environment", () => {
@@ -61,6 +79,7 @@ describe("evolution profile", () => {
       const profile = await loadProjectUxProfile({ cwd });
       assert.equal(profile.detail, "deep");
       assert.equal(profile.style, "tutorial");
+      assert.equal(profile.theme, "ocean");
       assert.match(buildUxContract(profile), /Adaptive explanation contract/);
       assert.match(buildRlhfSummary(profile), /Preference reward/);
     } finally {

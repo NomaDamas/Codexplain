@@ -13,8 +13,8 @@ const STRUCTURE_PATTERNS = {
     /(?:흐름도|순서도|단계별|과정|파이프라인|라이프사이클)/u,
   ],
   table: [
-    /\b(?:table|matrix|compare|comparison|tradeoff|options?)\b/i,
-    /(?:표로|비교|장단점|옵션|선택지)/u,
+    /\b(?:table|matrix|compare|comparison|tradeoff|pros?\s*(?:and|&|\/)\s*cons?|options?)\b/i,
+    /(?:표로|비교|장단점|장점|단점|옵션|선택지)/u,
   ],
 };
 
@@ -87,7 +87,10 @@ export function buildGuidance(prompt, uxProfile) {
   if (intent === "review") lines.push("- Put findings first and keep severity clear.");
   if (intent === "status") lines.push("- Show current state, next action, and evidence.");
   if (structure === "flow") lines.push("- Use a connected vertical flow only if it reduces scan cost.");
-  if (structure === "table") lines.push("- Use a connected box table only if comparison is clearer than prose.");
+  if (structure === "table") {
+    lines.push("- Use a connected box table only if comparison is clearer than prose.");
+    lines.push("- For pros/cons or tradeoff questions, prefer paired comparison panels over plain bullets.");
+  }
   if (uxProfile?.detail) lines.push(`- Detail preference: ${uxProfile.detail}.`);
   if (uxProfile?.style) lines.push(`- Style preference: ${uxProfile.style}.`);
   if (uxProfile?.theme) lines.push(`- Terminal color theme: ${uxProfile.theme}.`);

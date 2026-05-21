@@ -6,6 +6,18 @@
   "frame": "unicode",
   "audience": "general",
   "preferredStructure": "auto",
+  "abstractionRange": {
+    "min": "concrete",
+    "max": "architecture"
+  },
+  "detailLayers": [
+    "tldr",
+    "summary",
+    "architecture",
+    "implementation",
+    "evidence",
+    "next-step"
+  ],
   "explanationMoves": [
     "tldr",
     "answer-first",

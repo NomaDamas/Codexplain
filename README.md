@@ -38,6 +38,25 @@ Set your preferred style:
 codexplain profile --detail deep --set-style tutorial --theme ocean --frame unicode
 ```
 
+Control explanation layers and abstraction range:
+
+```bash
+codexplain profile \
+  --detail deep \
+  --abstraction-range concrete:architecture \
+  --layers tldr,summary,architecture,implementation,evidence,next-step
+```
+
+Use `--theme ocean`, `forest`, or `warm` to make Codexplain terminal output
+color-highlight important labels. Use `--theme none` when copy/paste-safe plain
+text is more important than visual scanning.
+
+Available color themes:
+
+```text
+none, ocean, forest, warm, sunset, grape, slate, rose, mono
+```
+
 Give feedback after an answer:
 
 ```bash
@@ -70,6 +89,15 @@ The result should be:
 - Korean-first when the user writes Korean.
 - Short paragraphs instead of scattered process narration.
 - Unicode box tables and diagrams when they help scanning.
+- Row dividers in dense tables so long architecture lists are easier to track.
+- Semantic color highlights for labels such as TLDR, 핵심, 장점, 단점, 위험.
+- Adjustable abstraction range: concrete, implementation, architecture, strategy.
+- Adjustable detail layers: TLDR, summary, concept, mechanism, architecture,
+  implementation, evidence, next-step.
+- Dynamic renderer selection: TLDR prose, table, flow, pros/cons panels,
+  numbered index lists, and formula boxes.
+- Pros/cons and tradeoff questions as comparison panels instead of loose bullets.
+- Formula boxes for decision rules or simple math explanations.
 - Side-by-side table/flow panels only when terminal width allows it.
 - Exact commands, file paths, risks, test evidence, and dates preserved.
 
@@ -120,6 +148,7 @@ text.
 codexplain demo
 codexplain guide --prompt "현재 상태를 쉽게 설명해줘"
 codexplain shape --prompt "흐름도로 설명해줘" --response "구현은 완료됐습니다."
+codexplain shape --prompt "JS와 Rust 장단점을 pros and cons 표와 수식으로 설명해줘" --response "JS는 실험에 좋고 Rust는 제품화에 좋습니다."
 codexplain post-response --local-shape --prompt "쉽게 설명해줘"
 codexplain feedback --rating 2 --comment "너무 어렵고 설명이 부족해"
 codexplain rlhf --rating 5 --comment "이 스타일이 좋아"
@@ -139,6 +168,20 @@ export CODEXPLAIN_REWRITE_COMMAND="node ./my-rewriter.mjs"
 
 Legacy `claudex` and `claudex-codex` command names remain as compatibility
 aliases, but `codexplain` is the official command.
+
+## Rust Prototype
+
+The repository also includes a small Rust renderer prototype. It is intentionally
+dependency-free and keeps build output under ignored `target/`.
+
+```bash
+cargo run --bin codexplain-rs -- pros-cons
+cargo run --bin codexplain-rs -- formula --frame ascii
+cargo test
+```
+
+The current product CLI remains Node-based while the Rust surface proves which
+terminal rendering pieces can move into a single-binary core later.
 
 ## Project Files
 
@@ -161,6 +204,7 @@ src/evolution.js         UX profile and feedback loop
 src/shaper.js            deterministic answer shaping
 src/renderer.js          Unicode tables, flows, responsive panels
 src/dynamic-rewriter.js  provider-backed rewrite layer
+rust/codexplain.rs       dependency-free Rust renderer prototype
 ```
 
 ## Verification

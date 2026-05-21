@@ -9,7 +9,10 @@ export {
 } from "./text-width.js";
 export {
   renderBoxTable,
+  renderFormulaBox,
   renderFlow,
+  renderIndexedList,
+  renderProsConsPanels,
   renderResponsivePanels,
   renderDemo,
 } from "./renderer.js";

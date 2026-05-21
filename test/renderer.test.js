@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { renderBoxTable, renderFlow, renderResponsivePanels } from "../src/renderer.js";
+import {
+  renderBoxTable,
+  renderFlow,
+  renderFormulaBox,
+  renderIndexedList,
+  renderProsConsPanels,
+  renderResponsivePanels,
+} from "../src/renderer.js";
 import { measureWidth } from "../src/text-width.js";
 import { stripAnsi } from "../src/theme.js";
 
@@ -28,6 +35,33 @@ describe("renderer", () => {
     assert.match(output, /├/);
     assert.match(output, /└/);
     assert.doesNotMatch(output, /^- /m);
+  });
+
+  it("can draw dividers between body rows", () => {
+    const output = renderBoxTable({
+      headers: ["계층", "역할"],
+      rows: [
+        ["CLI", "명령 입구"],
+        ["Policy", "strict 출력 보호"],
+        ["Renderer", "표와 흐름도 출력"],
+      ],
+      width: 60,
+      rowDividers: true,
+    });
+    assert.equal((output.match(/├/g) ?? []).length, 3);
+    assert.match(output, /Policy/);
+  });
+
+  it("highlights semantic labels when a color theme is enabled", () => {
+    const output = renderBoxTable({
+      headers: ["구분", "내용"],
+      rows: [["장점", "읽기 쉬움"], ["단점", "색상 미지원 터미널 주의"]],
+      width: 60,
+      theme: "ocean",
+      rowDividers: true,
+    });
+    assert.match(output, /\u001b\[1;32m장점/);
+    assert.match(output, /\u001b\[1;33m단점/);
   });
 
   it("renders vertical flow with stable connector symbols", () => {
@@ -94,6 +128,39 @@ describe("renderer", () => {
       panels: ["┌────────┐\n│A       │\n└────────┘", "┌────────┐\n│B       │\n└────────┘"],
     });
     assert.match(output, /└────────┘\n\n┌────────┐/);
+  });
+
+  it("renders pros and cons as responsive paired panels", () => {
+    const output = renderProsConsPanels({
+      width: 100,
+      left: { title: "JS", pros: ["빠른 수정"], cons: ["런타임 필요"], bestFor: "실험" },
+      right: { title: "Rust", pros: ["단일 바이너리"], cons: ["초기 비용"], bestFor: "제품화" },
+    });
+    assert.match(output, /장점/);
+    assert.match(output, /단점/);
+    assert.match(output, /├/);
+    assert.match(output.split("\n")[0], /┐\s+┌/);
+  });
+
+  it("renders formula boxes", () => {
+    const output = renderFormulaBox({
+      title: "판단식",
+      formula: "선택 = f(반복속도, 안정성)",
+      notes: ["상황에 따라 가중치가 바뀝니다."],
+      width: 70,
+    });
+    assert.match(output, /수식\/의미/);
+    assert.match(output, /선택 = f/);
+  });
+
+  it("renders indexed explanations with colored numbers", () => {
+    const output = renderIndexedList({
+      items: ["첫 번째 설명", "두 번째 설명"],
+      width: 60,
+      theme: "sunset",
+    });
+    assert.match(output, /\u001b\[1;38;5;196m1\./);
+    assert.match(stripAnsi(output), /1\. │ 첫 번째 설명/);
   });
 
   it("measures Hangul as wide characters", () => {

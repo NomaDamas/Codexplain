@@ -1,6 +1,6 @@
 {
   "name": "codexplain",
-  "version": "0.1.0",
+  "version": "0.18.0",
   "description": "Readable explanation UX layer for Codex responses",
   "type": "module",
   "bin": {

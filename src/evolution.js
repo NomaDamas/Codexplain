@@ -9,15 +9,31 @@ export const LEGACY_UX_PROFILE_PATH = ".claudex/ux-profile.json";
 const DETAIL_LEVELS = new Set(["brief", "balanced", "deep"]);
 const STYLE_LEVELS = new Set(["plain", "tutorial", "concise", "executive", "technical", "review"]);
 const FRAME_STYLES = new Set(["unicode", "ascii"]);
+const ABSTRACTION_LEVELS = ["concrete", "implementation", "architecture", "strategy"];
+const DETAIL_LAYERS = new Set([
+  "tldr",
+  "summary",
+  "concept",
+  "mechanism",
+  "architecture",
+  "implementation",
+  "evidence",
+  "next-step",
+]);
 
 export const DEFAULT_UX_PROFILE = Object.freeze({
   schemaVersion: 1,
   detail: "balanced",
   style: "plain",
-  theme: "none",
+  theme: "ocean",
   frame: "unicode",
   audience: "general",
   preferredStructure: "auto",
+  abstractionRange: {
+    min: "concrete",
+    max: "architecture",
+  },
+  detailLayers: ["tldr", "summary", "architecture", "implementation", "evidence", "next-step"],
   explanationMoves: ["tldr", "answer-first", "plain-language", "evidence", "next-step"],
   feedback: {
     positive: 0,
@@ -65,6 +81,66 @@ function normalizeFrame(value, fallback = "unicode") {
   return FRAME_STYLES.has(text) ? text : fallback;
 }
 
+function normalizeAbstraction(value, fallback = "architecture") {
+  const text = String(value ?? "").trim().toLowerCase();
+  const aliases = {
+    low: "concrete",
+    detail: "concrete",
+    concrete: "concrete",
+    code: "implementation",
+    impl: "implementation",
+    implementation: "implementation",
+    architecture: "architecture",
+    architectural: "architecture",
+    structure: "architecture",
+    high: "strategy",
+    strategic: "strategy",
+    strategy: "strategy",
+  };
+  return aliases[text] ?? (ABSTRACTION_LEVELS.includes(text) ? text : fallback);
+}
+
+function normalizeAbstractionRange(value, fallback = DEFAULT_UX_PROFILE.abstractionRange) {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const min = normalizeAbstraction(value.min, fallback.min);
+    const max = normalizeAbstraction(value.max, fallback.max);
+    return orderAbstractionRange(min, max);
+  }
+  const text = String(value ?? "").trim().toLowerCase();
+  if (!text) return orderAbstractionRange(fallback.min, fallback.max);
+  if (text === "full" || text === "all") return { min: "concrete", max: "strategy" };
+  const [minRaw, maxRaw] = text.split(/[:.]{2}|:|,/u).map((item) => item?.trim()).filter(Boolean);
+  const min = normalizeAbstraction(minRaw, fallback.min);
+  const max = normalizeAbstraction(maxRaw ?? minRaw, fallback.max);
+  return orderAbstractionRange(min, max);
+}
+
+function orderAbstractionRange(min, max) {
+  const minIndex = ABSTRACTION_LEVELS.indexOf(min);
+  const maxIndex = ABSTRACTION_LEVELS.indexOf(max);
+  if (minIndex <= maxIndex) return { min, max };
+  return { min: max, max: min };
+}
+
+function normalizeDetailLayers(value, fallback = DEFAULT_UX_PROFILE.detailLayers) {
+  const values = Array.isArray(value)
+    ? value
+    : String(value ?? "")
+        .split(/[,|]/u)
+        .map((item) => item.trim())
+        .filter(Boolean);
+  const normalized = values
+    .map((item) => {
+      const text = String(item ?? "").trim().toLowerCase();
+      if (["next", "action", "next-action"].includes(text)) return "next-step";
+      if (["arch", "structure"].includes(text)) return "architecture";
+      if (["impl", "code"].includes(text)) return "implementation";
+      return text;
+    })
+    .filter((item) => DETAIL_LAYERS.has(item));
+  return normalized.length ? uniqueList(normalized) : [...fallback];
+}
+
 function uniqueList(values) {
   return [...new Set(values.map((item) => cleanString(item)).filter(Boolean))];
 }
@@ -79,6 +155,8 @@ export function sanitizeUxProfile(profile = {}) {
     frame: normalizeFrame(profile.frame, DEFAULT_UX_PROFILE.frame),
     audience: cleanString(profile.audience, DEFAULT_UX_PROFILE.audience),
     preferredStructure: normalizeStructure(profile.preferredStructure, DEFAULT_UX_PROFILE.preferredStructure),
+    abstractionRange: normalizeAbstractionRange(profile.abstractionRange, DEFAULT_UX_PROFILE.abstractionRange),
+    detailLayers: normalizeDetailLayers(profile.detailLayers, DEFAULT_UX_PROFILE.detailLayers),
     explanationMoves: uniqueList(
       Array.isArray(profile.explanationMoves)
         ? profile.explanationMoves
@@ -126,6 +204,15 @@ function promptSignals(prompt) {
   if (/(기술적으로|내부 구조|technical|implementation)/iu.test(text)) signals.style = "technical";
   if (/(표|비교|matrix|table)/iu.test(text)) signals.preferredStructure = "table";
   if (/(흐름도|순서도|flow|pipeline)/iu.test(text)) signals.preferredStructure = "flow";
+  if (/(낮은\s*레벨|구체|코드\s*레벨|concrete|low-level)/iu.test(text)) {
+    signals.abstractionRange = { min: "concrete", max: "implementation" };
+  }
+  if (/(아키텍처|구조|architecture|system design)/iu.test(text)) {
+    signals.abstractionRange = { min: "implementation", max: "architecture" };
+  }
+  if (/(전략|비즈니스|상위\s*레벨|strategy|high-level)/iu.test(text)) {
+    signals.abstractionRange = { min: "architecture", max: "strategy" };
+  }
   return signals;
 }
 
@@ -139,6 +226,14 @@ export function resolveUxProfile({ prompt = "", profile = DEFAULT_UX_PROFILE, en
     frame: normalizeFrame(env.CODEXPLAIN_FRAME ?? env.CLAUDEX_FRAME, base.frame),
     audience: cleanString(env.CODEXPLAIN_AUDIENCE ?? env.CLAUDEX_AUDIENCE, base.audience),
     preferredStructure: normalizeStructure(env.CODEXPLAIN_STRUCTURE ?? env.CLAUDEX_STRUCTURE, base.preferredStructure),
+    abstractionRange: normalizeAbstractionRange(
+      env.CODEXPLAIN_ABSTRACTION_RANGE ?? env.CLAUDEX_ABSTRACTION_RANGE ?? {
+        min: env.CODEXPLAIN_ABSTRACTION_MIN ?? env.CLAUDEX_ABSTRACTION_MIN ?? base.abstractionRange.min,
+        max: env.CODEXPLAIN_ABSTRACTION_MAX ?? env.CLAUDEX_ABSTRACTION_MAX ?? env.CODEXPLAIN_ABSTRACTION ?? env.CLAUDEX_ABSTRACTION ?? base.abstractionRange.max,
+      },
+      base.abstractionRange,
+    ),
+    detailLayers: normalizeDetailLayers(env.CODEXPLAIN_LAYERS ?? env.CLAUDEX_LAYERS, base.detailLayers),
   };
   return sanitizeUxProfile({ ...resolved, ...promptSignals(prompt) });
 }
@@ -211,6 +306,7 @@ export function buildRlhfSummary(profile = DEFAULT_UX_PROFILE) {
     `- rewardScore: ${resolved.feedback.rewardScore}`,
     `- next detail: ${resolved.detail}`,
     `- next style: ${resolved.style}`,
+    `- abstraction range: ${resolved.abstractionRange.min}..${resolved.abstractionRange.max}`,
   ].join("\n");
 }
 
@@ -239,7 +335,10 @@ export function buildUxContract(profile = DEFAULT_UX_PROFILE) {
     `- Terminal color theme: ${resolved.theme}. Use color only for visual grouping, never to encode the only meaning.`,
     `- Frame style: ${resolved.frame}. Use ASCII frames when copy/paste safety matters.`,
     `- Audience: ${resolved.audience}.`,
+    `- Abstraction range: ${resolved.abstractionRange.min}..${resolved.abstractionRange.max}. Stay inside that explanation level range.`,
+    `- Detail layers: ${resolved.detailLayers.join(", ")}.`,
     "- Prefer answer-first structure, then why it matters, evidence, and next action.",
+    "- In terminal output, use ANSI color when the active theme is not none; use colors to highlight labels, risks, and key terms.",
     "- Start explanatory answers with a TLDR when the output is not an exact artifact.",
     "- Keep related visuals spatially close: pair tables and flows side by side only when width allows; otherwise stack them.",
     "- Use examples or analogies only when they reduce confusion.",

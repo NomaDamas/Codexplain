@@ -142,6 +142,35 @@ describe("claudex cli post-response", () => {
     }
   });
 
+  it("prints a project-local profile with abstraction controls", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "codexplain-abstraction-"));
+    try {
+      const result = spawnSync(
+        process.execPath,
+        [
+          join(process.cwd(), "bin/codexplain.js"),
+          "profile",
+          "--abstraction-range",
+          "implementation:strategy",
+          "--layers",
+          "tldr,summary,architecture,evidence",
+        ],
+        {
+          cwd,
+          encoding: "utf8",
+          env: withoutRewriteEnv(),
+        },
+      );
+
+      assert.equal(result.status, 0);
+      assert.match(result.stdout, /"min": "implementation"/);
+      assert.match(result.stdout, /"max": "strategy"/);
+      assert.match(result.stdout, /"architecture"/);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   it("records RLHF-lite reward feedback", () => {
     const cwd = mkdtempSync(join(tmpdir(), "codexplain-rlhf-"));
     try {

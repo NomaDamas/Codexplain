@@ -50,13 +50,25 @@ function border(left, join, right, widths, theme = "none", frame = "unicode") {
   );
 }
 
+function cellRole(cell, fallback) {
+  const text = String(cell ?? "");
+  if (/^(?:TLDR|핵심|결론|장점|Pros?|success)$/iu.test(text)) return "success";
+  if (/^(?:단점|위험|주의|Cons?|risk|warning)$/iu.test(text)) return "warning";
+  if (/^(?:오류|실패|danger|error)$/iu.test(text)) return "danger";
+  return fallback;
+}
+
 function row(cells, widths, theme = "none", role = "accent", frame = "unicode") {
   const selectedTheme = normalizeTheme(theme);
   const chars = frameChars(frame);
   const border = colorize(chars.vertical, "border", selectedTheme);
   return `${border}${cells
-    .map((cell, index) => ` ${colorize(padEndWidth(cell, widths[index]), role, selectedTheme)} `)
+    .map((cell, index) => ` ${colorize(padEndWidth(cell, widths[index]), cellRole(cell, role), selectedTheme)} `)
     .join(border)}${border}`;
+}
+
+function colorizedIndex(index, theme) {
+  return colorize(`${index + 1}.`, "heading", theme);
 }
 
 function fitColumnWidths({ headers, rows, terminalWidth }) {
@@ -101,7 +113,7 @@ function wrappedRows(cells, widths) {
   );
 }
 
-export function renderBoxTable({ headers, rows, width = 80, theme = "none", frame = "unicode" }) {
+export function renderBoxTable({ headers, rows, width = 80, theme = "none", frame = "unicode", rowDividers = false }) {
   const terminalWidth = normalizeWidth(width);
   const selectedTheme = normalizeTheme(theme);
   const chars = frameChars(frame);
@@ -113,10 +125,13 @@ export function renderBoxTable({ headers, rows, width = 80, theme = "none", fram
     ...wrappedRows(headers, widths).map((item) => row(item, widths, selectedTheme, "heading", frame)),
     border(chars.middleLeft, chars.middleJoin, chars.middleRight, widths, selectedTheme, frame),
   ];
-  for (const item of rows) {
+  rows.forEach((item, index) => {
     if (item.length !== columnCount) throw new RangeError("table row length must match headers");
     lines.push(...wrappedRows(item, widths).map((line) => row(line, widths, selectedTheme, "accent", frame)));
-  }
+    if (rowDividers && index < rows.length - 1) {
+      lines.push(border(chars.middleLeft, chars.middleJoin, chars.middleRight, widths, selectedTheme, frame));
+    }
+  });
   lines.push(border(chars.bottomLeft, chars.bottomJoin, chars.bottomRight, widths, selectedTheme, frame));
   return lines.join("\n");
 }
@@ -204,6 +219,63 @@ export function renderResponsivePanels({ panels, width = 100, gap = 3 }) {
       .map((lines, panelIndex) => padVisible(lines[lineIndex] ?? "", widths[panelIndex]))
       .join(spacer),
   ).join("\n");
+}
+
+export function renderFormulaBox({ title = "Formula", formula, notes = [], width = 80, theme = "none", frame = "unicode" }) {
+  const rows = [
+    [title, formula],
+    ...notes.map((note, index) => [index === 0 ? "설명" : "", note]),
+  ];
+  return renderBoxTable({
+    headers: ["구분", "수식/의미"],
+    rows,
+    width,
+    theme,
+    frame,
+    rowDividers: true,
+  });
+}
+
+export function renderIndexedList({ items, width = 80, theme = "none", frame = "unicode" }) {
+  const terminalWidth = normalizeWidth(width);
+  const indexWidth = String(items.length).length + 1;
+  const contentWidth = Math.max(10, terminalWidth - indexWidth - 3);
+  return items
+    .map((item, index) => {
+      const lines = wrapText(item, contentWidth);
+      const prefix = colorizedIndex(index, theme);
+      const continuation = " ".repeat(indexWidth);
+      return lines
+        .map((line, lineIndex) => {
+          const marker = lineIndex === 0 ? prefix : continuation;
+          const gutter = colorize(frame === "ascii" ? "|" : "│", "border", theme);
+          return `${marker} ${gutter} ${colorize(line, cellRole(line, "accent"), theme)}`;
+        })
+        .join("\n");
+    })
+    .join("\n");
+}
+
+export function renderProsConsPanels({ left, right, width = 100, theme = "none", frame = "unicode" }) {
+  const panelWidth = Math.max(36, Math.floor((normalizeWidth(width) - 3) / 2));
+  const renderPanel = (item) =>
+    renderBoxTable({
+      headers: [item.title, "내용"],
+      rows: [
+        ["장점", item.pros.join("\n")],
+        ["단점", item.cons.join("\n")],
+        ["적합한 때", item.bestFor],
+      ],
+      width: panelWidth,
+      theme,
+      frame,
+      rowDividers: true,
+    });
+  return renderResponsivePanels({
+    panels: [renderPanel(left), renderPanel(right)],
+    width,
+    gap: 3,
+  });
 }
 
 export function renderDemo() {

@@ -1,0 +1,10 @@
+[package]
+name = "codexplain"
+version = "0.18.0"
+edition = "2021"
+description = "Terminal explanation UX renderer for Codexplain"
+license = "MIT"
+
+[[bin]]
+name = "codexplain-rs"
+path = "rust/codexplain.rs"

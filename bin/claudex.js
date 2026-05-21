@@ -46,6 +46,9 @@ function usage(name = commandName()) {
     `  ${name} profile --detail <brief|balanced|deep>`,
     `  ${name} profile --theme <${themeNames().join("|")}>`,
     `  ${name} profile --frame <unicode|ascii>`,
+    `  ${name} profile --abstraction <concrete|implementation|architecture|strategy>`,
+    `  ${name} profile --abstraction-range <concrete:strategy>`,
+    `  ${name} profile --layers <tldr,summary,architecture,implementation,evidence,next-step>`,
     `  ${name} feedback --rating <1-5> --comment <text>`,
     `  ${name} rlhf --rating <1-5> --comment <text>`,
     `  ${name} init --local [--force]`,
@@ -158,10 +161,24 @@ async function main() {
       frame: readArg("--frame", args) ?? current.frame,
       audience: readArg("--audience", args) ?? current.audience,
       preferredStructure: readArg("--structure", args) ?? current.preferredStructure,
+      abstractionRange:
+        readArg("--abstraction-range", args) ??
+        (readArg("--abstraction", args)
+          ? { min: current.abstractionRange?.min ?? "concrete", max: readArg("--abstraction", args) }
+          : current.abstractionRange),
+      detailLayers: readArg("--layers", args) ?? current.detailLayers,
     };
-    const shouldWrite = ["--set-style", "--detail", "--theme", "--frame", "--audience", "--structure"].some((item) =>
-      args.includes(item),
-    );
+    const shouldWrite = [
+      "--set-style",
+      "--detail",
+      "--theme",
+      "--frame",
+      "--audience",
+      "--structure",
+      "--abstraction",
+      "--abstraction-range",
+      "--layers",
+    ].some((item) => args.includes(item));
     const profile = shouldWrite ? await saveProjectUxProfile(next) : current;
     console.log(JSON.stringify(profile, null, 2));
     return;
