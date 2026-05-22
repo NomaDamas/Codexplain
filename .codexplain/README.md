@@ -1,64 +1,21 @@
 # Codexplain Local Adapter
 
-This directory is project-local.
+This directory is project-local and Rust-only at runtime.
 
-Use this adapter when a host can pipe a completed answer into a post-response
-command. The command is safe-by-default: if dynamic rewriting fails, the
-original answer is printed unchanged by the adapter.
+Use this adapter when a host can pipe a completed answer into a post-response command:
 
 ```bash
-node .codexplain/post-response.mjs
+.codexplain/post-response --prompt "흐름도로 설명해줘"
 ```
 
-To force deterministic local shaping without a dynamic provider:
+Input may be plain text or JSON with `prompt` and `response` fields. The Rust core preserves exact JSON, code, diffs, logs, and test output when strict formatting matters.
 
-```bash
-CODEXPLAIN_LOCAL_SHAPE=1 node .codexplain/post-response.mjs
+Explanation depth uses 3-stage controls:
+
+```text
+explanationDepth light/standard/deep
+architectureDepth overview/system/internals
+abstractionLevel concrete/architecture/strategy
 ```
 
-Input can be JSON:
-
-```json
-{"prompt":"흐름도로 설명해줘","response":"구현은 완료됐습니다."}
-```
-
-Or plain text with `CODEXPLAIN_PROMPT` set.
-
-Dynamic rewriting is enabled by provider configuration:
-
-```bash
-export OPENAI_API_KEY=...
-export CODEXPLAIN_DYNAMIC=1
-```
-
-For a local or custom model command, set `CODEXPLAIN_REWRITE_COMMAND`. The command
-receives JSON on stdin and must print the rewritten answer on stdout.
-
-Adaptive explanation preferences, including terminal color theme and ASCII frame
-style, are stored project-locally in
-`.codexplain/ux-profile.json` when users run `codexplain profile`,
-`codexplain feedback`, or `codexplain rlhf`.
-
-Renderer selection is compositional. If the prompt asks for architecture,
-tradeoff, and formula views together, Codexplain should combine table/flow
-architecture context, pros/cons comparison, and a formula box instead of
-dropping later requested formats. Progress prompts should render a short status
-line, progress bar, and checkpoint table so users can scan current state before
-reading details. Rich work-state prompts may add status badges, checklists, risk
-panels, confidence meters, diff summary cards, decision matrices, ETA strips,
-attention callouts, and next-action footers. Select these blocks like
-tool-calling choices from prompt and response signals instead of showing every
-component by default. Explanation depth uses 3-stage controls:
-explanationDepth light/standard/deep, architectureDepth overview/system/internals,
-and abstractionLevel concrete/architecture/strategy. The selector supports
-explicit rules, score thresholds, and optional planner hints through
-CODEXPLAIN_UX_PLAN or CODEXPLAIN_UX_PLANNER_COMMAND.
-
-Storage safety preferences are stored in `.codexplain/config.json`. Adjust
-`storageCheck.minFree.value` to override the project-local threshold used by
-`codexplain storage-check`; the `--min-free-gb` CLI flag still wins for one
-command invocation.
-
-Ouroboros automation must stay project-local. If an evolve or ralph run starts
-emitting acceptance criteria from another project, cancel it and restart with an
-explicit Seed for this repository before allowing further file mutations.
+UX selection combines explicit rules, score thresholds, and optional planner hints through `CODEXPLAIN_UX_PLAN` or `CODEXPLAIN_UX_PLANNER_COMMAND`.

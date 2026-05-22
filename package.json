@@ -2,21 +2,22 @@
   "name": "codexplain",
   "version": "0.18.0",
   "description": "Readable explanation UX layer for Codex responses",
-  "type": "module",
   "bin": {
-    "codexplain": "bin/codexplain.js",
-    "codexplain-codex": "bin/codexplain-codex.js",
-    "claudex": "bin/claudex.js",
-    "claudex-codex": "bin/claudex-codex.js"
+    "codexplain": "bin/codexplain",
+    "codexplain-codex": "bin/codexplain-codex",
+    "claudex": "bin/claudex",
+    "claudex-codex": "bin/claudex-codex"
   },
   "scripts": {
-    "test": "node --test test/*.test.js",
-    "check": "node --test test/*.test.js",
-    "demo": "node bin/codexplain.js demo",
+    "test": "cargo test",
+    "check": "cargo fmt --check && cargo test",
+    "demo": "cargo run --quiet -- demo",
     "build:rust": "cargo build --release",
     "test:rust": "cargo test",
-    "storage-check": "node bin/codexplain.js storage-check",
-    "on": "node bin/claudex.js install-codex --local --force"
+    "storage-check": "cargo run --quiet -- storage-check",
+    "on": "cargo run --quiet -- install-codex --local --force",
+    "build-size": "cargo run --quiet -- build-size",
+    "build-clean": "cargo run --quiet -- build-clean --target"
   },
   "keywords": [
     "codex",
@@ -34,8 +35,5 @@
   "bugs": {
     "url": "https://github.com/NomaDamas/Codexplain/issues"
   },
-  "license": "MIT",
-  "engines": {
-    "node": ">=20"
-  }
+  "license": "MIT"
 }

@@ -1,6 +1,8 @@
 use std::env;
 use std::fs;
 use std::io::{self, Read};
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -407,10 +409,22 @@ fn terminal_supports_ansi<F>(env_value: F) -> bool
 where
     F: Fn(&str) -> Option<String>,
 {
-    if env_nonempty(env_value("NO_COLOR"))
-        || env_flag_enabled(env_value("CODEXPLAIN_NO_COLOR"))
+    if env_flag_enabled(env_value("CODEXPLAIN_NO_COLOR"))
         || env_flag_enabled(env_value("CLAUDEX_NO_COLOR"))
     {
+        return false;
+    }
+    if let Some(value) = env_value("CODEXPLAIN_COLOR").or_else(|| env_value("CLAUDEX_COLOR")) {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "0" | "false" | "off" | "none" | "never" | "no-color" | "plain" => return false,
+            "1" | "true" | "on" | "yes" | "always" | "force" | "color" => return true,
+            _ => {}
+        }
+    }
+    if env_flag_enabled(env_value("CLICOLOR_FORCE")) {
+        return true;
+    }
+    if env_nonempty(env_value("NO_COLOR")) {
         return false;
     }
     if matches!(env_value("TERM").as_deref(), Some("dumb")) {
@@ -418,14 +432,6 @@ where
     }
     if matches!(env_value("CLICOLOR").as_deref(), Some("0")) {
         return false;
-    }
-    if let Some(value) = env_value("CODEXPLAIN_COLOR").or_else(|| env_value("CLAUDEX_COLOR")) {
-        if matches!(
-            value.trim().to_ascii_lowercase().as_str(),
-            "0" | "false" | "off" | "none" | "never" | "no-color" | "plain"
-        ) {
-            return false;
-        }
     }
     true
 }
@@ -1586,14 +1592,34 @@ fn color(theme: Theme, role: &str, value: &str) -> String {
 
 fn role_for(value: &str, fallback: &str) -> &'static str {
     match value.trim().to_ascii_lowercase().as_str() {
-        "tldr" | "핵심" | "결론" | "장점" | "pros" | "success" => "success",
-        "단점" | "위험" | "주의" | "cons" | "risk" | "warning" => "warning",
-        "오류" | "실패" | "danger" | "error" => "danger",
+        "tldr" | "핵심" | "결론" | "장점" | "pros" | "success" | "완료" | "pass" => {
+            "success"
+        }
+        "단점" | "위험" | "주의" | "cons" | "risk" | "warning" | "진행" | "남음" => {
+            "warning"
+        }
+        "오류" | "실패" | "danger" | "error" | "blocked" => "danger",
+        "다음 행동" | "선택기" | "아키텍처" | "추상화" | "구현" => "heading",
         _ => match fallback {
             "heading" => "heading",
             "border" => "border",
+            "muted" => "muted",
             _ => "accent",
         },
+    }
+}
+
+fn role_for_cell(value: &str, fallback: &str, cell_index: usize) -> &'static str {
+    let direct = role_for(value, fallback);
+    if direct != "accent" {
+        return direct;
+    }
+    match (fallback, cell_index) {
+        ("heading", _) => "heading",
+        (_, 0) => "heading",
+        (_, 1) => "accent",
+        (_, 2) => "success",
+        (_, _) => "muted",
     }
 }
 
@@ -1891,7 +1917,7 @@ fn wrapped_row(
                 .get(line_index)
                 .map(String::as_str)
                 .unwrap_or("");
-            let role = role_for(cell, default_role);
+            let role = role_for_cell(cell, default_role, cell_index);
             line = line.text(color(theme, role, &layout.padded_cell(cell, *width)));
             line = line.text(color(
                 theme,
@@ -3513,14 +3539,267 @@ fn post_response(args: &[String]) {
     print!("{}", shape(&prompt, &response, &profile, width));
 }
 
+const CODEX_GUIDANCE_START: &str = "<!-- CODEXPLAIN:START -->";
+const CODEX_GUIDANCE_END: &str = "<!-- CODEXPLAIN:END -->";
+const CODEX_GUIDANCE: &str = r#"<!-- CODEXPLAIN:START -->
+# Codexplain Response UX
+
+For this repository only, shape user-facing answers with a clear, readable terminal experience while preserving Codex's coding precision.
+
+Default answer style:
+- Start with the outcome or current state, not implementation detail.
+- Use concise Korean first when the user writes Korean.
+- Use connected Unicode boxes or tables when structure helps scanning.
+- Use semantic ANSI colors for labels, risks, success states, and next actions when the terminal supports color.
+- Respect explanationDepth light/standard/deep, architectureDepth overview/system/internals, and abstractionLevel concrete/architecture/strategy.
+- Select renderers dynamically: TLDR prose, progress, tables, flow diagrams, pros/cons, formula boxes, status badges, checklists, risk panels, confidence meters, decision matrices, ETA strips, callouts, and next-action footers.
+- Treat UX blocks like tool choices: combine the smallest useful set from prompt, response, profile, and optional planner hints.
+- Keep commands, paths, risks, test evidence, and exact technical facts intact.
+- Do not continue an Ouroboros evolve/ralph lineage if drift is detected. Restart with an explicit project-local Seed.
+
+Strict-output safety:
+- Do not rewrite JSON, code blocks, diffs, patches, logs, test output, or commit messages when exact formatting matters.
+- If exact formatting matters, return the artifact unchanged.
+
+Terminal UX:
+- Use connected box-drawing characters such as ┌ ┬ ┐ │ ├ ┼ ┤ └ ┴ ┘.
+- Do not use broken pseudo-borders made from repeated hyphens, equals signs, or Korean long vowel marks.
+<!-- CODEXPLAIN:END -->"#;
+
+const LOCAL_README: &str = r#"# Codexplain Local Adapter
+
+This directory is project-local and Rust-only at runtime.
+
+Use this adapter when a host can pipe a completed answer into a post-response command:
+
+```bash
+.codexplain/post-response --prompt "흐름도로 설명해줘"
+```
+
+Input may be plain text or JSON with `prompt` and `response` fields. The Rust core preserves exact JSON, code, diffs, logs, and test output when strict formatting matters.
+
+Explanation depth uses 3-stage controls:
+
+```text
+explanationDepth light/standard/deep
+architectureDepth overview/system/internals
+abstractionLevel concrete/architecture/strategy
+```
+
+UX selection combines explicit rules, score thresholds, and optional planner hints through `CODEXPLAIN_UX_PLAN` or `CODEXPLAIN_UX_PLANNER_COMMAND`.
+"#;
+
+const LOCAL_CONFIG: &str = r#"{
+  "schemaVersion": 1,
+  "storageCheck": {
+    "minFree": {
+      "value": 5,
+      "unit": "gb"
+    }
+  }
+}
+"#;
+
+const POST_RESPONSE_SH: &str = r#"#!/usr/bin/env sh
+set -eu
+exec codexplain post-response "$@"
+"#;
+
+fn set_executable(path: &Path) -> io::Result<()> {
+    #[cfg(unix)]
+    {
+        let mut permissions = fs::metadata(path)?.permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(path, permissions)?;
+    }
+    Ok(())
+}
+
+fn install_codex_project(_args: &[String]) -> io::Result<()> {
+    let root = project_path(".");
+    let codexplain_dir = root.join(".codexplain");
+    fs::create_dir_all(&codexplain_dir)?;
+    fs::write(codexplain_dir.join("README.md"), LOCAL_README)?;
+    fs::write(codexplain_dir.join("config.json"), LOCAL_CONFIG)?;
+    let post_response = codexplain_dir.join("post-response");
+    fs::write(&post_response, POST_RESPONSE_SH)?;
+    set_executable(&post_response)?;
+
+    let agents_path = root.join("AGENTS.md");
+    let next = if let Ok(current) = fs::read_to_string(&agents_path) {
+        replace_guidance_block(&current, CODEX_GUIDANCE)
+    } else {
+        format!("{CODEX_GUIDANCE}\n")
+    };
+    fs::write(agents_path, next)?;
+    println!("Installed project-local Codex UX: .codexplain/post-response, .codexplain/README.md, .codexplain/config.json, AGENTS.md");
+    Ok(())
+}
+
+fn replace_guidance_block(current: &str, block: &str) -> String {
+    let Some(start) = current.find(CODEX_GUIDANCE_START) else {
+        return format!("{}\n\n{}\n", current.trim_end(), block);
+    };
+    let Some(end_offset) = current[start..].find(CODEX_GUIDANCE_END) else {
+        return format!("{}\n\n{}\n", current.trim_end(), block);
+    };
+    let end = start + end_offset + CODEX_GUIDANCE_END.len();
+    format!(
+        "{}{}{}",
+        current[..start].trim_end(),
+        format!("\n\n{block}\n"),
+        current[end..].trim_start()
+    )
+}
+
+fn feedback(args: &[String], rlhf: bool) -> io::Result<()> {
+    let mut profile = load_profile();
+    let rating = arg_value(args, "--rating").and_then(|value| value.parse::<i32>().ok());
+    let comment = arg_value(args, "--comment").unwrap_or("");
+    if let Some(detail) = arg_value(args, "--detail") {
+        profile.detail = detail.to_string();
+        profile.explanation_depth = normalize_explanation_depth(detail, &profile.explanation_depth);
+    }
+    if let Some(style) = arg_value(args, "--style").or_else(|| arg_value(args, "--set-style")) {
+        profile.style = style.to_string();
+    }
+    let lower = comment.to_ascii_lowercase();
+    if lower.contains("more detail") || comment.contains("자세") || comment.contains("부족") {
+        profile.explanation_depth = "deep".to_string();
+    }
+    if lower.contains("short") || comment.contains("짧") || comment.contains("간단") {
+        profile.explanation_depth = "light".to_string();
+    }
+    if lower.contains("architecture") || comment.contains("아키텍처") || comment.contains("구조")
+    {
+        profile.architecture_depth = "internals".to_string();
+    }
+    save_profile(&profile)?;
+    if rlhf {
+        println!("Updated .codexplain/ux-profile.json\n- rating: {}\n- explanationDepth: {}\n- architectureDepth: {}\n- abstractionLevel: {}", rating.map(|v| v.to_string()).unwrap_or_else(|| "none".to_string()), profile.explanation_depth, profile.architecture_depth, profile.abstraction_level);
+    } else {
+        println!(
+            "Updated .codexplain/ux-profile.json: explanationDepth={}, style={}",
+            profile.explanation_depth, profile.style
+        );
+    }
+    Ok(())
+}
+
+fn guide(args: &[String]) {
+    let prompt = arg_value(args, "--prompt").unwrap_or("");
+    let profile = load_profile_for_args(args);
+    println!(
+        "Codexplain guidance\n- prompt: {}\n- explanationDepth: {}\n- architectureDepth: {}\n- abstractionLevel: {}\n- theme: {}\n- frame: {}\n- rule: preserve strict artifacts, then choose the smallest useful renderer set",
+        prompt,
+        profile.explanation_depth,
+        profile.architecture_depth,
+        profile.abstraction_level,
+        profile.theme.name(),
+        if profile.frame == Frame::Ascii { "ascii" } else { "unicode" }
+    );
+}
+
+fn run_codex(args: &[String]) -> i32 {
+    let mut codex_args = Vec::new();
+    let mut prompt = String::new();
+    let mut local_shape = false;
+    let mut index = 0;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--prompt" => {
+                if let Some(value) = args.get(index + 1) {
+                    prompt = value.clone();
+                }
+                index += 2;
+            }
+            "--local-shape" => {
+                local_shape = true;
+                index += 1;
+            }
+            other => {
+                codex_args.push(other.to_string());
+                index += 1;
+            }
+        }
+    }
+    if codex_args.is_empty() {
+        codex_args.push("exec".to_string());
+        if !prompt.is_empty() {
+            codex_args.push(prompt.clone());
+        }
+    }
+    let output = Command::new("codex").args(&codex_args).output();
+    let Ok(output) = output else {
+        eprintln!("failed to run codex; ensure Codex CLI is installed and on PATH");
+        return 127;
+    };
+    if !output.stderr.is_empty() {
+        eprint!("{}", String::from_utf8_lossy(&output.stderr));
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    if local_shape || env_flag_enabled(env::var("CODEXPLAIN_LOCAL_SHAPE").ok()) {
+        let profile = load_profile();
+        let effective_prompt = if prompt.is_empty() {
+            codex_args.join(" ")
+        } else {
+            prompt
+        };
+        print!(
+            "{}",
+            shape(&effective_prompt, &stdout, &profile, terminal_width())
+        );
+    } else {
+        print!("{stdout}");
+    }
+    output.status.code().unwrap_or(1)
+}
+
+fn terminal_width() -> usize {
+    env::var("CODEXPLAIN_WIDTH")
+        .or_else(|_| env::var("COLUMNS"))
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(100)
+}
+
+fn build_size() {
+    let root = project_path(".");
+    let binary = root.join("target/release/codexplain");
+    let target = root.join("target");
+    let binary_mb = fs::metadata(binary)
+        .map(|meta| meta.len() as f64 / 1024.0 / 1024.0)
+        .unwrap_or(0.0);
+    let target_mb = dir_size(&target) as f64 / 1024.0 / 1024.0;
+    println!("contract=codexplain.build-size.v1\nbinary_mb={binary_mb:.2}\ntarget_mb={target_mb:.1}\nstatus=ok");
+}
+
+fn build_clean(args: &[String]) -> io::Result<()> {
+    let root = project_path(".");
+    if args.iter().any(|arg| arg == "--target") || args.iter().any(|arg| arg == "--all") {
+        match cleanup_project_storage_dir(&root, "target")? {
+            TargetCleanup::Removed => println!("cleaned=target"),
+            TargetCleanup::AlreadyAbsent => println!("cleaned=target_already_absent"),
+        }
+    } else {
+        println!("nothing_cleaned=pass --target to remove Cargo target artifacts");
+    }
+    Ok(())
+}
+
 fn usage() -> &'static str {
     "Usage:
   codexplain shape --prompt <text> [--response <text>] [--width <n>]
   codexplain post-response --prompt <text> [--width <n>]
+  codexplain codex --prompt <text> [--local-shape] [codex exec args...]
+  codexplain install-codex --local [--force]
+  codexplain feedback|rlhf --rating <1-5> --comment <text>
   codexplain profile --show|--theme <name>|--frame <unicode|ascii|fallback|auto>|--index-style <style>|--detail <level>
   codexplain profile --explanation-depth <light|standard|deep>|--architecture-depth <overview|system|internals>|--abstraction-level <concrete|architecture|strategy>
   codexplain profile --detail-scale <0-100>|--ux-density <0-100>|--risk-sensitivity <0-100>
   codexplain demo
+  codexplain build-size
+  codexplain build-clean --target
   codexplain storage-check [--min-free-gb 5] [--clean]
 
 Storage-check output contract:
@@ -3556,6 +3835,26 @@ fn main() {
             println!("{}", shape(prompt, &response, &profile, width));
         }
         "post-response" => post_response(&args),
+        "codex" => std::process::exit(run_codex(&args[1..])),
+        "install-codex" | "init" => {
+            if let Err(error) = install_codex_project(&args) {
+                eprintln!("failed to install project-local Codexplain files: {error}");
+                std::process::exit(1);
+            }
+        }
+        "guide" => guide(&args),
+        "feedback" => {
+            if let Err(error) = feedback(&args, false) {
+                eprintln!("failed to save feedback: {error}");
+                std::process::exit(1);
+            }
+        }
+        "rlhf" => {
+            if let Err(error) = feedback(&args, true) {
+                eprintln!("failed to save rlhf feedback: {error}");
+                std::process::exit(1);
+            }
+        }
         "profile" => {
             let mut profile = load_profile();
             if args.iter().any(|arg| arg == "--show") {
@@ -3628,6 +3927,13 @@ fn main() {
             print_profile(&profile);
         }
         "storage-check" => storage_check(&args),
+        "build-size" => build_size(),
+        "build-clean" => {
+            if let Err(error) = build_clean(&args) {
+                eprintln!("failed to clean build artifacts: {error}");
+                std::process::exit(1);
+            }
+        }
         "pros-cons" => println!("{}", pros_cons(&load_profile_for_args(&args))),
         "formula" => println!(
             "{}",
@@ -4054,6 +4360,42 @@ mod tests {
         assert_eq!(
             Theme::Warm.apply_terminal_policy(|key| match key {
                 "TERM" => Some("dumb".to_string()),
+                _ => None,
+            }),
+            Theme::None
+        );
+    }
+
+    #[test]
+    fn forced_color_overrides_non_interactive_terminal_defaults() {
+        assert_eq!(
+            Theme::Ocean.apply_terminal_policy(|key| match key {
+                "TERM" => Some("dumb".to_string()),
+                "CODEXPLAIN_COLOR" => Some("always".to_string()),
+                _ => None,
+            }),
+            Theme::Ocean
+        );
+        assert_eq!(
+            Theme::Grape.apply_terminal_policy(|key| match key {
+                "TERM" => Some("dumb".to_string()),
+                "CLICOLOR_FORCE" => Some("1".to_string()),
+                _ => None,
+            }),
+            Theme::Grape
+        );
+        assert_eq!(
+            Theme::Sunset.apply_terminal_policy(|key| match key {
+                "NO_COLOR" => Some("1".to_string()),
+                "CODEXPLAIN_COLOR" => Some("always".to_string()),
+                _ => None,
+            }),
+            Theme::Sunset
+        );
+        assert_eq!(
+            Theme::Sunset.apply_terminal_policy(|key| match key {
+                "CODEXPLAIN_NO_COLOR" => Some("true".to_string()),
+                "CODEXPLAIN_COLOR" => Some("always".to_string()),
                 _ => None,
             }),
             Theme::None

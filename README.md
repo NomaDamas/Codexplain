@@ -87,6 +87,13 @@ Available color themes include:
 none, ocean, forest, warm, sunset, grape, slate, rose, mono
 ```
 
+If your shell sets `NO_COLOR=1` but you want Codexplain color anyway, force it
+for this project command:
+
+```bash
+CODEXPLAIN_COLOR=always codexplain shape --theme grape --prompt "강조해서 설명" --response "완료 PASS"
+```
+
 Give feedback after an answer:
 
 ```bash
@@ -107,7 +114,7 @@ Codexplain policy
 UX profile
     │ detail, style, audience, color, frame, feedback reward
     ▼
-Shaper / dynamic rewriter
+Rust shaper / renderer
     │ TLDR, evidence, next action, table/flow layout
     ▼
 Readable terminal answer
@@ -243,40 +250,36 @@ text.
 codexplain demo
 codexplain guide --prompt "현재 상태를 쉽게 설명해줘"
 codexplain shape --prompt "흐름도로 설명해줘" --response "구현은 완료됐습니다."
-codexplain shape --prompt "JS와 Rust 장단점을 pros and cons 표와 수식으로 설명해줘" --response "JS는 실험에 좋고 Rust는 제품화에 좋습니다."
-codexplain post-response --local-shape --prompt "쉽게 설명해줘"
+codexplain shape --prompt "Rust-only 전환을 pros and cons 표와 수식으로 설명해줘" --response "Rust는 단일 바이너리와 낮은 런타임 의존성에 유리합니다."
+codexplain post-response --prompt "쉽게 설명해줘"
 codexplain feedback --rating 2 --comment "너무 어렵고 설명이 부족해"
 codexplain rlhf --rating 5 --comment "이 스타일이 좋아"
+codexplain build-size
+codexplain build-clean --target
 ```
 
-Dynamic rewriting can use OpenAI or a local command:
-
-```bash
-export CODEXPLAIN_DYNAMIC=1
-export OPENAI_API_KEY=...
-```
-
-```bash
-export CODEXPLAIN_DYNAMIC=1
-export CODEXPLAIN_REWRITE_COMMAND="node ./my-rewriter.mjs"
-```
+Renderer composition is local and deterministic by default. If you need an
+external planner to choose UX blocks, set `CODEXPLAIN_UX_PLAN` or
+`CODEXPLAIN_UX_PLANNER_COMMAND`; Rust still performs the final strict-output
+check and terminal rendering.
 
 Legacy `claudex` and `claudex-codex` command names remain as compatibility
 aliases, but `codexplain` is the official command.
 
 ## 🦀 Rust Core
 
-The primary `codexplain` CLI routes core explanation and terminal rendering
-commands through the Rust binary. Node remains as a thin compatibility layer for
-npm distribution, project installation, and Codex wrapper integration while the
-remaining wrapper pieces are ported.
+The runtime implementation is Rust-only. Shell launchers in `bin/` locate the
+release binary at `target/release/codexplain` and fall back to `cargo run` while
+developing. There are no project JS/MJS runtime files.
 
 The Rust core is dependency-free, fast to start, and keeps build output under
-ignored `target/`.
+ignored `target/`. Build artifact controls are explicit:
 
 ```bash
 cargo run --bin codexplain -- pros-cons
 cargo run --bin codexplain -- formula --frame ascii
+cargo run --bin codexplain -- build-size
+cargo run --bin codexplain -- build-clean --target
 cargo run --bin codexplain -- storage-check --min-free-gb 5
 cargo run --bin codexplain -- storage-check --min-free-gb 5 --clean
 cargo test
@@ -324,13 +327,13 @@ Seed instead of reusing the drifted lineage.
 Current Seed coverage should include:
 
 - Rust is the actual terminal explanation UX core, not a prototype.
-- Node remains a thin npm, install, legacy, and Codex wrapper surface.
+- JS runtime has been removed; only shell launchers and the Rust binary remain.
 - Dynamic renderer selection can compose multiple requested formats.
 - Project-local profile, storage config, and post-response adapter are written
   under `.codexplain/` only.
 - Storage cleanup only removes `target/` below the effective threshold.
-- Verification includes Rust tests, Node tests, release build, diff whitespace,
-  forbidden trace grep, and `storage-check`.
+- Verification includes Rust tests, release build, diff whitespace, forbidden
+  trace grep, JS-file trace check, `build-size`, and `storage-check`.
 
 Gap checks added for the renderer migration:
 
@@ -349,7 +352,7 @@ Setup writes:
 
 ```text
 AGENTS.md
-.codexplain/post-response.mjs
+.codexplain/post-response
 .codexplain/README.md
 .codexplain/config.json
 .codexplain/ux-profile.json
@@ -358,14 +361,12 @@ AGENTS.md
 Repository layout:
 
 ```text
-bin/codexplain.js        CLI entrypoint
-bin/codexplain-codex.js  Codex wrapper
-src/policy.js            strict-output protection
-src/evolution.js         UX profile and feedback loop
-src/shaper.js            deterministic answer shaping
-src/renderer.js          Unicode tables, flows, responsive panels
-src/dynamic-rewriter.js  provider-backed rewrite layer
-rust/codexplain.rs       dependency-free Rust CLI core
+bin/codexplain        shell launcher for the Rust CLI
+bin/codexplain-codex  shell launcher for Codex wrapping
+bin/claudex           legacy compatibility alias
+bin/claudex-codex     legacy compatibility alias
+rust/codexplain.rs    dependency-free Rust CLI core
+target/               ignored Cargo build artifacts
 ```
 
 ## ✅ Verification
@@ -376,5 +377,6 @@ npm run check
 cargo fmt --check
 cargo test
 cargo build --release
-node bin/codexplain.js storage-check --min-free-gb 5
+./bin/codexplain build-size
+./bin/codexplain storage-check --min-free-gb 5
 ```
