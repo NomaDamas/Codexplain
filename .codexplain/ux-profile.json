@@ -12,6 +12,9 @@
     "max": "architecture"
   },
   "detailLayers": ["tldr", "summary", "architecture", "implementation", "evidence", "next-step"],
+  "explanationDepth": "deep",
+  "architectureDepth": "system",
+  "abstractionLevel": "architecture",
   "detailScale": 80,
   "uxDensity": 65,
   "riskSensitivity": 60,

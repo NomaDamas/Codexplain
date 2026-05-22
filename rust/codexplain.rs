@@ -283,6 +283,9 @@ struct Profile {
     abstraction_min: String,
     abstraction_max: String,
     layers: Vec<String>,
+    explanation_depth: String,
+    architecture_depth: String,
+    abstraction_level: String,
     detail_scale: u8,
     ux_density: u8,
     risk_sensitivity: u8,
@@ -308,6 +311,9 @@ impl Default for Profile {
                 "evidence".to_string(),
                 "next-step".to_string(),
             ],
+            explanation_depth: "deep".to_string(),
+            architecture_depth: "system".to_string(),
+            abstraction_level: "architecture".to_string(),
             detail_scale: 80,
             ux_density: 65,
             risk_sensitivity: 60,
@@ -932,6 +938,45 @@ fn clamp_control(value: i32) -> u8 {
 
 fn parse_control_value(value: &str) -> Option<u8> {
     value.trim().parse::<i32>().ok().map(clamp_control)
+}
+
+fn normalize_explanation_depth(value: &str, fallback: &str) -> String {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "light" | "brief" | "simple" | "shallow" | "low" | "얕게" | "간단" => {
+            "light".to_string()
+        }
+        "standard" | "balanced" | "normal" | "medium" | "mid" | "보통" => "standard".to_string(),
+        "deep" | "detailed" | "high" | "깊게" | "자세" | "상세" => "deep".to_string(),
+        _ => fallback.to_string(),
+    }
+}
+
+fn normalize_architecture_depth(value: &str, fallback: &str) -> String {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "overview" | "surface" | "light" | "low" | "요약" | "개요" => "overview".to_string(),
+        "system" | "standard" | "balanced" | "architecture" | "medium" | "보통" => {
+            "system".to_string()
+        }
+        "internals" | "internal" | "implementation" | "deep" | "high" | "내부" | "구현" => {
+            "internals".to_string()
+        }
+        _ => fallback.to_string(),
+    }
+}
+
+fn normalize_abstraction_level(value: &str, fallback: &str) -> String {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "concrete" | "implementation" | "low" | "code" | "구체" | "코드" => {
+            "concrete".to_string()
+        }
+        "architecture" | "system" | "medium" | "mid" | "구조" | "아키텍처" => {
+            "architecture".to_string()
+        }
+        "strategy" | "strategic" | "high" | "concept" | "전략" | "상위" => {
+            "strategy".to_string()
+        }
+        _ => fallback.to_string(),
+    }
 }
 
 fn parse_ux_component(value: &str) -> Option<UxComponent> {
@@ -1884,7 +1929,7 @@ fn architecture_panels(profile: &Profile, summary: &str, width: usize) -> String
     };
     let table_panel = table(
         &["계층", "역할"],
-        &layer_rows(summary),
+        &layer_rows(summary, profile),
         profile.frame,
         profile.theme,
         true,
@@ -2518,12 +2563,16 @@ fn pros_cons_table(max_width: usize) -> Table {
 }
 
 fn summary_sentence_limit(profile: &Profile) -> usize {
-    let scaled = (profile.detail_scale as usize / 10).clamp(1, 10);
-    match profile.detail.as_str() {
-        "brief" => scaled.clamp(1, 3),
-        "balanced" => scaled.clamp(3, 6),
-        "deep" => scaled.clamp(6, 10),
-        _ => scaled.clamp(3, 8),
+    match profile.explanation_depth.as_str() {
+        "light" => 3,
+        "standard" => 6,
+        "deep" => 10,
+        _ => match profile.detail.as_str() {
+            "brief" => 3,
+            "balanced" => 6,
+            "deep" => 10,
+            _ => 6,
+        },
     }
 }
 
@@ -2558,7 +2607,7 @@ fn dispatch_explanation(
         } else if requested.contains(&RendererKind::Table) {
             sections.push(table(
                 &["구분", "내용"],
-                &layer_rows(summary),
+                &layer_rows(summary, profile),
                 profile.frame,
                 profile.theme,
                 true,
@@ -2639,7 +2688,7 @@ fn dispatch_explanation(
         ExplanationIntent::ProgressReport => progress_report(profile, response, summary, width),
         ExplanationIntent::StructuredSummary => table(
             &["구분", "내용"],
-            &layer_rows(summary),
+            &layer_rows(summary, profile),
             profile.frame,
             profile.theme,
             true,
@@ -2738,23 +2787,51 @@ fn split_sentences(text: &str) -> Vec<String> {
     }
 }
 
-fn layer_rows(summary: &str) -> Vec<Vec<String>> {
-    vec![
+fn layer_rows(summary: &str, profile: &Profile) -> Vec<Vec<String>> {
+    let mut rows = vec![
         vec!["TLDR".to_string(), compact(summary, 1)],
         vec!["핵심".to_string(), summary.to_string()],
-        vec![
-            "구조".to_string(),
-            "CLI → Policy → Evolution → Shaper → Renderer 순서로 책임을 나눕니다.".to_string(),
-        ],
-        vec![
+    ];
+
+    let architecture = match profile.architecture_depth.as_str() {
+        "overview" => "CLI → Policy → Renderer 흐름만 빠르게 봅니다.",
+        "internals" => {
+            "CLI wrapper → Rust selector → table/flow/formula primitives → ANSI/theme 출력까지 봅니다."
+        }
+        _ => "CLI → Policy → Evolution → Shaper → Renderer 순서로 책임을 나눕니다.",
+    };
+    rows.push(vec!["아키텍처".to_string(), architecture.to_string()]);
+
+    if profile.architecture_depth != "overview" {
+        rows.push(vec![
+            "선택기".to_string(),
+            "명시적 룰, 점수 기반 UX selector, 선택적 planner hint를 조합합니다.".to_string(),
+        ]);
+    }
+
+    if profile.architecture_depth == "internals" || profile.explanation_depth == "deep" {
+        rows.push(vec![
             "구현".to_string(),
-            "파일/명령/검증 근거처럼 실행 가능한 세부 정보를 보존합니다.".to_string(),
-        ],
-        vec![
+            "프로필, 환경변수, prompt/response 신호를 Rust core에서 안전하게 합칩니다.".to_string(),
+        ]);
+    }
+
+    let abstraction = match profile.abstraction_level.as_str() {
+        "concrete" => "명령, 파일, 테스트처럼 바로 실행 가능한 수준으로 설명합니다.",
+        "strategy" => "왜 이 구조가 제품/사용자 경험에 유리한지 상위 의사결정으로 설명합니다.",
+        _ => "컴포넌트 책임과 데이터 흐름을 중심으로 설명합니다.",
+    };
+    rows.push(vec!["추상화".to_string(), abstraction.to_string()]);
+
+    if profile.explanation_depth != "light" {
+        rows.push(vec![
             "다음 행동".to_string(),
-            "필요하면 abstraction range와 detail layers를 조절합니다.".to_string(),
-        ],
-    ]
+            "필요하면 explanation-depth, architecture-depth, abstraction-level을 3단계로 조절합니다."
+                .to_string(),
+        ]);
+    }
+
+    rows
 }
 
 fn project_path(relative: &str) -> PathBuf {
@@ -2799,6 +2876,18 @@ fn load_profile() -> Profile {
         if let Some(layers) = extract_json_array_strings(&raw, "detailLayers") {
             profile.layers = layers;
         }
+        if let Some(value) = extract_json_string(&raw, "explanationDepth") {
+            profile.explanation_depth =
+                normalize_explanation_depth(&value, &profile.explanation_depth);
+        }
+        if let Some(value) = extract_json_string(&raw, "architectureDepth") {
+            profile.architecture_depth =
+                normalize_architecture_depth(&value, &profile.architecture_depth);
+        }
+        if let Some(value) = extract_json_string(&raw, "abstractionLevel") {
+            profile.abstraction_level =
+                normalize_abstraction_level(&value, &profile.abstraction_level);
+        }
         if let Some(detail_scale) = extract_json_u8(&raw, "detailScale") {
             profile.detail_scale = detail_scale;
         }
@@ -2819,6 +2908,16 @@ fn load_profile() -> Profile {
         env::var("CODEXPLAIN_INDEX_STYLE").or_else(|_| env::var("CLAUDEX_INDEX_STYLE"))
     {
         profile.index_style = IndexStyle::parse(Some(&index_style));
+    }
+    if let Ok(value) = env::var("CODEXPLAIN_EXPLANATION_DEPTH") {
+        profile.explanation_depth = normalize_explanation_depth(&value, &profile.explanation_depth);
+    }
+    if let Ok(value) = env::var("CODEXPLAIN_ARCHITECTURE_DEPTH") {
+        profile.architecture_depth =
+            normalize_architecture_depth(&value, &profile.architecture_depth);
+    }
+    if let Ok(value) = env::var("CODEXPLAIN_ABSTRACTION_LEVEL") {
+        profile.abstraction_level = normalize_abstraction_level(&value, &profile.abstraction_level);
     }
     if let Ok(value) = env::var("CODEXPLAIN_DETAIL_SCALE") {
         if let Some(parsed) = parse_control_value(&value) {
@@ -2855,6 +2954,16 @@ fn load_profile_for_args(args: &[String]) -> Profile {
     if let Some(layers) = arg_value(args, "--layers") {
         profile.layers = parse_layers(layers);
     }
+    if let Some(value) = arg_value(args, "--explanation-depth") {
+        profile.explanation_depth = normalize_explanation_depth(value, &profile.explanation_depth);
+    }
+    if let Some(value) = arg_value(args, "--architecture-depth") {
+        profile.architecture_depth =
+            normalize_architecture_depth(value, &profile.architecture_depth);
+    }
+    if let Some(value) = arg_value(args, "--abstraction-level") {
+        profile.abstraction_level = normalize_abstraction_level(value, &profile.abstraction_level);
+    }
     if let Some(value) = arg_value(args, "--detail-scale").and_then(parse_control_value) {
         profile.detail_scale = value;
     }
@@ -2890,6 +2999,9 @@ fn save_profile(profile: &Profile) -> io::Result<()> {
                 "    \"max\": \"{}\"\n",
                 "  }},\n",
                 "  \"detailLayers\": [\"{}\"],\n",
+                "  \"explanationDepth\": \"{}\",\n",
+                "  \"architectureDepth\": \"{}\",\n",
+                "  \"abstractionLevel\": \"{}\",\n",
                 "  \"detailScale\": {},\n",
                 "  \"uxDensity\": {},\n",
                 "  \"riskSensitivity\": {},\n",
@@ -2907,6 +3019,9 @@ fn save_profile(profile: &Profile) -> io::Result<()> {
             profile.abstraction_min,
             profile.abstraction_max,
             profile.layers.join("\", \""),
+            profile.explanation_depth,
+            profile.architecture_depth,
+            profile.abstraction_level,
             profile.detail_scale,
             profile.ux_density,
             profile.risk_sensitivity
@@ -3403,6 +3518,7 @@ fn usage() -> &'static str {
   codexplain shape --prompt <text> [--response <text>] [--width <n>]
   codexplain post-response --prompt <text> [--width <n>]
   codexplain profile --show|--theme <name>|--frame <unicode|ascii|fallback|auto>|--index-style <style>|--detail <level>
+  codexplain profile --explanation-depth <light|standard|deep>|--architecture-depth <overview|system|internals>|--abstraction-level <concrete|architecture|strategy>
   codexplain profile --detail-scale <0-100>|--ux-density <0-100>|--risk-sensitivity <0-100>
   codexplain demo
   codexplain storage-check [--min-free-gb 5] [--clean]
@@ -3469,6 +3585,18 @@ fn main() {
             }
             if let Some(layers) = arg_value(&args, "--layers") {
                 profile.layers = parse_layers(layers);
+            }
+            if let Some(value) = arg_value(&args, "--explanation-depth") {
+                profile.explanation_depth =
+                    normalize_explanation_depth(value, &profile.explanation_depth);
+            }
+            if let Some(value) = arg_value(&args, "--architecture-depth") {
+                profile.architecture_depth =
+                    normalize_architecture_depth(value, &profile.architecture_depth);
+            }
+            if let Some(value) = arg_value(&args, "--abstraction-level") {
+                profile.abstraction_level =
+                    normalize_abstraction_level(value, &profile.abstraction_level);
             }
             if let Some(value) = arg_value(&args, "--detail-scale").and_then(parse_control_value) {
                 profile.detail_scale = value;
@@ -3540,6 +3668,9 @@ fn print_profile(profile: &Profile) {
             "  \"preferredStructure\": \"{}\",\n",
             "  \"abstractionRange\": {{\"min\": \"{}\", \"max\": \"{}\"}},\n",
             "  \"detailLayers\": [\"{}\"],\n",
+            "  \"explanationDepth\": \"{}\",\n",
+            "  \"architectureDepth\": \"{}\",\n",
+            "  \"abstractionLevel\": \"{}\",\n",
             "  \"detailScale\": {},\n",
             "  \"uxDensity\": {},\n",
             "  \"riskSensitivity\": {}\n",
@@ -3559,6 +3690,9 @@ fn print_profile(profile: &Profile) {
         profile.abstraction_min,
         profile.abstraction_max,
         profile.layers.join("\", \""),
+        profile.explanation_depth,
+        profile.architecture_depth,
+        profile.abstraction_level,
         profile.detail_scale,
         profile.ux_density,
         profile.risk_sensitivity
@@ -5055,6 +5189,43 @@ mod tests {
         );
         assert!(output.contains("│ 진척      │ 진행 중 · 60%"), "{output}");
         assert!(output.contains("│ 다음 행동 │"), "{output}");
+    }
+
+    #[test]
+    fn three_stage_depth_controls_change_architecture_detail_rows() {
+        let light = Profile {
+            theme: Theme::None,
+            explanation_depth: "light".to_string(),
+            architecture_depth: "overview".to_string(),
+            abstraction_level: "concrete".to_string(),
+            ..Profile::default()
+        };
+        let deep = Profile {
+            theme: Theme::None,
+            explanation_depth: "deep".to_string(),
+            architecture_depth: "internals".to_string(),
+            abstraction_level: "strategy".to_string(),
+            ..Profile::default()
+        };
+        let response = "Codexplain은 Rust core와 Node wrapper를 함께 씁니다. Rust는 렌더링을 맡습니다. Node는 설치를 맡습니다. 검증은 cargo test입니다.";
+
+        let light_output = shape("아키텍처를 표로 설명해줘", response, &light, 100);
+        let deep_output = shape("아키텍처를 표로 설명해줘", response, &deep, 100);
+
+        assert!(
+            light_output.contains("CLI → Policy → Renderer"),
+            "{light_output}"
+        );
+        assert!(
+            light_output.contains("바로 실행 가능한 수준"),
+            "{light_output}"
+        );
+        assert!(!light_output.contains("선택기"), "{light_output}");
+        assert!(!light_output.contains("다음 행동"), "{light_output}");
+        assert!(deep_output.contains("Rust selector"), "{deep_output}");
+        assert!(deep_output.contains("선택적 planner hint"), "{deep_output}");
+        assert!(deep_output.contains("상위 의사결정"), "{deep_output}");
+        assert!(deep_output.contains("다음 행동"), "{deep_output}");
     }
 
     #[test]

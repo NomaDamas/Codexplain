@@ -53,21 +53,29 @@ Set your preferred style:
 codexplain profile --detail deep --set-style tutorial --theme ocean --frame unicode
 ```
 
-Control explanation layers, abstraction range, and numeric selector strength:
+Control explanation depth with 3-stage levels:
 
 ```bash
 codexplain profile \
-  --detail deep \
-  --detail-scale 85 \
-  --ux-density 70 \
-  --risk-sensitivity 80 \
-  --abstraction-range concrete:architecture \
+  --explanation-depth deep \
+  --architecture-depth internals \
+  --abstraction-level architecture \
   --layers tldr,summary,architecture,implementation,evidence,next-step
 ```
 
-Numeric controls are 0-100. `detail-scale` changes summary depth, `ux-density`
-changes how many implicit UX components are added, and `risk-sensitivity`
-changes how aggressively failure/risk/callout blocks appear.
+The 3-stage controls are intentionally non-numeric:
+
+```text
+explanation-depth  light | standard | deep
+architecture-depth overview | system | internals
+abstraction-level  concrete | architecture | strategy
+```
+
+Numeric controls still exist for selector tuning, not explanation depth:
+
+```bash
+codexplain profile --ux-density 70 --risk-sensitivity 80
+```
 
 Use `--theme ocean`, `forest`, or `warm` to make Codexplain terminal output
 color-highlight important labels. Use `--theme none` when copy/paste-safe plain
@@ -113,7 +121,9 @@ The result should be:
 - Unicode box tables and diagrams when they help scanning.
 - Row dividers in dense tables so long architecture lists are easier to track.
 - Semantic color highlights for labels such as TLDR, 핵심, 장점, 단점, 위험.
-- Adjustable abstraction range: concrete, implementation, architecture, strategy.
+- Three-stage explanation depth: light, standard, deep.
+- Three-stage architecture depth: overview, system, internals.
+- Three-stage abstraction level: concrete, architecture, strategy.
 - Adjustable detail layers: TLDR, summary, concept, mechanism, architecture,
   implementation, evidence, next-step.
 - Dynamic renderer selection: TLDR prose, progress reports, table, flow,
@@ -140,18 +150,18 @@ The result should be:
 ## 🧩 Adaptive UX Components
 
 Codexplain treats terminal UX blocks like a small renderer toolbox. It selects
-only the components that match the question, the answer state, numeric profile
-controls, and the terminal width. A simple explanation can stay as TLDR prose; a
-work-status answer can add a badge, progress bar, checklist, risk panel, and
-next action; a decision answer can add pros/cons, formula, confidence, and a
-decision matrix.
+only the components that match the question, the answer state, 3-stage depth
+profile, optional selector controls, and the terminal width. A simple
+explanation can stay as TLDR prose; a work-status answer can add a badge,
+progress bar, checklist, risk panel, and next action; a decision answer can add
+pros/cons, formula, confidence, and a decision matrix.
 
 Selector versions now available:
 
 - V1 rules: explicit prompt signals such as `progress`, `risk`, `수식`, or
   `장단점` map to known renderers.
-- V2 scores: implicit signals are scored against `uxDensity` and
-  `riskSensitivity`, so sparse and rich modes behave differently.
+- V2 scores: implicit UX signals are scored against `uxDensity` and
+  `riskSensitivity`, while explanation depth itself uses the 3-stage controls.
 - V3 planner hints: set `CODEXPLAIN_UX_PLAN="risk-panel,next-action"` or
   `CODEXPLAIN_UX_PLANNER_COMMAND` to let an external planner output component
   names; Rust still performs the final safe rendering.

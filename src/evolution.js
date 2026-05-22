@@ -34,6 +34,9 @@ export const DEFAULT_UX_PROFILE = Object.freeze({
     max: "architecture",
   },
   detailLayers: ["tldr", "summary", "architecture", "implementation", "evidence", "next-step"],
+  explanationDepth: "deep",
+  architectureDepth: "system",
+  abstractionLevel: "architecture",
   detailScale: 80,
   uxDensity: 65,
   riskSensitivity: 60,
@@ -139,6 +142,36 @@ function orderAbstractionRange(min, max) {
 }
 
 
+
+function normalizeThreeStage(value, fallback, aliases) {
+  const text = String(value ?? "").trim().toLowerCase();
+  return aliases[text] ?? fallback;
+}
+
+function normalizeExplanationDepth(value, fallback = DEFAULT_UX_PROFILE.explanationDepth) {
+  return normalizeThreeStage(value, fallback, {
+    light: "light", brief: "light", simple: "light", low: "light", "간단": "light",
+    standard: "standard", balanced: "standard", normal: "standard", medium: "standard", "보통": "standard",
+    deep: "deep", detailed: "deep", high: "deep", "자세": "deep", "상세": "deep",
+  });
+}
+
+function normalizeArchitectureDepth(value, fallback = DEFAULT_UX_PROFILE.architectureDepth) {
+  return normalizeThreeStage(value, fallback, {
+    overview: "overview", surface: "overview", light: "overview", low: "overview", "개요": "overview",
+    system: "system", standard: "system", balanced: "system", architecture: "system", medium: "system", "보통": "system",
+    internals: "internals", internal: "internals", implementation: "internals", deep: "internals", high: "internals", "내부": "internals", "구현": "internals",
+  });
+}
+
+function normalizeAbstractionLevel(value, fallback = DEFAULT_UX_PROFILE.abstractionLevel) {
+  return normalizeThreeStage(value, fallback, {
+    concrete: "concrete", implementation: "concrete", code: "concrete", low: "concrete", "구체": "concrete",
+    architecture: "architecture", system: "architecture", medium: "architecture", "아키텍처": "architecture", "구조": "architecture",
+    strategy: "strategy", strategic: "strategy", high: "strategy", concept: "strategy", "전략": "strategy",
+  });
+}
+
 function normalizeControl(value, fallback) {
   const number = Number(value);
   if (!Number.isFinite(number)) return fallback;
@@ -180,6 +213,9 @@ export function sanitizeUxProfile(profile = {}) {
     preferredStructure: normalizeStructure(profile.preferredStructure, DEFAULT_UX_PROFILE.preferredStructure),
     abstractionRange: normalizeAbstractionRange(profile.abstractionRange, DEFAULT_UX_PROFILE.abstractionRange),
     detailLayers: normalizeDetailLayers(profile.detailLayers, DEFAULT_UX_PROFILE.detailLayers),
+    explanationDepth: normalizeExplanationDepth(profile.explanationDepth, DEFAULT_UX_PROFILE.explanationDepth),
+    architectureDepth: normalizeArchitectureDepth(profile.architectureDepth, DEFAULT_UX_PROFILE.architectureDepth),
+    abstractionLevel: normalizeAbstractionLevel(profile.abstractionLevel, DEFAULT_UX_PROFILE.abstractionLevel),
     detailScale: normalizeControl(profile.detailScale, DEFAULT_UX_PROFILE.detailScale),
     uxDensity: normalizeControl(profile.uxDensity, DEFAULT_UX_PROFILE.uxDensity),
     riskSensitivity: normalizeControl(profile.riskSensitivity, DEFAULT_UX_PROFILE.riskSensitivity),
@@ -260,6 +296,9 @@ export function resolveUxProfile({ prompt = "", profile = DEFAULT_UX_PROFILE, en
       base.abstractionRange,
     ),
     detailLayers: normalizeDetailLayers(env.CODEXPLAIN_LAYERS ?? env.CLAUDEX_LAYERS, base.detailLayers),
+    explanationDepth: normalizeExplanationDepth(env.CODEXPLAIN_EXPLANATION_DEPTH, base.explanationDepth),
+    architectureDepth: normalizeArchitectureDepth(env.CODEXPLAIN_ARCHITECTURE_DEPTH, base.architectureDepth),
+    abstractionLevel: normalizeAbstractionLevel(env.CODEXPLAIN_ABSTRACTION_LEVEL, base.abstractionLevel),
     detailScale: normalizeControl(env.CODEXPLAIN_DETAIL_SCALE, base.detailScale),
     uxDensity: normalizeControl(env.CODEXPLAIN_UX_DENSITY, base.uxDensity),
     riskSensitivity: normalizeControl(env.CODEXPLAIN_RISK_SENSITIVITY, base.riskSensitivity),
@@ -334,6 +373,7 @@ export function buildRlhfSummary(profile = DEFAULT_UX_PROFILE) {
     `- negative: ${resolved.feedback.negative}`,
     `- rewardScore: ${resolved.feedback.rewardScore}`,
     `- next detail: ${resolved.detail}`,
+    `- 3-stage levels: explanationDepth=${resolved.explanationDepth}, architectureDepth=${resolved.architectureDepth}, abstractionLevel=${resolved.abstractionLevel}`,
     `- numeric controls: detailScale=${resolved.detailScale}, uxDensity=${resolved.uxDensity}, riskSensitivity=${resolved.riskSensitivity}`,
     `- next style: ${resolved.style}`,
     `- abstraction range: ${resolved.abstractionRange.min}..${resolved.abstractionRange.max}`,
@@ -367,6 +407,7 @@ export function buildUxContract(profile = DEFAULT_UX_PROFILE) {
     `- Audience: ${resolved.audience}.`,
     `- Abstraction range: ${resolved.abstractionRange.min}..${resolved.abstractionRange.max}. Stay inside that explanation level range.`,
     `- Detail layers: ${resolved.detailLayers.join(", ")}.`,
+    `- Three-stage levels: explanationDepth ${resolved.explanationDepth}, architectureDepth ${resolved.architectureDepth}, abstractionLevel ${resolved.abstractionLevel}.`,
     `- Numeric controls: detailScale ${resolved.detailScale}/100, uxDensity ${resolved.uxDensity}/100, riskSensitivity ${resolved.riskSensitivity}/100.`,
     "- Prefer answer-first structure, then why it matters, evidence, and next action.",
     "- In terminal output, use ANSI color when the active theme is not none; use colors to highlight labels, risks, and key terms.",

@@ -29,9 +29,12 @@ Default answer style:
 - Use richer terminal UX components when they improve scanning: status badges,
   checklists, risk panels, confidence meters, diff summary cards, decision
   matrices, ETA strips, attention callouts, and next-action footers.
-- Treat UX selection as a three-stage system: explicit rules first, numeric
-  score thresholds second, and optional planner hints third. Respect numeric
-  controls such as detailScale, uxDensity, and riskSensitivity when present.
+- Respect three-stage explanation controls when present: explanationDepth
+  light/standard/deep, architectureDepth overview/system/internals, and
+  abstractionLevel concrete/architecture/strategy.
+- Treat UX selection as a three-stage system: explicit rules first, score
+  thresholds second, and optional planner hints third. Numeric controls such as
+  uxDensity and riskSensitivity tune selector density, not explanation depth.
 - Choose the explanation renderer dynamically: TLDR prose for status/summary,
   progress reports with a short status line and progress bar for work tracking,
   tables for comparison, pros/cons panels for tradeoffs, numbered lists for
@@ -54,8 +57,8 @@ Default answer style:
 - Do not continue an Ouroboros evolve/ralph lineage if drift is detected.
   Restart with an explicit project-local Seed and verify the first events still
   match this repository before letting automation mutate files.
-- Respect abstraction range preferences such as concrete..implementation,
-  implementation..architecture, or architecture..strategy.
+- Prefer the three-stage abstractionLevel control for new behavior; treat legacy
+  abstraction ranges only as compatibility hints.
 
 Strict-output safety:
 - Do not rewrite JSON, code blocks, diffs, patches, logs, test output, or commit

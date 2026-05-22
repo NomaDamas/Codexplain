@@ -48,9 +48,11 @@ reading details. Rich work-state prompts may add status badges, checklists, risk
 panels, confidence meters, diff summary cards, decision matrices, ETA strips,
 attention callouts, and next-action footers. Select these blocks like
 tool-calling choices from prompt and response signals instead of showing every
-component by default. The selector supports explicit rules, numeric score
-thresholds, and optional planner hints through CODEXPLAIN_UX_PLAN or
-CODEXPLAIN_UX_PLANNER_COMMAND.
+component by default. Explanation depth uses 3-stage controls:
+explanationDepth light/standard/deep, architectureDepth overview/system/internals,
+and abstractionLevel concrete/architecture/strategy. The selector supports
+explicit rules, score thresholds, and optional planner hints through
+CODEXPLAIN_UX_PLAN or CODEXPLAIN_UX_PLANNER_COMMAND.
 
 Storage safety preferences are stored in `.codexplain/config.json`. Adjust
 `storageCheck.minFree.value` to override the project-local threshold used by
