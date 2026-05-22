@@ -12,6 +12,9 @@
     "max": "architecture"
   },
   "detailLayers": ["tldr", "summary", "architecture", "implementation", "evidence", "next-step"],
+  "detailScale": 80,
+  "uxDensity": 65,
+  "riskSensitivity": 60,
   "explanationMoves": ["tldr", "answer-first", "plain-language", "evidence", "next-step"],
   "feedback": {"positive": 0, "negative": 0, "revisions": 0, "rewardScore": 0, "signals": []}
 }

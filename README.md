@@ -53,14 +53,21 @@ Set your preferred style:
 codexplain profile --detail deep --set-style tutorial --theme ocean --frame unicode
 ```
 
-Control explanation layers and abstraction range:
+Control explanation layers, abstraction range, and numeric selector strength:
 
 ```bash
 codexplain profile \
   --detail deep \
+  --detail-scale 85 \
+  --ux-density 70 \
+  --risk-sensitivity 80 \
   --abstraction-range concrete:architecture \
   --layers tldr,summary,architecture,implementation,evidence,next-step
 ```
+
+Numeric controls are 0-100. `detail-scale` changes summary depth, `ux-density`
+changes how many implicit UX components are added, and `risk-sensitivity`
+changes how aggressively failure/risk/callout blocks appear.
 
 Use `--theme ocean`, `forest`, or `warm` to make Codexplain terminal output
 color-highlight important labels. Use `--theme none` when copy/paste-safe plain
@@ -123,6 +130,9 @@ The result should be:
   confidence meters, diff summary cards, decision matrices, ETA strips,
   attention callouts, and next-action footers are selected from prompt and
   response signals instead of always being shown.
+- Three selector modes: rules for explicit requests, score thresholds for
+  implicit components, and optional planner hints through `CODEXPLAIN_UX_PLAN`
+  or `CODEXPLAIN_UX_PLANNER_COMMAND`.
 - Formula boxes for decision rules or simple math explanations.
 - Side-by-side table/flow panels only when terminal width allows it.
 - Exact commands, file paths, risks, test evidence, and dates preserved.
@@ -130,10 +140,21 @@ The result should be:
 ## 🧩 Adaptive UX Components
 
 Codexplain treats terminal UX blocks like a small renderer toolbox. It selects
-only the components that match the question, the answer state, and the terminal
-width. A simple explanation can stay as TLDR prose; a work-status answer can add
-a badge, progress bar, checklist, risk panel, and next action; a decision answer
-can add pros/cons, formula, confidence, and a decision matrix.
+only the components that match the question, the answer state, numeric profile
+controls, and the terminal width. A simple explanation can stay as TLDR prose; a
+work-status answer can add a badge, progress bar, checklist, risk panel, and
+next action; a decision answer can add pros/cons, formula, confidence, and a
+decision matrix.
+
+Selector versions now available:
+
+- V1 rules: explicit prompt signals such as `progress`, `risk`, `수식`, or
+  `장단점` map to known renderers.
+- V2 scores: implicit signals are scored against `uxDensity` and
+  `riskSensitivity`, so sparse and rich modes behave differently.
+- V3 planner hints: set `CODEXPLAIN_UX_PLAN="risk-panel,next-action"` or
+  `CODEXPLAIN_UX_PLANNER_COMMAND` to let an external planner output component
+  names; Rust still performs the final safe rendering.
 
 Available visual components:
 
@@ -152,8 +173,17 @@ Example:
 
 ```bash
 codexplain shape \
+  --ux-density 90 \
+  --risk-sensitivity 80 \
   --prompt "진행상황을 풍부한 UX로 보여줘: risk, confidence, next action" \
   --response "현재 4/5 단계 진행 중입니다. 테스트는 통과했고 릴리즈 검증이 남았습니다."
+```
+
+Planner hint example:
+
+```bash
+CODEXPLAIN_UX_PLAN="status-badge,risk-panel,next-action" \
+  codexplain shape --prompt "상태 보고" --response "실패: provider timeout"
 ```
 
 ## 🧠 Model-Agnostic Goal
@@ -299,6 +329,8 @@ Gap checks added for the renderer migration:
 - `progress_renderer_reports_status_text_bar_and_detail_table`
 - `rich_ux_prompt_combines_all_visual_status_components`
 - `ux_components_are_selected_dynamically_from_prompt_and_failure_text`
+- `ux_density_numerically_controls_implicit_progress_components`
+- `ux_planner_plan_parser_accepts_llm_style_component_names`
 - `narrow_width_table_snapshot_wraps_and_fits_visible_width`
 
 ## 📁 Project Files

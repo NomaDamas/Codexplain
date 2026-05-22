@@ -283,6 +283,9 @@ struct Profile {
     abstraction_min: String,
     abstraction_max: String,
     layers: Vec<String>,
+    detail_scale: u8,
+    ux_density: u8,
+    risk_sensitivity: u8,
 }
 
 impl Default for Profile {
@@ -305,6 +308,9 @@ impl Default for Profile {
                 "evidence".to_string(),
                 "next-step".to_string(),
             ],
+            detail_scale: 80,
+            ux_density: 65,
+            risk_sensitivity: 60,
         }
     }
 }
@@ -920,7 +926,96 @@ fn push_ux_component(items: &mut Vec<UxComponent>, item: UxComponent) {
     }
 }
 
-fn requested_ux_components(prompt: &str, response: &str) -> Vec<UxComponent> {
+fn clamp_control(value: i32) -> u8 {
+    value.clamp(0, 100) as u8
+}
+
+fn parse_control_value(value: &str) -> Option<u8> {
+    value.trim().parse::<i32>().ok().map(clamp_control)
+}
+
+fn parse_ux_component(value: &str) -> Option<UxComponent> {
+    let text = value
+        .trim()
+        .trim_matches(|ch: char| !ch.is_ascii_alphanumeric() && ch != '-' && ch != '_')
+        .to_ascii_lowercase()
+        .replace('_', "-");
+    match text.as_str() {
+        "badge" | "status" | "status-badge" | "state-badge" => Some(UxComponent::StatusBadge),
+        "check" | "checks" | "checklist" | "todo" => Some(UxComponent::Checklist),
+        "risk" | "risks" | "risk-panel" | "warning" => Some(UxComponent::RiskPanel),
+        "confidence" | "confidence-meter" | "certainty" => Some(UxComponent::ConfidenceMeter),
+        "diff" | "diff-summary" | "change" | "changes" => Some(UxComponent::DiffSummary),
+        "decision" | "decision-matrix" | "matrix" => Some(UxComponent::DecisionMatrix),
+        "next" | "next-action" | "action" | "footer" => Some(UxComponent::NextAction),
+        "eta" | "eta-strip" | "elapsed" | "time" => Some(UxComponent::EtaStrip),
+        "callout" | "attention" | "attention-callout" | "important" => {
+            Some(UxComponent::AttentionCallout)
+        }
+        _ => None,
+    }
+}
+
+fn parse_ux_component_plan(plan: &str) -> Vec<UxComponent> {
+    let mut items = Vec::new();
+    let mut token = String::new();
+    for ch in plan.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+            token.push(ch);
+            continue;
+        }
+        if let Some(component) = parse_ux_component(&token) {
+            push_ux_component(&mut items, component);
+        }
+        token.clear();
+    }
+    if let Some(component) = parse_ux_component(&token) {
+        push_ux_component(&mut items, component);
+    }
+    items
+}
+
+fn planner_ux_components(prompt: &str, response: &str) -> Vec<UxComponent> {
+    if let Ok(plan) = env::var("CODEXPLAIN_UX_PLAN").or_else(|_| env::var("CLAUDEX_UX_PLAN")) {
+        let components = parse_ux_component_plan(&plan);
+        if !components.is_empty() {
+            return components;
+        }
+    }
+
+    let Ok(command) = env::var("CODEXPLAIN_UX_PLANNER_COMMAND") else {
+        return Vec::new();
+    };
+    let parts = command.split_whitespace().collect::<Vec<_>>();
+    let Some(program) = parts.first() else {
+        return Vec::new();
+    };
+    let output = Command::new(program)
+        .args(parts.iter().skip(1))
+        .env("CODEXPLAIN_PROMPT", prompt)
+        .env("CODEXPLAIN_RESPONSE", response)
+        .output();
+    match output {
+        Ok(result) if result.status.success() => {
+            parse_ux_component_plan(&String::from_utf8_lossy(&result.stdout))
+        }
+        _ => Vec::new(),
+    }
+}
+
+fn add_component_score(scores: &mut Vec<(UxComponent, i32)>, component: UxComponent, score: i32) {
+    if let Some((_, current)) = scores.iter_mut().find(|(item, _)| *item == component) {
+        *current = (*current).max(score);
+    } else {
+        scores.push((component, score));
+    }
+}
+
+fn ux_component_threshold(profile: &Profile) -> i32 {
+    (100 - profile.ux_density as i32).clamp(10, 95)
+}
+
+fn requested_ux_components(prompt: &str, response: &str, profile: &Profile) -> Vec<UxComponent> {
     let text = format!("{} {}", prompt, response).to_ascii_lowercase();
     let prompt_lower = prompt.to_ascii_lowercase();
     let full_kit = prompt_lower.contains("ux")
@@ -929,21 +1024,26 @@ fn requested_ux_components(prompt: &str, response: &str) -> Vec<UxComponent> {
         || prompt.contains("모두")
         || prompt.contains("시각적")
         || prompt_lower.contains("dashboard");
-    let mut items = Vec::new();
+    let mut scores = Vec::new();
 
+    for component in planner_ux_components(prompt, response) {
+        add_component_score(&mut scores, component, 130);
+    }
+
+    let explicit_score = 120;
     if full_kit
         || text.contains("badge")
         || prompt.contains("상태 라벨")
         || prompt.contains("상태 배지")
     {
-        push_ux_component(&mut items, UxComponent::StatusBadge);
+        add_component_score(&mut scores, UxComponent::StatusBadge, explicit_score);
     }
     if full_kit
         || text.contains("checklist")
         || prompt.contains("체크리스트")
         || prompt.contains("완료 항목")
     {
-        push_ux_component(&mut items, UxComponent::Checklist);
+        add_component_score(&mut scores, UxComponent::Checklist, explicit_score);
     }
     if full_kit
         || text.contains("risk")
@@ -951,18 +1051,18 @@ fn requested_ux_components(prompt: &str, response: &str) -> Vec<UxComponent> {
         || prompt.contains("리스크")
         || prompt.contains("막힌")
     {
-        push_ux_component(&mut items, UxComponent::RiskPanel);
+        add_component_score(&mut scores, UxComponent::RiskPanel, explicit_score);
     }
     if full_kit
         || text.contains("confidence")
         || prompt.contains("확신")
         || prompt.contains("신뢰도")
     {
-        push_ux_component(&mut items, UxComponent::ConfidenceMeter);
+        add_component_score(&mut scores, UxComponent::ConfidenceMeter, explicit_score);
     }
     if full_kit || text.contains("diff") || prompt.contains("변경 요약") || prompt.contains("바뀐")
     {
-        push_ux_component(&mut items, UxComponent::DiffSummary);
+        add_component_score(&mut scores, UxComponent::DiffSummary, explicit_score);
     }
     if full_kit
         || text.contains("decision")
@@ -970,14 +1070,14 @@ fn requested_ux_components(prompt: &str, response: &str) -> Vec<UxComponent> {
         || prompt.contains("의사결정")
         || prompt.contains("matrix")
     {
-        push_ux_component(&mut items, UxComponent::DecisionMatrix);
+        add_component_score(&mut scores, UxComponent::DecisionMatrix, explicit_score);
     }
     if full_kit
         || text.contains("next action")
         || prompt.contains("다음 행동")
         || prompt.contains("다음 액션")
     {
-        push_ux_component(&mut items, UxComponent::NextAction);
+        add_component_score(&mut scores, UxComponent::NextAction, explicit_score);
     }
     if full_kit
         || text.contains("eta")
@@ -985,7 +1085,7 @@ fn requested_ux_components(prompt: &str, response: &str) -> Vec<UxComponent> {
         || prompt.contains("남은 시간")
         || prompt.contains("경과")
     {
-        push_ux_component(&mut items, UxComponent::EtaStrip);
+        add_component_score(&mut scores, UxComponent::EtaStrip, explicit_score);
     }
     if full_kit
         || text.contains("callout")
@@ -993,22 +1093,31 @@ fn requested_ux_components(prompt: &str, response: &str) -> Vec<UxComponent> {
         || prompt.contains("강조")
         || prompt.contains("중요")
     {
-        push_ux_component(&mut items, UxComponent::AttentionCallout);
+        add_component_score(&mut scores, UxComponent::AttentionCallout, explicit_score);
     }
 
     let lower = response.to_ascii_lowercase();
     if lower.contains("fail") || lower.contains("error") || response.contains("실패") {
-        push_ux_component(&mut items, UxComponent::StatusBadge);
-        push_ux_component(&mut items, UxComponent::RiskPanel);
-        push_ux_component(&mut items, UxComponent::AttentionCallout);
-        push_ux_component(&mut items, UxComponent::NextAction);
+        let safety_score = 55 + (profile.risk_sensitivity as i32 / 2);
+        add_component_score(&mut scores, UxComponent::StatusBadge, safety_score);
+        add_component_score(&mut scores, UxComponent::RiskPanel, safety_score + 10);
+        add_component_score(&mut scores, UxComponent::AttentionCallout, safety_score + 5);
+        add_component_score(&mut scores, UxComponent::NextAction, safety_score);
     }
     if renderer_signal_present(prompt, RendererKind::Progress) {
-        push_ux_component(&mut items, UxComponent::StatusBadge);
-        push_ux_component(&mut items, UxComponent::Checklist);
-        push_ux_component(&mut items, UxComponent::NextAction);
+        let progress_score = 45 + (profile.ux_density as i32 / 2);
+        add_component_score(&mut scores, UxComponent::StatusBadge, progress_score);
+        add_component_score(&mut scores, UxComponent::Checklist, progress_score);
+        add_component_score(&mut scores, UxComponent::NextAction, progress_score);
     }
 
+    let threshold = ux_component_threshold(profile);
+    let mut items = Vec::new();
+    for (component, score) in scores {
+        if score >= threshold {
+            push_ux_component(&mut items, component);
+        }
+    }
     items
 }
 
@@ -2408,11 +2517,21 @@ fn pros_cons_table(max_width: usize) -> Table {
     Table::new(&HEADERS, &rows, true, max_width)
 }
 
+fn summary_sentence_limit(profile: &Profile) -> usize {
+    let scaled = (profile.detail_scale as usize / 10).clamp(1, 10);
+    match profile.detail.as_str() {
+        "brief" => scaled.clamp(1, 3),
+        "balanced" => scaled.clamp(3, 6),
+        "deep" => scaled.clamp(6, 10),
+        _ => scaled.clamp(3, 8),
+    }
+}
+
 fn shape(prompt: &str, response: &str, profile: &Profile, width: usize) -> String {
     if should_back_off(prompt, response) {
         return response.to_string();
     }
-    let summary = compact(response, if profile.detail == "deep" { 8 } else { 4 });
+    let summary = compact(response, summary_sentence_limit(profile));
     let selection = select_renderer(prompt, profile);
     dispatch_explanation(selection, prompt, response, &summary, profile, width)
 }
@@ -2426,7 +2545,7 @@ fn dispatch_explanation(
     width: usize,
 ) -> String {
     let requested = requested_renderers(prompt);
-    let ux_components = requested_ux_components(prompt, response);
+    let ux_components = requested_ux_components(prompt, response, profile);
     let wants_architecture = requested.contains(&RendererKind::Table)
         && (requested.contains(&RendererKind::Flow)
             || prompt_matches_pattern(prompt, "아키텍처")
@@ -2680,6 +2799,15 @@ fn load_profile() -> Profile {
         if let Some(layers) = extract_json_array_strings(&raw, "detailLayers") {
             profile.layers = layers;
         }
+        if let Some(detail_scale) = extract_json_u8(&raw, "detailScale") {
+            profile.detail_scale = detail_scale;
+        }
+        if let Some(ux_density) = extract_json_u8(&raw, "uxDensity") {
+            profile.ux_density = ux_density;
+        }
+        if let Some(risk_sensitivity) = extract_json_u8(&raw, "riskSensitivity") {
+            profile.risk_sensitivity = risk_sensitivity;
+        }
     }
     if let Ok(theme) = env::var("CODEXPLAIN_THEME") {
         profile.theme = Theme::parse(Some(&theme));
@@ -2691,6 +2819,21 @@ fn load_profile() -> Profile {
         env::var("CODEXPLAIN_INDEX_STYLE").or_else(|_| env::var("CLAUDEX_INDEX_STYLE"))
     {
         profile.index_style = IndexStyle::parse(Some(&index_style));
+    }
+    if let Ok(value) = env::var("CODEXPLAIN_DETAIL_SCALE") {
+        if let Some(parsed) = parse_control_value(&value) {
+            profile.detail_scale = parsed;
+        }
+    }
+    if let Ok(value) = env::var("CODEXPLAIN_UX_DENSITY") {
+        if let Some(parsed) = parse_control_value(&value) {
+            profile.ux_density = parsed;
+        }
+    }
+    if let Ok(value) = env::var("CODEXPLAIN_RISK_SENSITIVITY") {
+        if let Some(parsed) = parse_control_value(&value) {
+            profile.risk_sensitivity = parsed;
+        }
     }
     profile
 }
@@ -2711,6 +2854,15 @@ fn load_profile_for_args(args: &[String]) -> Profile {
     }
     if let Some(layers) = arg_value(args, "--layers") {
         profile.layers = parse_layers(layers);
+    }
+    if let Some(value) = arg_value(args, "--detail-scale").and_then(parse_control_value) {
+        profile.detail_scale = value;
+    }
+    if let Some(value) = arg_value(args, "--ux-density").and_then(parse_control_value) {
+        profile.ux_density = value;
+    }
+    if let Some(value) = arg_value(args, "--risk-sensitivity").and_then(parse_control_value) {
+        profile.risk_sensitivity = value;
     }
     profile.theme = profile
         .theme
@@ -2738,6 +2890,9 @@ fn save_profile(profile: &Profile) -> io::Result<()> {
                 "    \"max\": \"{}\"\n",
                 "  }},\n",
                 "  \"detailLayers\": [\"{}\"],\n",
+                "  \"detailScale\": {},\n",
+                "  \"uxDensity\": {},\n",
+                "  \"riskSensitivity\": {},\n",
                 "  \"explanationMoves\": [\"tldr\", \"answer-first\", \"plain-language\", \"evidence\", \"next-step\"],\n",
                 "  \"feedback\": {{\"positive\": 0, \"negative\": 0, \"revisions\": 0, \"rewardScore\": 0, \"signals\": []}}\n",
                 "}}\n"
@@ -2751,7 +2906,10 @@ fn save_profile(profile: &Profile) -> io::Result<()> {
             profile.preferred_structure,
             profile.abstraction_min,
             profile.abstraction_max,
-            profile.layers.join("\", \"")
+            profile.layers.join("\", \""),
+            profile.detail_scale,
+            profile.ux_density,
+            profile.risk_sensitivity
         ),
     )
 }
@@ -2786,6 +2944,23 @@ fn extract_json_string(raw: &str, key: &str) -> Option<String> {
 fn extract_json_string_after(raw: &str, object_key: &str, key: &str) -> Option<String> {
     let index = raw.find(&format!("\"{object_key}\""))?;
     extract_json_string(&raw[index..], key)
+}
+
+fn extract_json_u8(raw: &str, key: &str) -> Option<u8> {
+    let needle = format!("\"{key}\"");
+    let index = raw.find(&needle)?;
+    let rest = &raw[index + needle.len()..];
+    let colon = rest.find(':')?;
+    let after_colon = rest[colon + 1..].trim_start();
+    let digits = after_colon
+        .chars()
+        .take_while(|ch| ch.is_ascii_digit() || *ch == '-')
+        .collect::<String>();
+    if digits.is_empty() {
+        None
+    } else {
+        digits.parse::<i32>().ok().map(clamp_control)
+    }
 }
 
 fn extract_json_u64_after(raw: &str, object_key: &str, key: &str) -> Option<u64> {
@@ -3228,6 +3403,7 @@ fn usage() -> &'static str {
   codexplain shape --prompt <text> [--response <text>] [--width <n>]
   codexplain post-response --prompt <text> [--width <n>]
   codexplain profile --show|--theme <name>|--frame <unicode|ascii|fallback|auto>|--index-style <style>|--detail <level>
+  codexplain profile --detail-scale <0-100>|--ux-density <0-100>|--risk-sensitivity <0-100>
   codexplain demo
   codexplain storage-check [--min-free-gb 5] [--clean]
 
@@ -3294,6 +3470,17 @@ fn main() {
             if let Some(layers) = arg_value(&args, "--layers") {
                 profile.layers = parse_layers(layers);
             }
+            if let Some(value) = arg_value(&args, "--detail-scale").and_then(parse_control_value) {
+                profile.detail_scale = value;
+            }
+            if let Some(value) = arg_value(&args, "--ux-density").and_then(parse_control_value) {
+                profile.ux_density = value;
+            }
+            if let Some(value) =
+                arg_value(&args, "--risk-sensitivity").and_then(parse_control_value)
+            {
+                profile.risk_sensitivity = value;
+            }
             if let Some(range) = arg_value(&args, "--abstraction-range") {
                 let parts: Vec<&str> = range.split(':').collect();
                 if let Some(min) = parts.first() {
@@ -3352,7 +3539,10 @@ fn print_profile(profile: &Profile) {
             "  \"audience\": \"{}\",\n",
             "  \"preferredStructure\": \"{}\",\n",
             "  \"abstractionRange\": {{\"min\": \"{}\", \"max\": \"{}\"}},\n",
-            "  \"detailLayers\": [\"{}\"]\n",
+            "  \"detailLayers\": [\"{}\"],\n",
+            "  \"detailScale\": {},\n",
+            "  \"uxDensity\": {},\n",
+            "  \"riskSensitivity\": {}\n",
             "}}"
         ),
         profile.theme.name(),
@@ -3368,7 +3558,10 @@ fn print_profile(profile: &Profile) {
         profile.preferred_structure,
         profile.abstraction_min,
         profile.abstraction_max,
-        profile.layers.join("\", \"")
+        profile.layers.join("\", \""),
+        profile.detail_scale,
+        profile.ux_density,
+        profile.risk_sensitivity
     );
 }
 
@@ -4862,6 +5055,56 @@ mod tests {
         );
         assert!(output.contains("│ 진척      │ 진행 중 · 60%"), "{output}");
         assert!(output.contains("│ 다음 행동 │"), "{output}");
+    }
+
+    #[test]
+    fn ux_density_numerically_controls_implicit_progress_components() {
+        let sparse = Profile {
+            theme: Theme::None,
+            ux_density: 0,
+            ..Profile::default()
+        };
+        let dense = Profile {
+            theme: Theme::None,
+            ux_density: 100,
+            ..Profile::default()
+        };
+
+        let sparse_items = requested_ux_components(
+            "진행상황을 보고해줘",
+            "현재 2/5 단계 진행 중입니다.",
+            &sparse,
+        );
+        let dense_items = requested_ux_components(
+            "진행상황을 보고해줘",
+            "현재 2/5 단계 진행 중입니다.",
+            &dense,
+        );
+
+        assert!(
+            !sparse_items.contains(&UxComponent::Checklist),
+            "{sparse_items:?}"
+        );
+        assert!(
+            dense_items.contains(&UxComponent::Checklist),
+            "{dense_items:?}"
+        );
+        assert!(
+            dense_items.contains(&UxComponent::NextAction),
+            "{dense_items:?}"
+        );
+    }
+
+    #[test]
+    fn ux_planner_plan_parser_accepts_llm_style_component_names() {
+        let plan = parse_ux_component_plan(
+            r#"{"components":["status-badge","risk-panel","decision_matrix","next-action"]}"#,
+        );
+
+        assert!(plan.contains(&UxComponent::StatusBadge), "{plan:?}");
+        assert!(plan.contains(&UxComponent::RiskPanel), "{plan:?}");
+        assert!(plan.contains(&UxComponent::DecisionMatrix), "{plan:?}");
+        assert!(plan.contains(&UxComponent::NextAction), "{plan:?}");
     }
 
     #[test]

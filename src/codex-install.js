@@ -29,6 +29,9 @@ Default answer style:
 - Use richer terminal UX components when they improve scanning: status badges,
   checklists, risk panels, confidence meters, diff summary cards, decision
   matrices, ETA strips, attention callouts, and next-action footers.
+- Treat UX selection as a three-stage system: explicit rules first, numeric
+  score thresholds second, and optional planner hints third. Respect numeric
+  controls such as detailScale, uxDensity, and riskSensitivity when present.
 - Choose the explanation renderer dynamically: TLDR prose for status/summary,
   progress reports with a short status line and progress bar for work tracking,
   tables for comparison, pros/cons panels for tradeoffs, numbered lists for

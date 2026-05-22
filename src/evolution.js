@@ -34,6 +34,9 @@ export const DEFAULT_UX_PROFILE = Object.freeze({
     max: "architecture",
   },
   detailLayers: ["tldr", "summary", "architecture", "implementation", "evidence", "next-step"],
+  detailScale: 80,
+  uxDensity: 65,
+  riskSensitivity: 60,
   explanationMoves: ["tldr", "answer-first", "plain-language", "evidence", "next-step"],
   feedback: {
     positive: 0,
@@ -135,6 +138,13 @@ function orderAbstractionRange(min, max) {
   return { min: max, max: min };
 }
 
+
+function normalizeControl(value, fallback) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.max(0, Math.min(100, Math.round(number)));
+}
+
 function normalizeDetailLayers(value, fallback = DEFAULT_UX_PROFILE.detailLayers) {
   const values = Array.isArray(value)
     ? value
@@ -170,6 +180,9 @@ export function sanitizeUxProfile(profile = {}) {
     preferredStructure: normalizeStructure(profile.preferredStructure, DEFAULT_UX_PROFILE.preferredStructure),
     abstractionRange: normalizeAbstractionRange(profile.abstractionRange, DEFAULT_UX_PROFILE.abstractionRange),
     detailLayers: normalizeDetailLayers(profile.detailLayers, DEFAULT_UX_PROFILE.detailLayers),
+    detailScale: normalizeControl(profile.detailScale, DEFAULT_UX_PROFILE.detailScale),
+    uxDensity: normalizeControl(profile.uxDensity, DEFAULT_UX_PROFILE.uxDensity),
+    riskSensitivity: normalizeControl(profile.riskSensitivity, DEFAULT_UX_PROFILE.riskSensitivity),
     explanationMoves: uniqueList(
       Array.isArray(profile.explanationMoves)
         ? profile.explanationMoves
@@ -247,6 +260,9 @@ export function resolveUxProfile({ prompt = "", profile = DEFAULT_UX_PROFILE, en
       base.abstractionRange,
     ),
     detailLayers: normalizeDetailLayers(env.CODEXPLAIN_LAYERS ?? env.CLAUDEX_LAYERS, base.detailLayers),
+    detailScale: normalizeControl(env.CODEXPLAIN_DETAIL_SCALE, base.detailScale),
+    uxDensity: normalizeControl(env.CODEXPLAIN_UX_DENSITY, base.uxDensity),
+    riskSensitivity: normalizeControl(env.CODEXPLAIN_RISK_SENSITIVITY, base.riskSensitivity),
   };
   return sanitizeUxProfile({ ...resolved, ...promptSignals(prompt) });
 }
@@ -318,6 +334,7 @@ export function buildRlhfSummary(profile = DEFAULT_UX_PROFILE) {
     `- negative: ${resolved.feedback.negative}`,
     `- rewardScore: ${resolved.feedback.rewardScore}`,
     `- next detail: ${resolved.detail}`,
+    `- numeric controls: detailScale=${resolved.detailScale}, uxDensity=${resolved.uxDensity}, riskSensitivity=${resolved.riskSensitivity}`,
     `- next style: ${resolved.style}`,
     `- abstraction range: ${resolved.abstractionRange.min}..${resolved.abstractionRange.max}`,
   ].join("\n");
@@ -350,6 +367,7 @@ export function buildUxContract(profile = DEFAULT_UX_PROFILE) {
     `- Audience: ${resolved.audience}.`,
     `- Abstraction range: ${resolved.abstractionRange.min}..${resolved.abstractionRange.max}. Stay inside that explanation level range.`,
     `- Detail layers: ${resolved.detailLayers.join(", ")}.`,
+    `- Numeric controls: detailScale ${resolved.detailScale}/100, uxDensity ${resolved.uxDensity}/100, riskSensitivity ${resolved.riskSensitivity}/100.`,
     "- Prefer answer-first structure, then why it matters, evidence, and next action.",
     "- In terminal output, use ANSI color when the active theme is not none; use colors to highlight labels, risks, and key terms.",
     "- Start explanatory answers with a TLDR when the output is not an exact artifact.",
