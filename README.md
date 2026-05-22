@@ -12,6 +12,7 @@ preference tuning.
 - [⚡ One-Line Setup](#-one-line-setup)
 - [🚀 One-Line Use](#-one-line-use)
 - [✨ What It Improves](#-what-it-improves)
+- [🧩 Adaptive UX Components](#-adaptive-ux-components)
 - [🧠 Model-Agnostic Goal](#-model-agnostic-goal)
 - [👍 RLHF-Lite](#-rlhf-lite)
 - [🎛️ CLI](#️-cli)
@@ -109,7 +110,8 @@ The result should be:
 - Adjustable detail layers: TLDR, summary, concept, mechanism, architecture,
   implementation, evidence, next-step.
 - Dynamic renderer selection: TLDR prose, progress reports, table, flow,
-  pros/cons panels, numbered index lists, and formula boxes.
+  pros/cons panels, numbered index lists, formula boxes, and richer status UX
+  components when they help scanning.
 - Compositional renderer selection: when a prompt asks for architecture,
   tradeoffs, and formulas together, Codexplain can combine table/flow context,
   pros/cons comparison, and formula boxes instead of choosing only the first
@@ -117,9 +119,42 @@ The result should be:
 - Pros/cons and tradeoff questions as comparison panels instead of loose bullets.
 - Progress reports with a short status label above the bar, then a compact
   checkpoint table for current state, percentage, and next action.
+- Tool-calling-like UX composition: status badges, checklists, risk panels,
+  confidence meters, diff summary cards, decision matrices, ETA strips,
+  attention callouts, and next-action footers are selected from prompt and
+  response signals instead of always being shown.
 - Formula boxes for decision rules or simple math explanations.
 - Side-by-side table/flow panels only when terminal width allows it.
 - Exact commands, file paths, risks, test evidence, and dates preserved.
+
+## 🧩 Adaptive UX Components
+
+Codexplain treats terminal UX blocks like a small renderer toolbox. It selects
+only the components that match the question, the answer state, and the terminal
+width. A simple explanation can stay as TLDR prose; a work-status answer can add
+a badge, progress bar, checklist, risk panel, and next action; a decision answer
+can add pros/cons, formula, confidence, and a decision matrix.
+
+Available visual components:
+
+- Status badge: shows running, blocked, done, or review-needed state.
+- Progress report: status text above a bar, followed by checkpoint details.
+- Checklist: separates completed, current, and remaining work.
+- Risk panel: calls out hidden assumptions, failures, drift, or blockers.
+- Confidence meter: shows certainty as a labeled bar without relying on color.
+- Diff summary card: summarizes what changed, impact, and verification.
+- Decision matrix: compares options with score and rationale.
+- ETA strip: gives elapsed/remaining-state language for progress answers.
+- Attention callout: highlights important warnings or copy/paste-safe notes.
+- Next-action footer: ends with the single most useful next step.
+
+Example:
+
+```bash
+codexplain shape \
+  --prompt "진행상황을 풍부한 UX로 보여줘: risk, confidence, next action" \
+  --response "현재 4/5 단계 진행 중입니다. 테스트는 통과했고 릴리즈 검증이 남았습니다."
+```
 
 ## 🧠 Model-Agnostic Goal
 
@@ -262,6 +297,8 @@ Gap checks added for the renderer migration:
 - `compound_prompts_combine_architecture_tradeoff_and_formula_renderers`
 - `responsive_architecture_panels_stack_when_terminal_is_narrow`
 - `progress_renderer_reports_status_text_bar_and_detail_table`
+- `rich_ux_prompt_combines_all_visual_status_components`
+- `ux_components_are_selected_dynamically_from_prompt_and_failure_text`
 - `narrow_width_table_snapshot_wraps_and_fits_visible_width`
 
 ## 📁 Project Files

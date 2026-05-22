@@ -44,7 +44,11 @@ tradeoff, and formula views together, Codexplain should combine table/flow
 architecture context, pros/cons comparison, and a formula box instead of
 dropping later requested formats. Progress prompts should render a short status
 line, progress bar, and checkpoint table so users can scan current state before
-reading details.
+reading details. Rich work-state prompts may add status badges, checklists, risk
+panels, confidence meters, diff summary cards, decision matrices, ETA strips,
+attention callouts, and next-action footers. Select these blocks like
+tool-calling choices from prompt and response signals instead of showing every
+component by default.
 
 Storage safety preferences are stored in `.codexplain/config.json`. Adjust
 `storageCheck.minFree.value` to override the project-local threshold used by

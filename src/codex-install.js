@@ -26,15 +26,20 @@ Default answer style:
 - For progress updates, place a concise status label above the progress bar,
   then show a compact checkpoint table with current state, percentage, and next
   action.
+- Use richer terminal UX components when they improve scanning: status badges,
+  checklists, risk panels, confidence meters, diff summary cards, decision
+  matrices, ETA strips, attention callouts, and next-action footers.
 - Choose the explanation renderer dynamically: TLDR prose for status/summary,
   progress reports with a short status line and progress bar for work tracking,
   tables for comparison, pros/cons panels for tradeoffs, numbered lists for
-  ordered steps, flow diagrams for process, and formula boxes for math-like
-  decision rules.
+  ordered steps, flow diagrams for process, formula boxes for math-like
+  decision rules, and compact status UX cards for work-state answers.
 - When the user asks for multiple useful formats, combine them instead of
   forcing a single renderer. For example, architecture + tradeoff + formula
   requests should produce table/flow architecture context, pros/cons comparison,
-  and a formula box when terminal space allows.
+  and a formula box when terminal space allows. Treat these blocks like
+  tool-calling choices: select the smallest useful set from prompt and response
+  signals, not every component by default.
 - Do not show internal mode names, prompt-layer labels, or rewrite mechanics.
 - Keep commands, paths, risks, test evidence, and exact technical facts intact.
 - Respect project-local Codexplain UX preferences when present, including detail

@@ -244,6 +244,19 @@ struct RendererSelection {
     signal: PromptSignal,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum UxComponent {
+    StatusBadge,
+    Checklist,
+    RiskPanel,
+    ConfidenceMeter,
+    DiffSummary,
+    DecisionMatrix,
+    NextAction,
+    EtaStrip,
+    AttentionCallout,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct IndexedList {
     items: Vec<String>,
@@ -899,6 +912,104 @@ fn requested_renderers(prompt: &str) -> Vec<RendererKind> {
         }
     }
     renderers
+}
+
+fn push_ux_component(items: &mut Vec<UxComponent>, item: UxComponent) {
+    if !items.contains(&item) {
+        items.push(item);
+    }
+}
+
+fn requested_ux_components(prompt: &str, response: &str) -> Vec<UxComponent> {
+    let text = format!("{} {}", prompt, response).to_ascii_lowercase();
+    let prompt_lower = prompt.to_ascii_lowercase();
+    let full_kit = prompt_lower.contains("ux")
+        || prompt_lower.contains("ui")
+        || prompt.contains("풍부")
+        || prompt.contains("모두")
+        || prompt.contains("시각적")
+        || prompt_lower.contains("dashboard");
+    let mut items = Vec::new();
+
+    if full_kit
+        || text.contains("badge")
+        || prompt.contains("상태 라벨")
+        || prompt.contains("상태 배지")
+    {
+        push_ux_component(&mut items, UxComponent::StatusBadge);
+    }
+    if full_kit
+        || text.contains("checklist")
+        || prompt.contains("체크리스트")
+        || prompt.contains("완료 항목")
+    {
+        push_ux_component(&mut items, UxComponent::Checklist);
+    }
+    if full_kit
+        || text.contains("risk")
+        || prompt.contains("위험")
+        || prompt.contains("리스크")
+        || prompt.contains("막힌")
+    {
+        push_ux_component(&mut items, UxComponent::RiskPanel);
+    }
+    if full_kit
+        || text.contains("confidence")
+        || prompt.contains("확신")
+        || prompt.contains("신뢰도")
+    {
+        push_ux_component(&mut items, UxComponent::ConfidenceMeter);
+    }
+    if full_kit || text.contains("diff") || prompt.contains("변경 요약") || prompt.contains("바뀐")
+    {
+        push_ux_component(&mut items, UxComponent::DiffSummary);
+    }
+    if full_kit
+        || text.contains("decision")
+        || prompt.contains("결정")
+        || prompt.contains("의사결정")
+        || prompt.contains("matrix")
+    {
+        push_ux_component(&mut items, UxComponent::DecisionMatrix);
+    }
+    if full_kit
+        || text.contains("next action")
+        || prompt.contains("다음 행동")
+        || prompt.contains("다음 액션")
+    {
+        push_ux_component(&mut items, UxComponent::NextAction);
+    }
+    if full_kit
+        || text.contains("eta")
+        || prompt.contains("예상")
+        || prompt.contains("남은 시간")
+        || prompt.contains("경과")
+    {
+        push_ux_component(&mut items, UxComponent::EtaStrip);
+    }
+    if full_kit
+        || text.contains("callout")
+        || prompt.contains("주의")
+        || prompt.contains("강조")
+        || prompt.contains("중요")
+    {
+        push_ux_component(&mut items, UxComponent::AttentionCallout);
+    }
+
+    let lower = response.to_ascii_lowercase();
+    if lower.contains("fail") || lower.contains("error") || response.contains("실패") {
+        push_ux_component(&mut items, UxComponent::StatusBadge);
+        push_ux_component(&mut items, UxComponent::RiskPanel);
+        push_ux_component(&mut items, UxComponent::AttentionCallout);
+        push_ux_component(&mut items, UxComponent::NextAction);
+    }
+    if renderer_signal_present(prompt, RendererKind::Progress) {
+        push_ux_component(&mut items, UxComponent::StatusBadge);
+        push_ux_component(&mut items, UxComponent::Checklist);
+        push_ux_component(&mut items, UxComponent::NextAction);
+    }
+
+    items
 }
 
 fn prompt_matches_signal(prompt: &str, signal: PromptSignal) -> bool {
@@ -1961,6 +2072,230 @@ fn progress_report(profile: &Profile, response: &str, summary: &str, width: usiz
     format!("{headline}\n{bar}\n\n{detail}")
 }
 
+fn status_badge(profile: &Profile, response: &str) -> String {
+    let percent = progress_percent(response);
+    let label = if percent == 100 {
+        "PASS"
+    } else if percent == 0 {
+        "BLOCKED"
+    } else {
+        "RUNNING"
+    };
+    let role = match label {
+        "PASS" => "success",
+        "BLOCKED" => "danger",
+        _ => "warning",
+    };
+    format!(
+        "{} {}",
+        color(profile.theme, role, &format!("[{label}]")),
+        color(profile.theme, "accent", progress_label(percent))
+    )
+}
+
+fn checklist(profile: &Profile, summary: &str, width: usize) -> String {
+    let rows = vec![
+        vec![
+            "완료".to_string(),
+            "검증 가능한 사실과 출력 근거를 먼저 확인".to_string(),
+        ],
+        vec!["진행".to_string(), compact(summary, 1)],
+        vec![
+            "남음".to_string(),
+            "사용자 확인 또는 다음 명령 실행".to_string(),
+        ],
+    ];
+    table(
+        &["상태", "체크포인트"],
+        &rows,
+        profile.frame,
+        profile.theme,
+        true,
+        width,
+    )
+}
+
+fn risk_panel(profile: &Profile, response: &str, width: usize) -> String {
+    let risk = if response.contains("실패") || response.to_ascii_lowercase().contains("fail") {
+        "실패 로그와 재시도 조건을 먼저 확인해야 합니다."
+    } else if response.contains("드리프트") || response.to_ascii_lowercase().contains("drift") {
+        "작업 문맥이 섞였을 수 있으므로 자동화를 중단해야 합니다."
+    } else {
+        "숨은 전제, 남은 검증, 저장공간 변화를 확인해야 합니다."
+    };
+    let rows = vec![
+        vec!["위험".to_string(), risk.to_string()],
+        vec![
+            "대응".to_string(),
+            "증거를 확인하고 필요한 경우 범위를 좁혀 재실행합니다.".to_string(),
+        ],
+    ];
+    table(
+        &["구분", "내용"],
+        &rows,
+        profile.frame,
+        profile.theme,
+        true,
+        width,
+    )
+}
+
+fn confidence_percent(response: &str) -> usize {
+    let lower = response.to_ascii_lowercase();
+    if lower.contains("uncertain") || response.contains("불확실") || response.contains("추정")
+    {
+        55
+    } else if lower.contains("fail") || response.contains("실패") {
+        40
+    } else if lower.contains("pass") || response.contains("통과") || response.contains("완료") {
+        90
+    } else {
+        75
+    }
+}
+
+fn confidence_meter(profile: &Profile, response: &str, width: usize) -> String {
+    let percent = confidence_percent(response);
+    format!(
+        "{}\n{}",
+        color(profile.theme, "heading", "확신도"),
+        render_progress_bar(
+            percent,
+            width.saturating_sub(12).min(24).max(12),
+            profile.frame,
+            profile.theme
+        )
+    )
+}
+
+fn diff_summary_card(profile: &Profile, summary: &str, width: usize) -> String {
+    let rows = vec![vec![
+        "변경".to_string(),
+        compact(summary, 1),
+        "사용자-facing 설명 UX가 더 구조화됩니다.".to_string(),
+        "테스트와 storage-check로 확인합니다.".to_string(),
+    ]];
+    table(
+        &["구분", "무엇", "영향", "검증"],
+        &rows,
+        profile.frame,
+        profile.theme,
+        true,
+        width,
+    )
+}
+
+fn decision_matrix(profile: &Profile, width: usize) -> String {
+    let rows = vec![
+        vec![
+            "계속 진행".to_string(),
+            "높음".to_string(),
+            "검증 통과 시 즉시 가치가 있습니다.".to_string(),
+        ],
+        vec![
+            "멈춤".to_string(),
+            "중간".to_string(),
+            "드리프트나 실패가 있으면 안전합니다.".to_string(),
+        ],
+        vec![
+            "축소 재시도".to_string(),
+            "높음".to_string(),
+            "범위를 줄여 실패 비용을 낮춥니다.".to_string(),
+        ],
+    ];
+    table(
+        &["선택", "점수", "근거"],
+        &rows,
+        profile.frame,
+        profile.theme,
+        true,
+        width,
+    )
+}
+
+fn next_action_footer(profile: &Profile) -> String {
+    format!(
+        "{} {}",
+        color(profile.theme, "heading", "다음 행동:"),
+        color(
+            profile.theme,
+            "accent",
+            "검증 결과, 위험, 남은 항목 중 하나만 선택해 바로 실행합니다."
+        )
+    )
+}
+
+fn eta_strip(profile: &Profile, response: &str) -> String {
+    let percent = progress_percent(response);
+    let eta = if percent >= 90 {
+        "마무리 단계"
+    } else if percent >= 50 {
+        "검증 1-2단계 남음"
+    } else {
+        "초기 확인 필요"
+    };
+    format!(
+        "{} {} · {} {}%",
+        color(profile.theme, "heading", "ETA:"),
+        color(profile.theme, "accent", eta),
+        color(profile.theme, "heading", "진척"),
+        percent
+    )
+}
+
+fn attention_callout(profile: &Profile, response: &str, width: usize) -> String {
+    let message =
+        if response.contains("드리프트") || response.to_ascii_lowercase().contains("drift") {
+            "드리프트가 감지되면 자동화 작업을 중단하고 새 Seed로 재시작하세요."
+        } else if response.contains("실패") || response.to_ascii_lowercase().contains("fail") {
+            "실패 원인과 재현 명령을 먼저 고정하세요."
+        } else {
+            "색상과 막대는 보조 신호입니다. 텍스트 라벨을 기준으로 판단하세요."
+        };
+    table(
+        &["주의", "내용"],
+        &[vec!["중요".to_string(), message.to_string()]],
+        profile.frame,
+        profile.theme,
+        true,
+        width,
+    )
+}
+
+fn ux_component_output(
+    component: UxComponent,
+    profile: &Profile,
+    response: &str,
+    summary: &str,
+    width: usize,
+) -> String {
+    match component {
+        UxComponent::StatusBadge => status_badge(profile, response),
+        UxComponent::Checklist => checklist(profile, summary, width),
+        UxComponent::RiskPanel => risk_panel(profile, response, width),
+        UxComponent::ConfidenceMeter => confidence_meter(profile, response, width),
+        UxComponent::DiffSummary => diff_summary_card(profile, summary, width),
+        UxComponent::DecisionMatrix => decision_matrix(profile, width),
+        UxComponent::NextAction => next_action_footer(profile),
+        UxComponent::EtaStrip => eta_strip(profile, response),
+        UxComponent::AttentionCallout => attention_callout(profile, response, width),
+    }
+}
+
+fn ux_component_sections(
+    profile: &Profile,
+    response: &str,
+    summary: &str,
+    width: usize,
+    components: &[UxComponent],
+) -> Vec<String> {
+    components
+        .iter()
+        .copied()
+        .map(|component| ux_component_output(component, profile, response, summary, width))
+        .collect()
+}
+
 fn formula(profile: &Profile, summary: &str) -> String {
     let box_model = FormulaBox::new(
         "수식 박스",
@@ -2091,6 +2426,7 @@ fn dispatch_explanation(
     width: usize,
 ) -> String {
     let requested = requested_renderers(prompt);
+    let ux_components = requested_ux_components(prompt, response);
     let wants_architecture = requested.contains(&RendererKind::Table)
         && (requested.contains(&RendererKind::Flow)
             || prompt_matches_pattern(prompt, "아키텍처")
@@ -2133,6 +2469,13 @@ fn dispatch_explanation(
                 profile.index_style,
             ));
         }
+        sections.extend(ux_component_sections(
+            profile,
+            response,
+            summary,
+            width,
+            &ux_components,
+        ));
         if requested.contains(&RendererKind::Flow) && !wants_architecture {
             sections.push(codexplain_flow(profile.frame, profile.theme, width));
         }
@@ -2140,6 +2483,14 @@ fn dispatch_explanation(
         if !sections.is_empty() {
             return sections.join("\n\n");
         }
+    }
+
+    if !ux_components.is_empty() {
+        let mut sections = ux_component_sections(profile, response, summary, width, &ux_components);
+        if requested.contains(&RendererKind::Progress) {
+            sections.insert(0, progress_report(profile, response, summary, width));
+        }
+        return sections.join("\n\n");
     }
 
     match selection.intent {
@@ -2207,8 +2558,6 @@ fn should_back_off(prompt: &str, response: &str) -> bool {
         "exact format",
         "verbatim",
         "commit message",
-        "diff",
-        "patch",
         "test output",
         "logs",
     ]
@@ -2220,7 +2569,10 @@ fn should_back_off(prompt: &str, response: &str) -> bool {
         || prompt.contains("커밋 메시지")
         || prompt.contains("로그만")
         || prompt.contains("코드만")
-        || prompt.contains("테스트 출력만");
+        || prompt.contains("테스트 출력만")
+        || prompt.contains("diff만")
+        || prompt.contains("patch만")
+        || prompt.contains("패치만");
     strict_prompt || looks_like_machine_output(response)
 }
 
@@ -4510,6 +4862,50 @@ mod tests {
         );
         assert!(output.contains("│ 진척      │ 진행 중 · 60%"), "{output}");
         assert!(output.contains("│ 다음 행동 │"), "{output}");
+    }
+
+    #[test]
+    fn rich_ux_prompt_combines_all_visual_status_components() {
+        let profile = Profile {
+            theme: Theme::None,
+            ..Profile::default()
+        };
+        let output = shape(
+            "모든 UX 요소를 풍부하게 보여줘: status badge, checklist, risk, confidence, diff, decision matrix, next action, eta, callout",
+            "현재 4/5 단계 진행 중입니다. Rust 테스트는 통과했고 릴리즈 검증이 남았습니다.",
+            &profile,
+            100,
+        );
+
+        assert!(output.contains("[RUNNING] 마무리 중"), "{output}");
+        assert!(output.contains("체크포인트"), "{output}");
+        assert!(output.contains("│ 위험"), "{output}");
+        assert!(output.contains("확신도"), "{output}");
+        assert!(output.contains("│ 변경"), "{output}");
+        assert!(output.contains("│ 선택"), "{output}");
+        assert!(output.contains("다음 행동:"), "{output}");
+        assert!(output.contains("ETA:"), "{output}");
+        assert!(output.contains("│ 주의"), "{output}");
+    }
+
+    #[test]
+    fn ux_components_are_selected_dynamically_from_prompt_and_failure_text() {
+        let profile = Profile {
+            theme: Theme::None,
+            ..Profile::default()
+        };
+        let output = shape(
+            "리스크와 다음 행동만 알려줘",
+            "실패: provider timeout 때문에 검증이 중단됐습니다.",
+            &profile,
+            80,
+        );
+
+        assert!(output.contains("[BLOCKED] 확인 필요"), "{output}");
+        assert!(output.contains("│ 위험"), "{output}");
+        assert!(output.contains("다음 행동:"), "{output}");
+        assert!(output.contains("│ 주의"), "{output}");
+        assert!(!output.contains("확신도"), "{output}");
     }
 
     #[test]
