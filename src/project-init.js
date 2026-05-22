@@ -65,10 +65,21 @@ style, are stored project-locally in
 \`.codexplain/ux-profile.json\` when users run \`codexplain profile\`,
 \`codexplain feedback\`, or \`codexplain rlhf\`.
 
+Renderer selection is compositional. If the prompt asks for architecture,
+tradeoff, and formula views together, Codexplain should combine table/flow
+architecture context, pros/cons comparison, and a formula box instead of
+dropping later requested formats. Progress prompts should render a short status
+line, progress bar, and checkpoint table so users can scan current state before
+reading details.
+
 Storage safety preferences are stored in \`.codexplain/config.json\`. Adjust
 \`storageCheck.minFree.value\` to override the project-local threshold used by
 \`codexplain storage-check\`; the \`--min-free-gb\` CLI flag still wins for one
 command invocation.
+
+Ouroboros automation must stay project-local. If an evolve or ralph run starts
+emitting acceptance criteria from another project, cancel it and restart with an
+explicit Seed for this repository before allowing further file mutations.
 `;
 
 const CONFIG = `{

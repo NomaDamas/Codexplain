@@ -17,6 +17,7 @@ preference tuning.
 - [🎛️ CLI](#️-cli)
 - [🦀 Rust Core](#-rust-core)
 - [💾 Storage Safety](#-storage-safety)
+- [🌀 Ouroboros Readiness](#-ouroboros-readiness)
 - [📁 Project Files](#-project-files)
 - [✅ Verification](#-verification)
 
@@ -107,9 +108,15 @@ The result should be:
 - Adjustable abstraction range: concrete, implementation, architecture, strategy.
 - Adjustable detail layers: TLDR, summary, concept, mechanism, architecture,
   implementation, evidence, next-step.
-- Dynamic renderer selection: TLDR prose, table, flow, pros/cons panels,
-  numbered index lists, and formula boxes.
+- Dynamic renderer selection: TLDR prose, progress reports, table, flow,
+  pros/cons panels, numbered index lists, and formula boxes.
+- Compositional renderer selection: when a prompt asks for architecture,
+  tradeoffs, and formulas together, Codexplain can combine table/flow context,
+  pros/cons comparison, and formula boxes instead of choosing only the first
+  matching format.
 - Pros/cons and tradeoff questions as comparison panels instead of loose bullets.
+- Progress reports with a short status label above the bar, then a compact
+  checkpoint table for current state, percentage, and next action.
 - Formula boxes for decision rules or simple math explanations.
 - Side-by-side table/flow panels only when terminal width allows it.
 - Exact commands, file paths, risks, test evidence, and dates preserved.
@@ -231,6 +238,31 @@ This cleanup rule is intentionally narrow:
 - `dist/` is reported but never removed automatically.
 - `node_modules/` is reported but never removed automatically.
 - Cleanup only runs when available storage is below the effective threshold.
+
+## 🌀 Ouroboros Readiness
+
+Codexplain can be evaluated with Ouroboros, but automation must remain scoped to
+this repository. If an evolve or Ralph run emits acceptance criteria from a
+different project, cancel that job and restart from an explicit project-local
+Seed instead of reusing the drifted lineage.
+
+Current Seed coverage should include:
+
+- Rust is the actual terminal explanation UX core, not a prototype.
+- Node remains a thin npm, install, legacy, and Codex wrapper surface.
+- Dynamic renderer selection can compose multiple requested formats.
+- Project-local profile, storage config, and post-response adapter are written
+  under `.codexplain/` only.
+- Storage cleanup only removes `target/` below the effective threshold.
+- Verification includes Rust tests, Node tests, release build, diff whitespace,
+  forbidden trace grep, and `storage-check`.
+
+Gap checks added for the renderer migration:
+
+- `compound_prompts_combine_architecture_tradeoff_and_formula_renderers`
+- `responsive_architecture_panels_stack_when_terminal_is_narrow`
+- `progress_renderer_reports_status_text_bar_and_detail_table`
+- `narrow_width_table_snapshot_wraps_and_fits_visible_width`
 
 ## 📁 Project Files
 

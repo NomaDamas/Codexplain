@@ -1,36 +1,17 @@
 {
   "schemaVersion": 1,
   "detail": "deep",
-  "style": "plain",
+  "style": "tutorial",
   "theme": "ocean",
   "frame": "unicode",
+  "indexStyle": "decimal",
   "audience": "general",
   "preferredStructure": "auto",
   "abstractionRange": {
     "min": "concrete",
     "max": "architecture"
   },
-  "detailLayers": [
-    "tldr",
-    "summary",
-    "architecture",
-    "implementation",
-    "evidence",
-    "next-step"
-  ],
-  "explanationMoves": [
-    "tldr",
-    "answer-first",
-    "plain-language",
-    "paired-visuals",
-    "evidence",
-    "next-step"
-  ],
-  "feedback": {
-    "positive": 0,
-    "negative": 0,
-    "revisions": 0,
-    "rewardScore": 0,
-    "signals": []
-  }
+  "detailLayers": ["tldr", "summary", "architecture", "implementation", "evidence", "next-step"],
+  "explanationMoves": ["tldr", "answer-first", "plain-language", "evidence", "next-step"],
+  "feedback": {"positive": 0, "negative": 0, "revisions": 0, "rewardScore": 0, "signals": []}
 }

@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "storageCheck": {
+    "minFree": {
+      "value": 5,
+      "unit": "gb"
+    }
+  }
+}

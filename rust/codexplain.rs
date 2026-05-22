@@ -205,6 +205,7 @@ enum RendererKind {
     Formula,
     IndexedList,
     Flow,
+    Progress,
     TldrProse,
     Prose,
 }
@@ -215,6 +216,7 @@ enum ExplanationIntent {
     DecisionRule,
     OrderedSteps,
     ProcessFlow,
+    ProgressReport,
     StructuredSummary,
     StatusSummary,
     GeneralAnswer,
@@ -767,6 +769,9 @@ impl RendererKind {
                 Some(Self::IndexedList)
             }
             "flow" | "flowchart" | "diagram" | "흐름" => Some(Self::Flow),
+            "progress" | "progress-bar" | "progress_bar" | "진행" | "진행상황" | "상태보고" => {
+                Some(Self::Progress)
+            }
             "tldr" | "tldr-prose" | "summary" | "요약" => Some(Self::TldrProse),
             "prose" | "paragraph" | "plain" | "문단" => Some(Self::Prose),
             _ => None,
@@ -780,6 +785,7 @@ impl RendererKind {
             Self::Formula => ExplanationIntent::DecisionRule,
             Self::IndexedList => ExplanationIntent::OrderedSteps,
             Self::Flow => ExplanationIntent::ProcessFlow,
+            Self::Progress => ExplanationIntent::ProgressReport,
             Self::TldrProse => ExplanationIntent::StatusSummary,
             Self::Prose => ExplanationIntent::GeneralAnswer,
         }
@@ -816,6 +822,13 @@ const PROMPT_SIGNAL_MAP: &[PromptSignal] = &[
         intent: ExplanationIntent::OrderedSteps,
         kind: PromptSignalKind::Keyword,
         pattern: "1,2,3|번호|순번|목록|리스트|단계별|numbered|indexed|list",
+    },
+    PromptSignal {
+        renderer: RendererKind::Progress,
+        intent: ExplanationIntent::ProgressReport,
+        kind: PromptSignalKind::Keyword,
+        pattern:
+            "progress|progress bar|진행상황|진행 상황|진척|몇 퍼센트|percent|상태 보고|작업 상태",
     },
     PromptSignal {
         renderer: RendererKind::TldrProse,
@@ -872,6 +885,20 @@ fn select_renderer(prompt: &str, profile: &Profile) -> RendererSelection {
                 pattern: "default-prose",
             },
         })
+}
+
+fn requested_renderers(prompt: &str) -> Vec<RendererKind> {
+    let mut renderers = Vec::new();
+    for signal in prompt_signal_map()
+        .iter()
+        .copied()
+        .filter(|signal| signal.kind != PromptSignalKind::Default)
+    {
+        if prompt_matches_signal(prompt, signal) && !renderers.contains(&signal.renderer) {
+            renderers.push(signal.renderer);
+        }
+    }
+    renderers
 }
 
 fn prompt_matches_signal(prompt: &str, signal: PromptSignal) -> bool {
@@ -956,6 +983,17 @@ fn fit_column_widths(desired: &[usize], budget: usize, min_column_width: usize) 
         .map(|width| (*width).min(min_column_width).max(1))
         .collect::<Vec<_>>();
     let mut remaining = budget.saturating_sub(widths.iter().sum::<usize>());
+
+    for (index, desired_width) in desired.iter().enumerate() {
+        if remaining == 0 {
+            break;
+        }
+        if *desired_width <= min_column_width + 4 && widths[index] < *desired_width {
+            let extra = (*desired_width - widths[index]).min(remaining);
+            widths[index] += extra;
+            remaining -= extra;
+        }
+    }
 
     while remaining > 0 {
         let Some((index, needed)) = widths
@@ -1524,6 +1562,40 @@ fn render_table_model(table: &Table, frame: Frame, theme: Theme) -> String {
     lines.join("\n")
 }
 
+fn render_responsive_panels(left: &str, right: &str, width: usize, gap: usize) -> String {
+    let left_lines: Vec<&str> = left.lines().collect();
+    let right_lines: Vec<&str> = right.lines().collect();
+    let left_width = left_lines
+        .iter()
+        .map(|line| visible_width(line))
+        .max()
+        .unwrap_or(0);
+    let right_width = right_lines
+        .iter()
+        .map(|line| visible_width(line))
+        .max()
+        .unwrap_or(0);
+
+    if left_width + gap + right_width > width {
+        return format!("{left}\n\n{right}");
+    }
+
+    let mut lines = Vec::new();
+    let line_count = left_lines.len().max(right_lines.len());
+    let spacer = " ".repeat(gap);
+    for index in 0..line_count {
+        let left_line = left_lines.get(index).copied().unwrap_or("");
+        let right_line = right_lines.get(index).copied().unwrap_or("");
+        lines.push(format!(
+            "{}{}{}",
+            pad(left_line, left_width),
+            spacer,
+            right_line
+        ));
+    }
+    lines.join("\n")
+}
+
 fn wrapped_row(
     row: &TableRow,
     layout: &TableLayout,
@@ -1581,6 +1653,25 @@ fn codexplain_flow(frame: Frame, theme: Theme, max_width: usize) -> String {
         max_width,
     );
     render_flow_diagram(&diagram, frame, theme)
+}
+
+fn architecture_panels(profile: &Profile, summary: &str, width: usize) -> String {
+    let stacked_width = width.max(50);
+    let panel_width = if width >= 112 {
+        ((width - 3) / 2).max(40)
+    } else {
+        stacked_width
+    };
+    let table_panel = table(
+        &["계층", "역할"],
+        &layer_rows(summary),
+        profile.frame,
+        profile.theme,
+        true,
+        panel_width,
+    );
+    let flow_panel = codexplain_flow(profile.frame, profile.theme, panel_width);
+    render_responsive_panels(&table_panel, &flow_panel, width, 3)
 }
 
 fn render_flow_diagram(diagram: &FlowDiagram, frame: Frame, theme: Theme) -> String {
@@ -1777,6 +1868,99 @@ fn render_indexed_list(list: &IndexedList, frame: Frame, theme: Theme) -> String
         .join("\n")
 }
 
+fn progress_percent(response: &str) -> usize {
+    for token in response.split_whitespace() {
+        let cleaned = token.trim_matches(|ch: char| !ch.is_ascii_digit() && ch != '%' && ch != '/');
+        if let Some(value) = cleaned.strip_suffix('%') {
+            if let Ok(percent) = value.parse::<usize>() {
+                return percent.min(100);
+            }
+        }
+        if let Some((done, total)) = cleaned.split_once('/') {
+            if let (Ok(done), Ok(total)) = (done.parse::<usize>(), total.parse::<usize>()) {
+                if total > 0 {
+                    return ((done * 100) / total).min(100);
+                }
+            }
+        }
+    }
+
+    let lower = response.to_ascii_lowercase();
+    if response.contains("완료") || lower.contains("done") || lower.contains("pass") {
+        100
+    } else if response.contains("실패") || lower.contains("fail") || lower.contains("error") {
+        0
+    } else if response.contains("진행")
+        || lower.contains("running")
+        || lower.contains("in progress")
+    {
+        60
+    } else if response.contains("대기") || lower.contains("pending") {
+        20
+    } else {
+        50
+    }
+}
+
+fn progress_label(percent: usize) -> &'static str {
+    match percent {
+        100 => "완료",
+        80..=99 => "마무리 중",
+        40..=79 => "진행 중",
+        1..=39 => "초기 진행",
+        _ => "확인 필요",
+    }
+}
+
+fn render_progress_bar(percent: usize, width: usize, frame: Frame, theme: Theme) -> String {
+    let bar_width = width.clamp(12, 36);
+    let filled = ((bar_width * percent.min(100)) + 50) / 100;
+    let empty = bar_width.saturating_sub(filled);
+    let (fill, blank) = match frame {
+        Frame::Unicode => ('█', '░'),
+        Frame::Ascii => ('#', '-'),
+    };
+    let bar = format!(
+        "{}{}",
+        fill.to_string().repeat(filled),
+        blank.to_string().repeat(empty)
+    );
+    format!(
+        "[{}] {:>3}%",
+        color(theme, "success", &bar),
+        percent.min(100)
+    )
+}
+
+fn progress_report(profile: &Profile, response: &str, summary: &str, width: usize) -> String {
+    let percent = progress_percent(response);
+    let status = progress_label(percent);
+    let bar_width = width.saturating_sub(18).min(36).max(12);
+    let headline = format!(
+        "{}{}",
+        color(profile.theme, "heading", "진행상황: "),
+        color(profile.theme, role_for(status, "accent"), status)
+    );
+    let bar = render_progress_bar(percent, bar_width, profile.frame, profile.theme);
+    let rows = vec![
+        vec!["현재".to_string(), compact(summary, 1)],
+        vec!["진척".to_string(), format!("{status} · {percent}%")],
+        vec![
+            "다음 행동".to_string(),
+            "막힌 지점, 실패 로그, 남은 검증을 한 줄로 확인합니다.".to_string(),
+        ],
+    ];
+    let detail = table(
+        &["항목", "보고"],
+        &rows,
+        profile.frame,
+        profile.theme,
+        true,
+        width,
+    );
+    format!("{headline}\n{bar}\n\n{detail}")
+}
+
 fn formula(profile: &Profile, summary: &str) -> String {
     let box_model = FormulaBox::new(
         "수식 박스",
@@ -1906,6 +2090,58 @@ fn dispatch_explanation(
     profile: &Profile,
     width: usize,
 ) -> String {
+    let requested = requested_renderers(prompt);
+    let wants_architecture = requested.contains(&RendererKind::Table)
+        && (requested.contains(&RendererKind::Flow)
+            || prompt_matches_pattern(prompt, "아키텍처")
+            || prompt_matches_pattern(prompt, "architecture"));
+
+    if requested.len() > 1 || wants_architecture {
+        let mut sections = Vec::new();
+        if wants_architecture {
+            sections.push(architecture_panels(profile, summary, width));
+        } else if requested.contains(&RendererKind::Table) {
+            sections.push(table(
+                &["구분", "내용"],
+                &layer_rows(summary),
+                profile.frame,
+                profile.theme,
+                true,
+                width,
+            ));
+        }
+
+        if requested.contains(&RendererKind::ProsCons) {
+            sections.push(pros_cons(profile));
+        }
+        if requested.contains(&RendererKind::Formula) {
+            sections.push(formula(
+                profile,
+                "초기에는 반복속도, 제품화에는 배포/안정성 가중치가 커집니다.",
+            ));
+        }
+        if requested.contains(&RendererKind::Progress) {
+            sections.push(progress_report(profile, response, summary, width));
+        }
+        if requested.contains(&RendererKind::IndexedList) {
+            let items = split_sentences(summary);
+            sections.push(indexed(
+                &items,
+                profile.frame,
+                profile.theme,
+                width,
+                profile.index_style,
+            ));
+        }
+        if requested.contains(&RendererKind::Flow) && !wants_architecture {
+            sections.push(codexplain_flow(profile.frame, profile.theme, width));
+        }
+
+        if !sections.is_empty() {
+            return sections.join("\n\n");
+        }
+    }
+
     match selection.intent {
         ExplanationIntent::Comparison => {
             let mut output = pros_cons(profile);
@@ -1930,6 +2166,7 @@ fn dispatch_explanation(
         }
         ExplanationIntent::DecisionRule => formula(profile, summary),
         ExplanationIntent::ProcessFlow => codexplain_flow(profile.frame, profile.theme, width),
+        ExplanationIntent::ProgressReport => progress_report(profile, response, summary, width),
         ExplanationIntent::StructuredSummary => table(
             &["구분", "내용"],
             &layer_rows(summary),
@@ -3436,13 +3673,13 @@ mod tests {
         assert_eq!(
             output,
             [
-                "┌──────────┬───────────────────────────┐",
-                "│ 구분     │ 내용                      │",
-                "├──────────┼───────────────────────────┤",
-                "│ 다음 행  │ 필요하면 abstraction rang │",
-                "│ 동       │ e와 detail layers를 조절  │",
-                "│          │ 합니다.                   │",
-                "└──────────┴───────────────────────────┘",
+                "┌───────────┬──────────────────────────┐",
+                "│ 구분      │ 내용                     │",
+                "├───────────┼──────────────────────────┤",
+                "│ 다음 행동 │ 필요하면 abstraction ran │",
+                "│           │ ge와 detail layers를 조  │",
+                "│           │ 절합니다.                │",
+                "└───────────┴──────────────────────────┘",
             ]
             .join("\n")
         );
@@ -4106,6 +4343,7 @@ mod tests {
             RendererKind::Formula,
             RendererKind::IndexedList,
             RendererKind::Flow,
+            RendererKind::Progress,
             RendererKind::TldrProse,
             RendererKind::Prose,
         ] {
@@ -4126,6 +4364,9 @@ mod tests {
         assert!(catalog
             .iter()
             .any(|signal| signal.intent == ExplanationIntent::ProcessFlow));
+        assert!(catalog
+            .iter()
+            .any(|signal| signal.intent == ExplanationIntent::ProgressReport));
         assert!(catalog
             .iter()
             .any(|signal| signal.intent == ExplanationIntent::StructuredSummary));
@@ -4166,6 +4407,11 @@ mod tests {
                 "처리 흐름을 보여줘",
                 RendererKind::Flow,
                 ExplanationIntent::ProcessFlow,
+            ),
+            (
+                "진행상황을 progress bar로 보고해줘",
+                RendererKind::Progress,
+                ExplanationIntent::ProgressReport,
             ),
             (
                 "현재 상태를 TLDR로 요약해줘",
@@ -4215,6 +4461,12 @@ mod tests {
             ),
             ("처리 흐름을 보여줘", RendererKind::Flow, "▼", "정책 검사"),
             (
+                "진행상황을 progress bar로 보고해줘",
+                RendererKind::Progress,
+                "진행상황: ",
+                "[████████████████████████████████████] 100%",
+            ),
+            (
                 "현재 상태를 TLDR로 요약해줘",
                 RendererKind::TldrProse,
                 "TLDR: ",
@@ -4236,6 +4488,68 @@ mod tests {
             assert!(output.contains(expected_primary), "{prompt}: {output}");
             assert!(output.contains(expected_secondary), "{prompt}: {output}");
         }
+    }
+
+    #[test]
+    fn progress_renderer_reports_status_text_bar_and_detail_table() {
+        let profile = Profile {
+            theme: Theme::None,
+            ..Profile::default()
+        };
+        let output = shape(
+            "진행상황을 progress bar로 보고해줘",
+            "현재 3/5 단계 진행 중입니다. 검증은 계속 진행 중입니다.",
+            &profile,
+            80,
+        );
+
+        assert!(output.contains("진행상황: 진행 중"), "{output}");
+        assert!(
+            output.contains("[██████████████████████░░░░░░░░░░░░░░]  60%"),
+            "{output}"
+        );
+        assert!(output.contains("│ 진척      │ 진행 중 · 60%"), "{output}");
+        assert!(output.contains("│ 다음 행동 │"), "{output}");
+    }
+
+    #[test]
+    fn compound_prompts_combine_architecture_tradeoff_and_formula_renderers() {
+        let profile = Profile {
+            theme: Theme::None,
+            ..Profile::default()
+        };
+        let output = shape(
+            "아키텍처를 표와 flow로 보여주고 JS와 Rust pros and cons와 수식도 비교해줘",
+            "Codexplain은 Rust core와 Node wrapper를 함께 씁니다. Rust는 렌더링을 맡고 Node는 설치와 Codex wrapper를 맡습니다.",
+            &profile,
+            132,
+        );
+
+        assert!(output.contains("│ 계층"), "{output}");
+        assert!(output.contains("│ 입력"), "{output}");
+        assert!(output.contains("JS / Node"), "{output}");
+        assert!(output.contains("Rust"), "{output}");
+        assert!(output.contains("핵심식 : 설명 품질 = f"), "{output}");
+    }
+
+    #[test]
+    fn responsive_architecture_panels_stack_when_terminal_is_narrow() {
+        let profile = Profile {
+            theme: Theme::None,
+            ..Profile::default()
+        };
+        let output = shape(
+            "이 프로젝트 아키텍처를 표와 흐름도로 설명해줘",
+            "CLI가 입력을 받고 Rust core가 렌더링합니다.",
+            &profile,
+            60,
+        );
+
+        assert!(output.contains("│ 계층"), "{output}");
+        assert!(output.contains("│ 입력"), "{output}");
+        let table_pos = output.find("│ 계층").unwrap();
+        let flow_pos = output.find("│ 입력").unwrap();
+        assert!(flow_pos > table_pos, "{output}");
     }
 
     #[test]
