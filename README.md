@@ -94,6 +94,22 @@ for this project command:
 CODEXPLAIN_COLOR=always codexplain shape --theme grape --prompt "강조해서 설명" --response "완료 PASS"
 ```
 
+For chat or Markdown surfaces that can render inline HTML, use `--chat-color`.
+It converts terminal ANSI styles into `<span style="color: ...">` markup while
+still preserving strict JSON, diffs, code, and logs unchanged:
+
+```bash
+codexplain shape --chat-color --theme sunset \
+  --prompt "채팅에서도 색 있게 설명해줘" \
+  --response "Codexplain은 Rust-only 설명 UX 렌더러입니다."
+```
+
+Equivalent explicit form:
+
+```bash
+codexplain shape --color-output html --theme sunset --prompt "요약" --response "본문"
+```
+
 Give feedback after an answer:
 
 ```bash

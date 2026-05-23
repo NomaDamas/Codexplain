@@ -34,6 +34,14 @@ enum Theme {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ColorOutput {
+    Terminal,
+    Ansi,
+    Html,
+    Plain,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum AnsiRole {
     Border,
     Heading,
@@ -1590,6 +1598,251 @@ fn color(theme: Theme, role: &str, value: &str) -> String {
     theme.style(AnsiRole::parse(role)).apply(value)
 }
 
+fn color_output_mode(args: &[String]) -> ColorOutput {
+    if args.iter().any(|arg| arg == "--chat-color") {
+        return ColorOutput::Html;
+    }
+    if let Some(value) = arg_value(args, "--color-output") {
+        return parse_color_output(value);
+    }
+    if let Ok(value) = env::var("CODEXPLAIN_CHAT_COLOR") {
+        if env_flag_enabled(Some(value.clone()))
+            || matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "html" | "markdown" | "chat"
+            )
+        {
+            return ColorOutput::Html;
+        }
+    }
+    if let Ok(value) = env::var("CODEXPLAIN_COLOR_OUTPUT") {
+        return parse_color_output(&value);
+    }
+    ColorOutput::Terminal
+}
+
+fn parse_color_output(value: &str) -> ColorOutput {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "ansi" | "terminal-force" | "force" => ColorOutput::Ansi,
+        "html" | "chat" | "markdown" | "md" => ColorOutput::Html,
+        "plain" | "none" | "off" | "no-color" => ColorOutput::Plain,
+        _ => ColorOutput::Terminal,
+    }
+}
+
+fn apply_color_output(rendered: &str, mode: ColorOutput, strict: bool) -> String {
+    if strict {
+        return rendered.to_string();
+    }
+    match mode {
+        ColorOutput::Terminal | ColorOutput::Ansi => rendered.to_string(),
+        ColorOutput::Plain => strip_ansi(rendered),
+        ColorOutput::Html => ansi_to_html_pre(rendered),
+    }
+}
+
+fn shape_for_output(
+    prompt: &str,
+    response: &str,
+    profile: &Profile,
+    width: usize,
+    mode: ColorOutput,
+) -> String {
+    let strict = should_back_off(prompt, response);
+    let rendered = shape(prompt, response, profile, width);
+    apply_color_output(&rendered, mode, strict)
+}
+
+fn strip_ansi(value: &str) -> String {
+    let mut out = String::new();
+    let mut chars = value.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\x1b' {
+            consume_ansi_escape(&mut chars);
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
+fn ansi_to_html_pre(value: &str) -> String {
+    format!(
+        "<pre class=\"codexplain-chat-color\" style=\"white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; line-height: 1.35;\">{}</pre>",
+        ansi_to_html_spans(value)
+    )
+}
+
+fn ansi_to_html_spans(value: &str) -> String {
+    let mut out = String::new();
+    let mut chars = value.chars().peekable();
+    let mut span_open = false;
+    while let Some(ch) = chars.next() {
+        if ch != '\x1b' {
+            push_html_escaped(&mut out, ch);
+            continue;
+        }
+        let Some('[') = chars.peek().copied() else {
+            continue;
+        };
+        chars.next();
+        let mut code = String::new();
+        for item in chars.by_ref() {
+            if item == 'm' {
+                break;
+            }
+            code.push(item);
+        }
+        if span_open {
+            out.push_str("</span>");
+            span_open = false;
+        }
+        if let Some(style) = sgr_style(&code) {
+            out.push_str("<span style=\"");
+            out.push_str(style);
+            out.push_str("\">");
+            span_open = true;
+        }
+    }
+    if span_open {
+        out.push_str("</span>");
+    }
+    out
+}
+
+fn push_html_escaped(out: &mut String, ch: char) {
+    match ch {
+        '&' => out.push_str("&amp;"),
+        '<' => out.push_str("&lt;"),
+        '>' => out.push_str("&gt;"),
+        '"' => out.push_str("&quot;"),
+        '\'' => out.push_str("&#39;"),
+        _ => out.push(ch),
+    }
+}
+
+fn sgr_style(code: &str) -> Option<&'static str> {
+    match code {
+        "0" | "" => None,
+        "1m" => Some("font-weight: 700"),
+        _ => sgr_style_from_params(
+            &code
+                .split(';')
+                .filter_map(|part| part.parse::<u16>().ok())
+                .collect::<Vec<_>>(),
+        ),
+    }
+}
+
+fn sgr_style_from_params(params: &[u16]) -> Option<&'static str> {
+    let mut bold = false;
+    let mut dim = false;
+    let mut color = None;
+    let mut index = 0;
+    while index < params.len() {
+        match params[index] {
+            0 => return None,
+            1 => bold = true,
+            2 => dim = true,
+            30 => color = Some("#111827"),
+            31 => color = Some("#dc2626"),
+            32 => color = Some("#16a34a"),
+            33 => color = Some("#ca8a04"),
+            34 => color = Some("#2563eb"),
+            35 => color = Some("#9333ea"),
+            36 => color = Some("#0891b2"),
+            37 => color = Some("#e5e7eb"),
+            90 => color = Some("#6b7280"),
+            91 => color = Some("#ef4444"),
+            92 => color = Some("#22c55e"),
+            93 => color = Some("#eab308"),
+            94 => color = Some("#3b82f6"),
+            95 => color = Some("#a855f7"),
+            96 => color = Some("#06b6d4"),
+            97 => color = Some("#f9fafb"),
+            38 if params.get(index + 1) == Some(&5) => {
+                if let Some(code) = params.get(index + 2).copied() {
+                    color = ansi_256_hex(code);
+                    index += 2;
+                }
+            }
+            _ => {}
+        }
+        index += 1;
+    }
+    match (color, bold, dim) {
+        (Some("#0891b2"), false, false) => Some("color: #0891b2"),
+        (Some("#2563eb"), true, false) => Some("color: #2563eb; font-weight: 700"),
+        (Some("#06b6d4"), false, false) => Some("color: #06b6d4"),
+        (Some("#0891b2"), false, true) => Some("color: #0891b2; opacity: 0.72"),
+        (Some("#16a34a"), true, false) => Some("color: #16a34a; font-weight: 700"),
+        (Some("#ca8a04"), true, false) => Some("color: #ca8a04; font-weight: 700"),
+        (Some("#dc2626"), true, false) => Some("color: #dc2626; font-weight: 700"),
+        (Some("#ca8a04"), false, false) => Some("color: #ca8a04"),
+        (Some("#dc2626"), false, false) => Some("color: #dc2626"),
+        (Some("#22c55e"), false, false) => Some("color: #22c55e"),
+        (Some("#6b7280"), false, false) => Some("color: #6b7280"),
+        (Some("#e5e7eb"), false, false) => Some("color: #e5e7eb"),
+        (Some(color), true, false) => match color {
+            "#f97316" => Some("color: #f97316; font-weight: 700"),
+            "#dc2626" => Some("color: #dc2626; font-weight: 700"),
+            "#84cc16" => Some("color: #84cc16; font-weight: 700"),
+            "#facc15" => Some("color: #facc15; font-weight: 700"),
+            "#a855f7" => Some("color: #a855f7; font-weight: 700"),
+            "#e879f9" => Some("color: #e879f9; font-weight: 700"),
+            "#f472b6" => Some("color: #f472b6; font-weight: 700"),
+            "#60a5fa" => Some("color: #60a5fa; font-weight: 700"),
+            "#86efac" => Some("color: #86efac; font-weight: 700"),
+            _ => Some("font-weight: 700"),
+        },
+        (Some(color), false, true) => match color {
+            "#f97316" => Some("color: #f97316; opacity: 0.72"),
+            "#a855f7" => Some("color: #a855f7; opacity: 0.72"),
+            "#60a5fa" => Some("color: #60a5fa; opacity: 0.72"),
+            "#f472b6" => Some("color: #f472b6; opacity: 0.72"),
+            _ => Some("opacity: 0.72"),
+        },
+        (Some(color), false, false) => match color {
+            "#f97316" => Some("color: #f97316"),
+            "#fb923c" => Some("color: #fb923c"),
+            "#a855f7" => Some("color: #a855f7"),
+            "#e879f9" => Some("color: #e879f9"),
+            "#60a5fa" => Some("color: #60a5fa"),
+            "#93c5fd" => Some("color: #93c5fd"),
+            "#f472b6" => Some("color: #f472b6"),
+            "#f9a8d4" => Some("color: #f9a8d4"),
+            _ => None,
+        },
+        (None, true, false) => Some("font-weight: 700"),
+        (None, false, true) => Some("opacity: 0.72"),
+        _ => None,
+    }
+}
+
+fn ansi_256_hex(code: u16) -> Option<&'static str> {
+    match code {
+        67 => Some("#60a5fa"),
+        110 => Some("#93c5fd"),
+        114 => Some("#86efac"),
+        118 | 120 => Some("#84cc16"),
+        135 => Some("#a855f7"),
+        141 => Some("#a855f7"),
+        153 => Some("#93c5fd"),
+        167 => Some("#dc2626"),
+        179 => Some("#ca8a04"),
+        183 => Some("#e879f9"),
+        196 | 197 => Some("#dc2626"),
+        199 => Some("#db2777"),
+        204 => Some("#f472b6"),
+        208 => Some("#f97316"),
+        211 => Some("#f472b6"),
+        214 => Some("#fb923c"),
+        218 => Some("#f9a8d4"),
+        220 | 222 => Some("#facc15"),
+        _ => None,
+    }
+}
+
 fn role_for(value: &str, fallback: &str) -> &'static str {
     match value.trim().to_ascii_lowercase().as_str() {
         "tldr" | "핵심" | "결론" | "장점" | "pros" | "success" | "완료" | "pass" => {
@@ -2999,9 +3252,13 @@ fn load_profile_for_args(args: &[String]) -> Profile {
     if let Some(value) = arg_value(args, "--risk-sensitivity").and_then(parse_control_value) {
         profile.risk_sensitivity = value;
     }
-    profile.theme = profile
-        .theme
-        .apply_terminal_policy(|key| env::var(key).ok());
+    profile.theme = match color_output_mode(args) {
+        ColorOutput::Terminal => profile
+            .theme
+            .apply_terminal_policy(|key| env::var(key).ok()),
+        ColorOutput::Plain => Theme::None,
+        ColorOutput::Ansi | ColorOutput::Html => profile.theme,
+    };
     profile
 }
 
@@ -3536,7 +3793,11 @@ fn post_response(args: &[String]) {
         .and_then(|v| v.parse().ok())
         .unwrap_or(100);
     let profile = load_profile_for_args(args);
-    print!("{}", shape(&prompt, &response, &profile, width));
+    let mode = color_output_mode(args);
+    print!(
+        "{}",
+        shape_for_output(&prompt, &response, &profile, width, mode)
+    );
 }
 
 const CODEX_GUIDANCE_START: &str = "<!-- CODEXPLAIN:START -->";
@@ -3739,7 +4000,8 @@ fn run_codex(args: &[String]) -> i32 {
     }
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     if local_shape || env_flag_enabled(env::var("CODEXPLAIN_LOCAL_SHAPE").ok()) {
-        let profile = load_profile();
+        let profile = load_profile_for_args(args);
+        let mode = color_output_mode(args);
         let effective_prompt = if prompt.is_empty() {
             codex_args.join(" ")
         } else {
@@ -3747,7 +4009,7 @@ fn run_codex(args: &[String]) -> i32 {
         };
         print!(
             "{}",
-            shape(&effective_prompt, &stdout, &profile, terminal_width())
+            shape_for_output(&effective_prompt, &stdout, &profile, terminal_width(), mode)
         );
     } else {
         print!("{stdout}");
@@ -3789,8 +4051,8 @@ fn build_clean(args: &[String]) -> io::Result<()> {
 
 fn usage() -> &'static str {
     "Usage:
-  codexplain shape --prompt <text> [--response <text>] [--width <n>]
-  codexplain post-response --prompt <text> [--width <n>]
+  codexplain shape --prompt <text> [--response <text>] [--width <n>] [--chat-color|--color-output html|ansi|plain]
+  codexplain post-response --prompt <text> [--width <n>] [--chat-color|--color-output html|ansi|plain]
   codexplain codex --prompt <text> [--local-shape] [codex exec args...]
   codexplain install-codex --local [--force]
   codexplain feedback|rlhf --rating <1-5> --comment <text>
@@ -3816,6 +4078,7 @@ Storage-check output contract:
   cleaned=target|target_already_absent, clean_error=target:<message>, or suggested_cleanup=<text> may appear only when status=low-space
 
 Themes: none, ocean, forest, warm, sunset, grape, slate, rose, mono
+Color outputs: terminal, ansi, html, plain. Use --chat-color as an alias for --color-output html.
 Index styles: decimal, zero-padded, alpha-lower, alpha-upper, roman-lower, roman-upper"
 }
 
@@ -3825,6 +4088,7 @@ fn main() {
     match command {
         "shape" => {
             let profile = load_profile_for_args(&args);
+            let mode = color_output_mode(&args);
             let prompt = arg_value(&args, "--prompt").unwrap_or("");
             let response = arg_value(&args, "--response")
                 .map(str::to_string)
@@ -3832,7 +4096,10 @@ fn main() {
             let width = arg_value(&args, "--width")
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(100);
-            println!("{}", shape(prompt, &response, &profile, width));
+            println!(
+                "{}",
+                shape_for_output(prompt, &response, &profile, width, mode)
+            );
         }
         "post-response" => post_response(&args),
         "codex" => std::process::exit(run_codex(&args[1..])),
@@ -4400,6 +4667,48 @@ mod tests {
             }),
             Theme::None
         );
+    }
+
+    #[test]
+    fn chat_color_output_converts_ansi_to_html_spans() {
+        let profile = Profile {
+            theme: Theme::Sunset,
+            ..Profile::default()
+        };
+        let output = shape_for_output(
+            "간단히 설명해줘",
+            "본문에도 채팅 색상이 들어갑니다.",
+            &profile,
+            80,
+            ColorOutput::Html,
+        );
+
+        assert!(
+            output.starts_with(r#"<pre class="codexplain-chat-color""#),
+            "{output}"
+        );
+        assert!(
+            output.contains(r#"<span style="color: #dc2626; font-weight: 700">요약하면, </span>"#),
+            "{output}"
+        );
+        assert!(
+            output.contains(
+                r#"<span style="color: #fb923c">본문에도 채팅 색상이 들어갑니다.</span>"#
+            ),
+            "{output}"
+        );
+        assert!(!output.contains("\x1b["), "{output}");
+    }
+
+    #[test]
+    fn chat_color_output_preserves_strict_artifacts() {
+        let profile = Profile {
+            theme: Theme::Sunset,
+            ..Profile::default()
+        };
+        let output = shape_for_output("JSON만", r#"{"ok":true}"#, &profile, 80, ColorOutput::Html);
+
+        assert_eq!(output, r#"{"ok":true}"#);
     }
 
     #[test]
