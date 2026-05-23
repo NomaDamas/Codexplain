@@ -1618,7 +1618,7 @@ fn role_for_cell(value: &str, fallback: &str, cell_index: usize) -> &'static str
         ("heading", _) => "heading",
         (_, 0) => "heading",
         (_, 1) => "accent",
-        (_, 2) => "success",
+        (_, 2) => "warning",
         (_, _) => "muted",
     }
 }
@@ -2723,14 +2723,14 @@ fn dispatch_explanation(
         ExplanationIntent::StatusSummary => format!(
             "{}{}\n{}{}",
             color(profile.theme, "heading", "TLDR: "),
-            compact(response, 1),
+            color(profile.theme, "success", &compact(response, 1)),
             color(profile.theme, "heading", "요약하면, "),
-            summary
+            color(profile.theme, "accent", summary)
         ),
         ExplanationIntent::GeneralAnswer => format!(
             "{}{}",
             color(profile.theme, "heading", "요약하면, "),
-            summary
+            color(profile.theme, "accent", summary)
         ),
     }
 }
