@@ -36,8 +36,19 @@ If you are inside this repository while developing it:
 npm run on
 ```
 
-After setup, Codex in that project receives `AGENTS.md` guidance for clearer
-answers. Setup is project-local; it does not edit global Codex config.
+Cleanly uninstall the managed local/global integration:
+
+```bash
+npm run off
+```
+
+Keep feedback preferences by default. To remove `.codexplain/ux-profile.json` too:
+
+```bash
+codexplain uninstall-codex --local --remove-profile
+```
+
+After setup, Codex receives project-local `AGENTS.md` guidance. For global Codex guidance, run `codexplain install-codex --global --force`; `npm run on` in this repo installs both local and global guidance. `npm run off` cleanly removes the managed Codexplain blocks and local adapter files.
 
 ## 🚀 One-Line Use
 
@@ -77,7 +88,7 @@ Numeric controls still exist for selector tuning, not explanation depth:
 codexplain profile --ux-density 70 --risk-sensitivity 80
 ```
 
-Use `--theme ocean`, `forest`, or `warm` to make Codexplain terminal output
+This project defaults to chat-color HTML output through `.codexplain/config.json`. Use `--theme ocean`, `forest`, or `warm` to make Codexplain terminal output
 color-highlight important labels. Use `--theme none` when copy/paste-safe plain
 text is more important than visual scanning.
 

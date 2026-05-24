@@ -1,6 +1,6 @@
 # Codexplain Local Adapter
 
-This directory is project-local and Rust-only at runtime.
+This directory is project-local and Rust-only at runtime. The default output mode is chat-color HTML for explanation surfaces.
 
 Use this adapter when a host can pipe a completed answer into a post-response command:
 
@@ -19,7 +19,3 @@ abstractionLevel concrete/architecture/strategy
 ```
 
 UX selection combines explicit rules, score thresholds, and optional planner hints through `CODEXPLAIN_UX_PLAN` or `CODEXPLAIN_UX_PLANNER_COMMAND`.
-
-For chat or Markdown hosts that render inline HTML, pass `--chat-color` or
-`--color-output html`. Codexplain converts ANSI theme colors into `<span>` tags
-and leaves strict JSON, code, diffs, logs, and test output unchanged.

@@ -1618,7 +1618,15 @@ fn color_output_mode(args: &[String]) -> ColorOutput {
     if let Ok(value) = env::var("CODEXPLAIN_COLOR_OUTPUT") {
         return parse_color_output(&value);
     }
-    ColorOutput::Terminal
+    configured_color_output().unwrap_or(ColorOutput::Terminal)
+}
+
+fn configured_color_output() -> Option<ColorOutput> {
+    fs::read_to_string(config_path()).ok().and_then(|raw| {
+        extract_json_string(&raw, "defaultColorOutput")
+            .or_else(|| extract_json_string(&raw, "colorOutput"))
+            .map(|value| parse_color_output(&value))
+    })
 }
 
 fn parse_color_output(value: &str) -> ColorOutput {
@@ -3805,13 +3813,14 @@ const CODEX_GUIDANCE_END: &str = "<!-- CODEXPLAIN:END -->";
 const CODEX_GUIDANCE: &str = r#"<!-- CODEXPLAIN:START -->
 # Codexplain Response UX
 
-For this repository only, shape user-facing answers with a clear, readable terminal experience while preserving Codex's coding precision.
+Shape user-facing answers with a clear, readable, color-aware terminal/chat experience while preserving Codex's coding precision.
 
 Default answer style:
 - Start with the outcome or current state, not implementation detail.
 - Use concise Korean first when the user writes Korean.
 - Use connected Unicode boxes or tables when structure helps scanning.
 - Use semantic ANSI colors for labels, risks, success states, and next actions when the terminal supports color.
+- Use chat-color HTML span markup by default when Codexplain config asks for `defaultColorOutput: html`.
 - Respect explanationDepth light/standard/deep, architectureDepth overview/system/internals, and abstractionLevel concrete/architecture/strategy.
 - Select renderers dynamically: TLDR prose, progress, tables, flow diagrams, pros/cons, formula boxes, status badges, checklists, risk panels, confidence meters, decision matrices, ETA strips, callouts, and next-action footers.
 - Treat UX blocks like tool choices: combine the smallest useful set from prompt, response, profile, and optional planner hints.
@@ -3829,7 +3838,7 @@ Terminal UX:
 
 const LOCAL_README: &str = r#"# Codexplain Local Adapter
 
-This directory is project-local and Rust-only at runtime.
+This directory is project-local and Rust-only at runtime. The default output mode is chat-color HTML for explanation surfaces.
 
 Use this adapter when a host can pipe a completed answer into a post-response command:
 
@@ -3852,6 +3861,7 @@ UX selection combines explicit rules, score thresholds, and optional planner hin
 
 const LOCAL_CONFIG: &str = r#"{
   "schemaVersion": 1,
+  "defaultColorOutput": "html",
   "storageCheck": {
     "minFree": {
       "value": 5,
@@ -3866,6 +3876,26 @@ set -eu
 exec codexplain post-response "$@"
 "#;
 
+const GLOBAL_CODEX_GUIDANCE: &str = r#"<!-- CODEXPLAIN:START -->
+# Codexplain Global Response UX
+
+Apply Codexplain's explanation UX globally unless a repository provides stricter local instructions.
+
+Default answer style:
+- Preserve exact JSON, code, diffs, patches, logs, test output, and commit messages.
+- For explanatory answers, prefer Korean when the user writes Korean.
+- Use TLDR, Unicode tables, flow diagrams, pros/cons, formula boxes, progress UI, and next actions when they improve scanning.
+- Prefer color-aware chat output when the host can render HTML spans; otherwise use ANSI terminal colors or plain text safely.
+- Keep technical facts, commands, file paths, risks, and test evidence intact.
+<!-- CODEXPLAIN:END -->"#;
+
+fn codex_home_dir() -> PathBuf {
+    env::var("CODEX_HOME")
+        .map(PathBuf::from)
+        .or_else(|_| env::var("HOME").map(|home| PathBuf::from(home).join(".codex")))
+        .unwrap_or_else(|_| PathBuf::from(".codex"))
+}
+
 fn set_executable(path: &Path) -> io::Result<()> {
     #[cfg(unix)]
     {
@@ -3876,7 +3906,21 @@ fn set_executable(path: &Path) -> io::Result<()> {
     Ok(())
 }
 
-fn install_codex_project(_args: &[String]) -> io::Result<()> {
+fn install_codex_project(args: &[String]) -> io::Result<()> {
+    let install_local =
+        args.iter().any(|arg| arg == "--local") || !args.iter().any(|arg| arg == "--global");
+    let install_global = args.iter().any(|arg| arg == "--global");
+
+    if install_local {
+        install_local_codex_project()?;
+    }
+    if install_global {
+        install_global_codex_guidance()?;
+    }
+    Ok(())
+}
+
+fn install_local_codex_project() -> io::Result<()> {
     let root = project_path(".");
     let codexplain_dir = root.join(".codexplain");
     fs::create_dir_all(&codexplain_dir)?;
@@ -3890,13 +3934,128 @@ fn install_codex_project(_args: &[String]) -> io::Result<()> {
     let next = if let Ok(current) = fs::read_to_string(&agents_path) {
         replace_guidance_block(&current, CODEX_GUIDANCE)
     } else {
-        format!("{CODEX_GUIDANCE}\n")
+        format!(
+            "{CODEX_GUIDANCE}
+"
+        )
     };
     fs::write(agents_path, next)?;
     println!("Installed project-local Codex UX: .codexplain/post-response, .codexplain/README.md, .codexplain/config.json, AGENTS.md");
     Ok(())
 }
 
+fn install_global_codex_guidance() -> io::Result<()> {
+    let codex_home = codex_home_dir();
+    fs::create_dir_all(&codex_home)?;
+    let agents_path = codex_home.join("AGENTS.md");
+    let next = if let Ok(current) = fs::read_to_string(&agents_path) {
+        replace_guidance_block(&current, GLOBAL_CODEX_GUIDANCE)
+    } else {
+        format!(
+            "{GLOBAL_CODEX_GUIDANCE}
+"
+        )
+    };
+    fs::write(&agents_path, next)?;
+    println!(
+        "Installed global Codexplain guidance: {}",
+        agents_path.display()
+    );
+    Ok(())
+}
+
+fn uninstall_codex_project(args: &[String]) -> io::Result<()> {
+    let uninstall_local =
+        args.iter().any(|arg| arg == "--local") || !args.iter().any(|arg| arg == "--global");
+    let uninstall_global = args.iter().any(|arg| arg == "--global");
+    let remove_profile = args.iter().any(|arg| arg == "--remove-profile");
+
+    if uninstall_local {
+        uninstall_local_codex_project(remove_profile)?;
+    }
+    if uninstall_global {
+        uninstall_global_codex_guidance()?;
+    }
+    Ok(())
+}
+
+fn uninstall_local_codex_project(remove_profile: bool) -> io::Result<()> {
+    let root = project_path(".");
+    let agents_path = root.join("AGENTS.md");
+    remove_guidance_file_block(&agents_path)?;
+
+    let codexplain_dir = root.join(".codexplain");
+    remove_file_if_exists(&codexplain_dir.join("post-response"))?;
+    remove_file_if_exists(&codexplain_dir.join("README.md"))?;
+    remove_file_if_exists(&codexplain_dir.join("config.json"))?;
+    if remove_profile {
+        remove_file_if_exists(&codexplain_dir.join("ux-profile.json"))?;
+    }
+    remove_dir_if_empty(&codexplain_dir)?;
+    println!("Uninstalled project-local Codexplain UX");
+    Ok(())
+}
+
+fn uninstall_global_codex_guidance() -> io::Result<()> {
+    let agents_path = codex_home_dir().join("AGENTS.md");
+    remove_guidance_file_block(&agents_path)?;
+    println!(
+        "Uninstalled global Codexplain guidance: {}",
+        agents_path.display()
+    );
+    Ok(())
+}
+
+fn remove_guidance_file_block(path: &Path) -> io::Result<()> {
+    let Ok(current) = fs::read_to_string(path) else {
+        return Ok(());
+    };
+    let next = remove_guidance_block(&current);
+    if next.trim().is_empty() {
+        remove_file_if_exists(path)
+    } else if next != current {
+        fs::write(path, next)
+    } else {
+        Ok(())
+    }
+}
+
+fn remove_guidance_block(current: &str) -> String {
+    let Some(start) = current.find(CODEX_GUIDANCE_START) else {
+        return current.to_string();
+    };
+    let Some(end_offset) = current[start..].find(CODEX_GUIDANCE_END) else {
+        return current.to_string();
+    };
+    let end = start + end_offset + CODEX_GUIDANCE_END.len();
+    let mut next = String::new();
+    next.push_str(current[..start].trim_end());
+    let tail = current[end..].trim_start();
+    if !next.is_empty() && !tail.is_empty() {
+        next.push_str("\n\n");
+    }
+    next.push_str(tail);
+    if !next.is_empty() && !next.ends_with('\n') {
+        next.push('\n');
+    }
+    next
+}
+fn remove_file_if_exists(path: &Path) -> io::Result<()> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error),
+    }
+}
+
+fn remove_dir_if_empty(path: &Path) -> io::Result<()> {
+    match fs::remove_dir(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::DirectoryNotEmpty => Ok(()),
+        Err(error) => Err(error),
+    }
+}
 fn replace_guidance_block(current: &str, block: &str) -> String {
     let Some(start) = current.find(CODEX_GUIDANCE_START) else {
         return format!("{}\n\n{}\n", current.trim_end(), block);
@@ -4054,7 +4213,8 @@ fn usage() -> &'static str {
   codexplain shape --prompt <text> [--response <text>] [--width <n>] [--chat-color|--color-output html|ansi|plain]
   codexplain post-response --prompt <text> [--width <n>] [--chat-color|--color-output html|ansi|plain]
   codexplain codex --prompt <text> [--local-shape] [codex exec args...]
-  codexplain install-codex --local [--force]
+  codexplain install-codex [--local] [--global] [--force]
+  codexplain uninstall-codex [--local] [--global] [--remove-profile]
   codexplain feedback|rlhf --rating <1-5> --comment <text>
   codexplain profile --show|--theme <name>|--frame <unicode|ascii|fallback|auto>|--index-style <style>|--detail <level>
   codexplain profile --explanation-depth <light|standard|deep>|--architecture-depth <overview|system|internals>|--abstraction-level <concrete|architecture|strategy>
@@ -4105,7 +4265,13 @@ fn main() {
         "codex" => std::process::exit(run_codex(&args[1..])),
         "install-codex" | "init" => {
             if let Err(error) = install_codex_project(&args) {
-                eprintln!("failed to install project-local Codexplain files: {error}");
+                eprintln!("failed to install Codexplain files: {error}");
+                std::process::exit(1);
+            }
+        }
+        "uninstall-codex" | "off" => {
+            if let Err(error) = uninstall_codex_project(&args) {
+                eprintln!("failed to uninstall Codexplain files: {error}");
                 std::process::exit(1);
             }
         }
@@ -4667,6 +4833,33 @@ mod tests {
             }),
             Theme::None
         );
+    }
+
+    #[test]
+    fn remove_guidance_block_removes_only_codexplain_section() {
+        let input = "before
+
+<!-- CODEXPLAIN:START -->
+managed
+<!-- CODEXPLAIN:END -->
+
+after
+";
+        assert_eq!(
+            remove_guidance_block(input),
+            "before
+
+after
+"
+        );
+    }
+
+    #[test]
+    fn remove_guidance_block_leaves_unmanaged_content_unchanged() {
+        let input = "before
+after
+";
+        assert_eq!(remove_guidance_block(input), input);
     }
 
     #[test]
