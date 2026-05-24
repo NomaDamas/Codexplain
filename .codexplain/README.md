@@ -1,6 +1,6 @@
 # Codexplain Local Adapter
 
-This directory is project-local and Rust-only at runtime. The default output mode is chat-color HTML for explanation surfaces.
+This directory is project-local and Rust-only at runtime. The default output mode is ANSI terminal color for explanation surfaces.
 
 Use this adapter when a host can pipe a completed answer into a post-response command:
 

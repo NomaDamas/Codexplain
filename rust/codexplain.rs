@@ -3820,7 +3820,7 @@ Default answer style:
 - Use concise Korean first when the user writes Korean.
 - Use connected Unicode boxes or tables when structure helps scanning.
 - Use semantic ANSI colors for labels, risks, success states, and next actions when the terminal supports color.
-- Use chat-color HTML span markup by default when Codexplain config asks for `defaultColorOutput: html`.
+- Use ANSI terminal color by default when Codexplain config asks for `defaultColorOutput: ansi`; use HTML span markup only when chat-color output is requested.
 - Respect explanationDepth light/standard/deep, architectureDepth overview/system/internals, and abstractionLevel concrete/architecture/strategy.
 - Select renderers dynamically: TLDR prose, progress, tables, flow diagrams, pros/cons, formula boxes, status badges, checklists, risk panels, confidence meters, decision matrices, ETA strips, callouts, and next-action footers.
 - Treat UX blocks like tool choices: combine the smallest useful set from prompt, response, profile, and optional planner hints.
@@ -3838,7 +3838,7 @@ Terminal UX:
 
 const LOCAL_README: &str = r#"# Codexplain Local Adapter
 
-This directory is project-local and Rust-only at runtime. The default output mode is chat-color HTML for explanation surfaces.
+This directory is project-local and Rust-only at runtime. The default output mode is ANSI terminal color for explanation surfaces.
 
 Use this adapter when a host can pipe a completed answer into a post-response command:
 
@@ -3861,7 +3861,7 @@ UX selection combines explicit rules, score thresholds, and optional planner hin
 
 const LOCAL_CONFIG: &str = r#"{
   "schemaVersion": 1,
-  "defaultColorOutput": "html",
+  "defaultColorOutput": "ansi",
   "storageCheck": {
     "minFree": {
       "value": 5,

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "defaultColorOutput": "html",
+  "defaultColorOutput": "ansi",
   "storageCheck": {
     "minFree": {
       "value": 5,

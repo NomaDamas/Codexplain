@@ -88,7 +88,7 @@ Numeric controls still exist for selector tuning, not explanation depth:
 codexplain profile --ux-density 70 --risk-sensitivity 80
 ```
 
-This project defaults to chat-color HTML output through `.codexplain/config.json`. Use `--theme ocean`, `forest`, or `warm` to make Codexplain terminal output
+This project defaults to ANSI terminal color output through `.codexplain/config.json`. Use `--theme ocean`, `forest`, or `warm` to make Codexplain terminal output
 color-highlight important labels. Use `--theme none` when copy/paste-safe plain
 text is more important than visual scanning.
 
@@ -105,7 +105,7 @@ for this project command:
 CODEXPLAIN_COLOR=always codexplain shape --theme grape --prompt "강조해서 설명" --response "완료 PASS"
 ```
 
-For chat or Markdown surfaces that can render inline HTML, use `--chat-color`.
+For chat or Markdown surfaces that can render inline HTML, explicitly use `--chat-color`.
 It converts terminal ANSI styles into `<span style="color: ...">` markup while
 still preserving strict JSON, diffs, code, and logs unchanged:
 
