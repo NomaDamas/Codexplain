@@ -17,6 +17,8 @@ preference tuning.
 - [👍 RLHF-Lite](#-rlhf-lite)
 - [🎛️ CLI](#️-cli)
 - [🦀 Rust Core](#-rust-core)
+- [🧪 Renderer Quality Gate](#-renderer-quality-gate)
+- [📚 Research Basis](#-research-basis)
 - [💾 Storage Safety](#-storage-safety)
 - [🌀 Ouroboros Readiness](#-ouroboros-readiness)
 - [📁 Project Files](#-project-files)
@@ -76,6 +78,19 @@ Set your preferred style:
 codexplain profile --detail deep --set-style tutorial --theme ocean --frame unicode
 ```
 
+Open the dependency-free Rust settings UI:
+
+```bash
+codexplain settings-ui
+```
+
+Install lightweight launchers for macOS, Linux, and Windows under
+`.codexplain/app`:
+
+```bash
+codexplain install-app
+```
+
 Control explanation depth with 3-stage levels:
 
 ```bash
@@ -125,9 +140,23 @@ codexplain color off
 codexplain color status
 ```
 
+Codexplain can be enabled at three scopes:
+
+```bash
+codexplain on --project  # writes only this repo's managed adapter files
+codexplain on --global   # writes only managed guidance under CODEX_HOME
+codexplain on --session  # prints the source command for the current shell
+```
+
+`--session` cannot mutate a parent shell by itself, so use the printed
+`source .codexplain/activate` command when you want the shim only for the
+currently open terminal session.
+
 Turn the project-local interactive Codex TUI assistant-message color hook on or
-off. This does not modify global Codex settings. It only routes through a
-project-local patched Codex binary when one exists:
+off. `codexplain install-codex --local` and `npm run on` default this to `full`
+so newly opened Codex TUI sessions show color immediately. This does not modify
+global Codex settings. It only routes through a project-local patched Codex
+binary when one exists:
 
 ```bash
 codexplain tui-color on
@@ -151,6 +180,11 @@ For HTML-capable surfaces only, use the explicit HTML form:
 ```bash
 codexplain shape --color-output html --theme sunset --prompt "요약" --response "본문"
 ```
+
+Renderer-owned tables are the safe path. If a cell can become long, do not
+hand-draw a Unicode table in the prompt; use Codexplain rendering, a Markdown
+table, or short per-item boxes. The Rust table model wraps by visible width,
+pads every cell, and inserts body row dividers.
 
 Interactive Codex TUI note: the stock npm-installed Codex binary renders
 assistant messages inside its native ratatui renderer, so stdout post-processing
@@ -192,6 +226,10 @@ The result should be:
 - Short paragraphs instead of scattered process narration.
 - Unicode box tables and diagrams when they help scanning.
 - Row dividers in dense tables so long architecture lists are easier to track.
+- Width-safe Codexplain-rendered tables instead of hand-drawn long raw tables
+  when cell text may wrap.
+- Numbered `1.` `2.` sections for "two paths", "두 가지", "과정", and "단계"
+  explanations instead of one dense paragraph.
 - Semantic color highlights for labels such as TLDR, 핵심, 장점, 단점, 위험.
 - Three-stage explanation depth: light, standard, deep.
 - Three-stage architecture depth: overview, system, internals.
@@ -199,15 +237,18 @@ The result should be:
 - Adjustable detail layers: TLDR, summary, concept, mechanism, architecture,
   implementation, evidence, next-step.
 - Dynamic renderer selection: TLDR prose, progress reports, table, flow,
-  pros/cons panels, numbered index lists, formula boxes, and richer status UX
-  components when they help scanning.
+  pros/cons panels, cause-effect reports, numbered index lists, formula boxes,
+  and richer status UX components when they help scanning.
 - Compositional renderer selection: when a prompt asks for architecture,
   tradeoffs, and formulas together, Codexplain can combine table/flow context,
   pros/cons comparison, and formula boxes instead of choosing only the first
   matching format.
 - Pros/cons and tradeoff questions as comparison panels instead of loose bullets.
+- Cause-effect questions as 원인/결과/대응 reports instead of unstructured prose.
 - Progress reports with a short status label above the bar, then a compact
   checkpoint table for current state, percentage, and next action.
+- Macro progress reports that collapse verbose `Explored` / `Ran` / `Read`
+  transcripts into phase-level UX such as 탐색, 검색, 실행, 설정, 결론.
 - Tool-calling-like UX composition: status badges, checklists, risk panels,
   confidence meters, diff summary cards, decision matrices, ETA strips,
   attention callouts, and next-action footers are selected from prompt and
@@ -242,6 +283,7 @@ Available visual components:
 
 - Status badge: shows running, blocked, done, or review-needed state.
 - Progress report: status text above a bar, followed by checkpoint details.
+- Macro progress: turns micro tool-call transcripts into overall work phases.
 - Checklist: separates completed, current, and remaining work.
 - Risk panel: calls out hidden assumptions, failures, drift, or blockers.
 - Confidence meter: shows certainty as a labeled bar without relying on color.
@@ -316,6 +358,7 @@ codexplain demo
 codexplain guide --prompt "현재 상태를 쉽게 설명해줘"
 codexplain shape --prompt "흐름도로 설명해줘" --response "구현은 완료됐습니다."
 codexplain shape --prompt "Rust-only 전환을 pros and cons 표와 수식으로 설명해줘" --response "Rust는 단일 바이너리와 낮은 런타임 의존성에 유리합니다."
+codexplain shape --prompt "원인-결과 리포트로 설명해줘" --response "표 셀이 길어서 박스를 벗어납니다. 그래서 가독성이 떨어집니다."
 codexplain post-response --prompt "쉽게 설명해줘"
 codexplain feedback --rating 2 --comment "너무 어렵고 설명이 부족해"
 codexplain rlhf --rating 5 --comment "이 스타일이 좋아"
@@ -350,6 +393,38 @@ cargo run --bin codexplain -- storage-check --min-free-gb 5
 cargo run --bin codexplain -- storage-check --min-free-gb 5 --clean
 cargo test
 ```
+
+## 🧪 Renderer Quality Gate
+
+Codexplain includes a self-check for the terminal formatting failures that make
+answers hard to read:
+
+```bash
+./bin/codexplain quality-check --width 88
+```
+
+The contract fails if generated output exceeds the requested width, table body
+row dividers disappear, architecture explanations do not contain enough boxes,
+flow arrows are missing, or “two paths / 두 가지” explanations are not numbered.
+
+```text
+contract=codexplain.quality-check.v1
+overflow_lines=0
+row_dividers>=3
+architecture_boxes>=6
+flow_arrows>=4
+numbered_sections>=2
+score>=90
+```
+
+## 📚 Research Basis
+
+Codexplain's current explanation UX is mapped in
+[`docs/explanation-research.md`](docs/explanation-research.md). The current
+implementation already borrows from attention/salience, chain-of-thought style
+stepwise decomposition, RLHF-style preference feedback, constitutional
+critique/revision loops, personalized RLHF summaries, and ICLR 2026
+CoT-rubric work. Candidate additions are tracked there before implementation.
 
 ## 💾 Storage Safety
 
@@ -414,6 +489,8 @@ Gap checks added for the renderer migration:
 - `ux_density_numerically_controls_implicit_progress_components`
 - `ux_planner_plan_parser_accepts_llm_style_component_names`
 - `narrow_width_table_snapshot_wraps_and_fits_visible_width`
+- `pros_cons_shape_uses_requested_width_instead_of_fixed_snapshot_width`
+- `quality_report_enforces_width_row_divider_and_architecture_contracts`
 
 ## 📁 Project Files
 
@@ -425,6 +502,7 @@ AGENTS.md
 .codexplain/README.md
 .codexplain/config.json
 .codexplain/ux-profile.json
+.codexplain/app/
 ```
 
 Repository layout:
@@ -448,4 +526,5 @@ cargo test
 cargo build --release
 ./bin/codexplain build-size
 ./bin/codexplain storage-check --min-free-gb 5
+./bin/codexplain quality-check --width 88
 ```

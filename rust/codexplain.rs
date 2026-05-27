@@ -1,6 +1,6 @@
 use std::env;
 use std::fs;
-use std::io::{self, Read};
+use std::io::{self, Read, Write};
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -221,6 +221,7 @@ enum RendererKind {
     ProsCons,
     Formula,
     IndexedList,
+    CauseEffect,
     Flow,
     Progress,
     TldrProse,
@@ -232,6 +233,7 @@ enum ExplanationIntent {
     Comparison,
     DecisionRule,
     OrderedSteps,
+    CauseEffectReport,
     ProcessFlow,
     ProgressReport,
     StructuredSummary,
@@ -515,7 +517,7 @@ impl TableCell {
     }
 
     fn width(&self) -> usize {
-        visible_width(&self.text)
+        self.text.lines().map(visible_width).max().unwrap_or(0)
     }
 
     fn wrapped(&self, width: usize) -> Vec<String> {
@@ -819,6 +821,8 @@ impl RendererKind {
                 Some(Self::ProsCons)
             }
             "formula" | "equation" | "math" | "수식" | "공식" => Some(Self::Formula),
+            "cause-effect" | "cause_effect" | "causal" | "cause" | "effect" | "원인-결과"
+            | "원인결과" | "원인" | "결과" => Some(Self::CauseEffect),
             "indexed" | "numbered" | "list" | "ordered-list" | "목록" | "리스트" => {
                 Some(Self::IndexedList)
             }
@@ -838,6 +842,7 @@ impl RendererKind {
             Self::ProsCons => ExplanationIntent::Comparison,
             Self::Formula => ExplanationIntent::DecisionRule,
             Self::IndexedList => ExplanationIntent::OrderedSteps,
+            Self::CauseEffect => ExplanationIntent::CauseEffectReport,
             Self::Flow => ExplanationIntent::ProcessFlow,
             Self::Progress => ExplanationIntent::ProgressReport,
             Self::TldrProse => ExplanationIntent::StatusSummary,
@@ -872,17 +877,24 @@ const PROMPT_SIGNAL_MAP: &[PromptSignal] = &[
         pattern: "수식|공식|formula|equation|math|decision rule",
     },
     PromptSignal {
+        renderer: RendererKind::CauseEffect,
+        intent: ExplanationIntent::CauseEffectReport,
+        kind: PromptSignalKind::Keyword,
+        pattern: "원인-결과|원인결과|원인.*결과|왜.*그래서|cause-effect|cause and effect|cause.*effect|causal|root cause|인과|결과 리포트",
+    },
+    PromptSignal {
         renderer: RendererKind::IndexedList,
         intent: ExplanationIntent::OrderedSteps,
         kind: PromptSignalKind::Keyword,
-        pattern: "1,2,3|번호|순번|목록|리스트|단계별|numbered|indexed|list",
+        pattern:
+            "1,2,3|번호|순번|목록|리스트|단계별|numbered|indexed|list|두 가지|2가지|세 가지|3가지|크게 두|과정|순서|첫째|둘째",
     },
     PromptSignal {
         renderer: RendererKind::Progress,
         intent: ExplanationIntent::ProgressReport,
         kind: PromptSignalKind::Keyword,
         pattern:
-            "progress|progress bar|진행상황|진행 상황|진척|몇 퍼센트|percent|상태 보고|작업 상태",
+            "progress|progress bar|진행상황|진행 상황|진척|몇 퍼센트|percent|상태 보고|작업 상태|작업 로그|탐색 로그|transcript|전체적인|매크로|macro|프로세스",
     },
     PromptSignal {
         renderer: RendererKind::TldrProse,
@@ -1819,7 +1831,7 @@ fn configured_tui_color_mode() -> String {
         .and_then(|raw| extract_json_string(&raw, "tuiAssistantColor"))
         .unwrap_or_else(|| {
             if color_feature_enabled() {
-                "semantic".to_string()
+                "full".to_string()
             } else {
                 "off".to_string()
             }
@@ -1847,7 +1859,7 @@ fn tui_color_env_value() -> String {
     ) {
         value
     } else if tui_color_feature_enabled() {
-        "semantic".to_string()
+        "full".to_string()
     } else {
         "off".to_string()
     }
@@ -3082,6 +3094,63 @@ fn render_progress_bar(percent: usize, width: usize, frame: Frame, theme: Theme)
     )
 }
 
+fn looks_like_codex_activity_transcript(response: &str) -> bool {
+    response.contains("• Explored")
+        || response.contains("• Ran")
+        || response.contains("└ Read")
+        || response.contains("└ Search")
+        || response.contains("ctrl + t to view transcript")
+}
+
+fn macro_progress_rows(response: &str) -> Option<Vec<Vec<String>>> {
+    if !looks_like_codex_activity_transcript(response) {
+        return None;
+    }
+
+    let explored = response.matches("Explored").count() + response.matches("Read ").count();
+    let commands = response.matches("• Ran").count() + response.matches("\n• Ran").count();
+    let searches = response.matches("Search ").count() + response.matches("rg ").count();
+    let config = response.matches(".codexplain").count()
+        + response.matches("config.json").count()
+        + response.matches("AGENTS.md").count();
+
+    let mut rows = vec![vec![
+        "🧭 탐색".to_string(),
+        "레포 구조와 핵심 파일을 훑어 작업 지도를 만든 단계".to_string(),
+        format!("{explored}개 읽기/탐색 신호"),
+    ]];
+
+    if searches > 0 {
+        rows.push(vec![
+            "🔎 검색".to_string(),
+            "관련 심볼, 설정, 렌더러 위치를 좁힌 단계".to_string(),
+            format!("{searches}개 검색 신호"),
+        ]);
+    }
+
+    rows.push(vec![
+        "⚙️ 실행".to_string(),
+        "명령을 실행해 실제 파일/설정/출력 상태를 확인한 단계".to_string(),
+        format!("{commands}개 command 신호"),
+    ]);
+
+    if config > 0 {
+        rows.push(vec![
+            "🎛️ 설정".to_string(),
+            "프로젝트 로컬 Codexplain adapter와 profile/config를 확인한 단계".to_string(),
+            format!("{config}개 설정 신호"),
+        ]);
+    }
+
+    rows.push(vec![
+        "✅ 결론".to_string(),
+        "마이크로 로그 대신 현재 목표, 근거, 다음 액션으로 보고할 수 있음".to_string(),
+        "macro-progress UX 적용".to_string(),
+    ]);
+
+    Some(rows)
+}
+
 fn progress_report(profile: &Profile, response: &str, summary: &str, width: usize) -> String {
     let percent = progress_percent(response);
     let status = progress_label(percent);
@@ -3092,22 +3161,33 @@ fn progress_report(profile: &Profile, response: &str, summary: &str, width: usiz
         color(profile.theme, role_for(status, "accent"), status)
     );
     let bar = render_progress_bar(percent, bar_width, profile.frame, profile.theme);
-    let rows = vec![
-        vec!["현재".to_string(), compact(summary, 1)],
-        vec!["진척".to_string(), format!("{status} · {percent}%")],
-        vec![
-            "다음 행동".to_string(),
-            "막힌 지점, 실패 로그, 남은 검증을 한 줄로 확인합니다.".to_string(),
-        ],
-    ];
-    let detail = table(
-        &["항목", "보고"],
-        &rows,
-        profile.frame,
-        profile.theme,
-        true,
-        width,
-    );
+    let detail = if let Some(rows) = macro_progress_rows(response) {
+        table(
+            &["단계", "전체 의미", "근거"],
+            &rows,
+            profile.frame,
+            profile.theme,
+            true,
+            width,
+        )
+    } else {
+        let rows = vec![
+            vec!["현재".to_string(), compact(summary, 1)],
+            vec!["진척".to_string(), format!("{status} · {percent}%")],
+            vec![
+                "다음 행동".to_string(),
+                "막힌 지점, 실패 로그, 남은 검증을 한 줄로 확인합니다.".to_string(),
+            ],
+        ];
+        table(
+            &["항목", "보고"],
+            &rows,
+            profile.frame,
+            profile.theme,
+            true,
+            width,
+        )
+    };
     format!("{headline}\n{bar}\n\n{detail}")
 }
 
@@ -3133,12 +3213,17 @@ fn status_badge(profile: &Profile, response: &str) -> String {
 }
 
 fn checklist(profile: &Profile, summary: &str, width: usize) -> String {
+    let current = if looks_like_codex_activity_transcript(summary) {
+        "상세 transcript는 macro-progress 단계로 압축됨".to_string()
+    } else {
+        compact(summary, 1)
+    };
     let rows = vec![
         vec![
             "완료".to_string(),
             "검증 가능한 사실과 출력 근거를 먼저 확인".to_string(),
         ],
-        vec!["진행".to_string(), compact(summary, 1)],
+        vec!["진행".to_string(), current],
         vec![
             "남음".to_string(),
             "사용자 확인 또는 다음 명령 실행".to_string(),
@@ -3411,8 +3496,13 @@ fn formula_field_lines(
     lines
 }
 
+#[cfg(test)]
 fn pros_cons(profile: &Profile) -> String {
-    let table = pros_cons_table(120);
+    pros_cons_for_width(profile, 120)
+}
+
+fn pros_cons_for_width(profile: &Profile, width: usize) -> String {
+    let table = pros_cons_table(width);
     render_table_model(&table, profile.frame, profile.theme)
 }
 
@@ -3445,6 +3535,112 @@ fn pros_cons_table(max_width: usize) -> Table {
         .collect::<Vec<_>>();
 
     Table::new(&HEADERS, &rows, true, max_width)
+}
+
+fn cause_effect_report(profile: &Profile, response: &str, summary: &str, width: usize) -> String {
+    let rows = cause_effect_rows(response, summary);
+    table(
+        &["원인", "결과", "대응"],
+        &rows,
+        profile.frame,
+        profile.theme,
+        true,
+        width,
+    )
+}
+
+fn cause_effect_rows(response: &str, summary: &str) -> Vec<Vec<String>> {
+    let text = if response.trim().is_empty() {
+        summary
+    } else {
+        response
+    };
+    let mut rows = Vec::new();
+    for clause in split_claim_clauses(text) {
+        let clause = clause.trim();
+        if clause.is_empty() || is_index_intro_clause(clause) {
+            continue;
+        }
+        let (cause, effect) = split_causal_clause(clause)
+            .unwrap_or_else(|| (compact(clause, 1), infer_effect_from_clause(clause)));
+        rows.push(vec![
+            prewrap_table_cell(&cause, 30),
+            prewrap_table_cell(&effect, 26),
+            prewrap_table_cell(&infer_action_from_clause(clause), 32),
+        ]);
+        if rows.len() >= 4 {
+            break;
+        }
+    }
+    if rows.is_empty() {
+        rows.push(vec![
+            "입력 정보가 부족함".to_string(),
+            compact(summary, 1),
+            "원인, 영향, 원하는 대응 기준을 한 줄 더 제공합니다.".to_string(),
+        ]);
+    }
+    rows
+}
+
+fn prewrap_table_cell(value: &str, width: usize) -> String {
+    wrap_text(value, width).join("\n")
+}
+
+fn split_causal_clause(clause: &str) -> Option<(String, String)> {
+    let lower_clause = clause.to_ascii_lowercase();
+    for marker in [
+        " 때문에 ",
+        " 때문에",
+        "해서 ",
+        "어서 ",
+        "라서 ",
+        "하여 ",
+        "그래서 ",
+        "따라서 ",
+        "so ",
+        "therefore ",
+        "because ",
+        "causes ",
+        "leads to ",
+        "results in ",
+        "->",
+        "→",
+    ] {
+        if let Some(index) = lower_clause.find(marker.to_ascii_lowercase().as_str()) {
+            let cause = clause[..index].trim().trim_matches(highlight_trim_char);
+            let effect = clause[index + marker.len()..]
+                .trim()
+                .trim_matches(highlight_trim_char);
+            if !cause.is_empty() && !effect.is_empty() {
+                return Some((cause.to_string(), effect.to_string()));
+            }
+        }
+    }
+    None
+}
+
+fn infer_effect_from_clause(clause: &str) -> String {
+    if clause.contains("깨") || clause.contains("overflow") || clause.contains("벗어나") {
+        "표/다이어그램의 가독성이 떨어지고 신뢰도가 낮아집니다.".to_string()
+    } else if clause.contains("색") || clause.to_ascii_lowercase().contains("color") {
+        "중요 정보의 attention 신호가 약해집니다.".to_string()
+    } else if clause.contains("캐시") || clause.to_ascii_lowercase().contains("cache") {
+        "저장공간 사용량이 커지고 빌드/검증 비용이 증가합니다.".to_string()
+    } else {
+        "사용자가 원인과 다음 행동을 바로 연결하기 어렵습니다.".to_string()
+    }
+}
+
+fn infer_action_from_clause(clause: &str) -> String {
+    if clause.contains("깨") || clause.contains("overflow") || clause.contains("벗어나") {
+        "width-safe renderer와 quality-check로 폭 초과를 실패 처리합니다.".to_string()
+    } else if clause.contains("색") || clause.to_ascii_lowercase().contains("color") {
+        "semantic highlight role을 적용하고 plain/ANSI 모드를 분리합니다.".to_string()
+    } else if clause.contains("캐시") || clause.to_ascii_lowercase().contains("cache") {
+        "project-local target만 삭제하는 build-clean 정책을 사용합니다.".to_string()
+    } else {
+        "원인, 결과, 대응을 같은 행에 묶어 판단 비용을 줄입니다.".to_string()
+    }
 }
 
 fn summary_sentence_limit(profile: &Profile) -> usize {
@@ -3507,7 +3703,7 @@ fn dispatch_explanation(
         }
 
         if requested.contains(&RendererKind::ProsCons) {
-            sections.push(pros_cons(profile));
+            sections.push(pros_cons_for_width(profile, width));
         }
         if requested.contains(&RendererKind::Formula) {
             sections.push(formula(
@@ -3515,11 +3711,14 @@ fn dispatch_explanation(
                 "초기에는 반복속도, 제품화에는 배포/안정성 가중치가 커집니다.",
             ));
         }
+        if requested.contains(&RendererKind::CauseEffect) {
+            sections.push(cause_effect_report(profile, response, summary, width));
+        }
         if requested.contains(&RendererKind::Progress) {
             sections.push(progress_report(profile, response, summary, width));
         }
         if requested.contains(&RendererKind::IndexedList) {
-            let items = split_sentences(summary);
+            let items = indexed_items(prompt, response, summary);
             sections.push(indexed(
                 &items,
                 profile.frame,
@@ -3558,10 +3757,13 @@ fn dispatch_explanation(
             RendererKind::Flow => {
                 sections.push(codexplain_flow(profile.frame, profile.theme, width))
             }
-            RendererKind::ProsCons => sections.push(pros_cons(profile)),
+            RendererKind::ProsCons => sections.push(pros_cons_for_width(profile, width)),
             RendererKind::Formula => sections.push(formula(profile, summary)),
+            RendererKind::CauseEffect => {
+                sections.push(cause_effect_report(profile, response, summary, width))
+            }
             RendererKind::IndexedList => {
-                let items = split_sentences(summary);
+                let items = indexed_items(prompt, response, summary);
                 sections.push(indexed(
                     &items,
                     profile.frame,
@@ -3587,7 +3789,7 @@ fn dispatch_explanation(
 
     match selection.intent {
         ExplanationIntent::Comparison => {
-            let mut output = pros_cons(profile);
+            let mut output = pros_cons_for_width(profile, width);
             if renderer_signal_present(prompt, RendererKind::Formula) {
                 output.push_str("\n\n");
                 output.push_str(&formula(
@@ -3597,8 +3799,11 @@ fn dispatch_explanation(
             }
             output
         }
+        ExplanationIntent::CauseEffectReport => {
+            cause_effect_report(profile, response, summary, width)
+        }
         ExplanationIntent::OrderedSteps => {
-            let items = split_sentences(summary);
+            let items = indexed_items(prompt, response, summary);
             indexed(
                 &items,
                 profile.frame,
@@ -3709,6 +3914,103 @@ fn split_sentences(text: &str) -> Vec<String> {
     } else {
         items
     }
+}
+
+fn indexed_items(prompt: &str, response: &str, summary: &str) -> Vec<String> {
+    let mut items = split_semantic_sections(response);
+    if items.len() < 2 {
+        items = split_semantic_sections(summary);
+    }
+    if items.len() < 2 {
+        items = split_sentences(summary);
+    }
+
+    let force_numbering = [
+        "두 가지",
+        "2가지",
+        "세 가지",
+        "3가지",
+        "크게 두",
+        "과정",
+        "순서",
+        "단계",
+        "첫째",
+        "둘째",
+    ]
+    .iter()
+    .any(|pattern| prompt_matches_pattern(prompt, pattern));
+    if force_numbering {
+        items.retain(|item| !is_index_intro_clause(item));
+    }
+    if items.is_empty() {
+        split_sentences(summary)
+    } else {
+        items
+    }
+}
+
+fn split_semantic_sections(text: &str) -> Vec<String> {
+    let normalized = text.replace('\n', " ");
+    let clauses = split_claim_clauses(&normalized);
+    let mut items = Vec::new();
+
+    for clause in clauses {
+        for section in split_ordered_markers(&clause) {
+            let section = section
+                .trim()
+                .trim_matches(highlight_trim_char)
+                .trim()
+                .to_string();
+            if !section.is_empty() {
+                items.push(section);
+            }
+        }
+    }
+
+    if items.len() >= 2 {
+        return items;
+    }
+
+    split_sentences(&normalized)
+}
+
+fn split_ordered_markers(text: &str) -> Vec<String> {
+    let mut normalized = text.to_string();
+    for marker in [
+        "첫째",
+        "둘째",
+        "셋째",
+        "넷째",
+        "다섯째",
+        "1.",
+        "2.",
+        "3.",
+        "4.",
+        "5.",
+    ] {
+        normalized = normalized.replace(marker, &format!("\n{marker}"));
+    }
+    normalized
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(ToOwned::to_owned)
+        .collect()
+}
+
+fn is_index_intro_clause(item: &str) -> bool {
+    let normalized = item.trim();
+    let lower = normalized.to_ascii_lowercase();
+    let intro_signal = normalized.contains("두 가지")
+        || normalized.contains("2가지")
+        || normalized.contains("세 가지")
+        || normalized.contains("3가지")
+        || normalized.contains("크게 두")
+        || lower.contains("two paths")
+        || lower.contains("two ways")
+        || lower.contains("three paths")
+        || lower.contains("three ways");
+    intro_signal && visible_width(normalized) <= 48
 }
 
 fn layer_rows(summary: &str, profile: &Profile) -> Vec<Vec<String>> {
@@ -4119,8 +4421,8 @@ fn color_command(args: &[String]) -> io::Result<()> {
     let action = args.get(1).map(String::as_str).unwrap_or("status");
     match action {
         "on" | "enable" => {
-            write_color_config("ansi", "ansi", "semantic")?;
-            println!("Codexplain color: on\n- defaultColorOutput: ansi\n- chatHighlightOutput: ansi\n- tuiAssistantColor: semantic\n- TUI env: CLICOLOR_FORCE=1 FORCE_COLOR=3 COLORTERM=truecolor CODEXPLAIN_TUI_COLOR=semantic");
+            write_color_config("ansi", "ansi", "full")?;
+            println!("Codexplain color: on\n- defaultColorOutput: ansi\n- chatHighlightOutput: ansi\n- tuiAssistantColor: full\n- TUI env: CLICOLOR_FORCE=1 FORCE_COLOR=3 COLORTERM=truecolor CODEXPLAIN_TUI_COLOR=full");
         }
         "off" | "disable" => {
             write_color_config("plain", "plain", "off")?;
@@ -4134,7 +4436,7 @@ fn color_command(args: &[String]) -> io::Result<()> {
             let chat =
                 extract_json_string(&raw, "chatHighlightOutput").unwrap_or_else(|| default.clone());
             let tui = extract_json_string(&raw, "tuiAssistantColor")
-                .unwrap_or_else(|| "semantic".to_string());
+                .unwrap_or_else(|| "full".to_string());
             let state = if matches!(parse_color_output(&default), ColorOutput::Plain) {
                 "off"
             } else {
@@ -4162,8 +4464,8 @@ fn tui_color_command(args: &[String]) -> io::Result<()> {
     let action = args.get(1).map(String::as_str).unwrap_or("status");
     match action {
         "on" | "enable" => {
-            write_color_config("ansi", "ansi", "semantic")?;
-            println!("Codexplain TUI assistant color: on\n- scope: project-local only\n- mode: semantic\n- patchedCodex: {}", patched_codex_status());
+            write_color_config("ansi", "ansi", "full")?;
+            println!("Codexplain TUI assistant color: on\n- scope: project-local only\n- mode: full\n- patchedCodex: {}", patched_codex_status());
         }
         "full" => {
             write_color_config("ansi", "ansi", "full")?;
@@ -4387,6 +4689,7 @@ fn renderers_to_names(renderers: &[RendererKind]) -> String {
             RendererKind::Table => "table",
             RendererKind::ProsCons => "pros-cons",
             RendererKind::Formula => "formula",
+            RendererKind::CauseEffect => "cause-effect",
             RendererKind::IndexedList => "indexed",
             RendererKind::Flow => "flow",
             RendererKind::Progress => "progress",
@@ -4954,6 +5257,11 @@ Default answer style:
 - Select renderers dynamically: TLDR prose, progress, tables, flow diagrams, pros/cons, formula boxes, status badges, checklists, risk panels, confidence meters, decision matrices, ETA strips, callouts, and next-action footers.
 - When Codexplain is ON in Codex CLI, highlight important terms with sparse semantic ANSI colors. Emojis may be used only as light explanatory supplements, not as the color system.
 - Treat UX blocks like tool choices: combine the smallest useful set from prompt, response, profile, and optional planner hints.
+- Split explanations by semantic units with active line breaks. If the answer says "two paths", "두 가지", "과정", or "단계", render them as 1. 2. 3. numbered sections instead of one dense paragraph.
+- Architecture explanations should prefer boxed components and flow boxes before prose. Use a table only when it adds a compact role/decision summary.
+- Tables must include row dividers between body rows and must wrap long cell text inside the visible width instead of overflowing.
+- Do not hand-draw long Unicode tables from raw model text. If a cell may exceed the terminal width, use Codexplain's width-safe renderer output, a Markdown table, or short per-item boxes so every cell is filled and padded by visible width.
+- Process answers should use short numbered sections, with one idea per paragraph and blank lines between sections.
 - Keep commands, paths, risks, test evidence, and exact technical facts intact.
 - Do not continue an Ouroboros evolve/ralph lineage if drift is detected. Restart with an explicit project-local Seed.
 
@@ -4964,6 +5272,9 @@ Strict-output safety:
 Terminal UX:
 - Use connected box-drawing characters such as ┌ ┬ ┐ │ ├ ┼ ┤ └ ┴ ┘.
 - Do not use broken pseudo-borders made from repeated hyphens, equals signs, or Korean long vowel marks.
+- Do not hand-draw long raw box tables when cell text may wrap. Prefer Codexplain width-safe tables, Markdown tables, or short boxes with wrapped rows; every row must be layout-owned, padded, and separated, not manually guessed.
+- For long tool transcripts such as Explored/Ran/Read, summarize the macro phase first instead of listing every micro event.
+- Use blank lines between semantic sections so the user can scan without reading a wall of text.
 <!-- CODEXPLAIN:END -->"#;
 
 const LOCAL_README: &str = r#"# Codexplain Local Adapter
@@ -5031,7 +5342,7 @@ const LOCAL_CONFIG: &str = r#"{
   "schemaVersion": 1,
   "defaultColorOutput": "ansi",
   "chatHighlightOutput": "ansi",
-  "tuiAssistantColor": "semantic",
+  "tuiAssistantColor": "full",
   "storageCheck": {
     "minFree": {
       "value": 5,
@@ -5062,7 +5373,7 @@ else
   export CODEXPLAIN_COLOR=always
   export CODEXPLAIN_COLOR_OUTPUT=ansi
   CODEXPLAIN_TUI_COLOR_VALUE=$(sed -n 's/.*"tuiAssistantColor"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$ROOT/.codexplain/config.json" 2>/dev/null | head -n 1)
-  export CODEXPLAIN_TUI_COLOR="${CODEXPLAIN_TUI_COLOR_VALUE:-semantic}"
+  export CODEXPLAIN_TUI_COLOR="${CODEXPLAIN_TUI_COLOR_VALUE:-full}"
   export CLICOLOR_FORCE=1
   export FORCE_COLOR=3
   export COLORTERM=truecolor
@@ -5086,7 +5397,7 @@ else
   export CODEXPLAIN_COLOR=always
   export CODEXPLAIN_COLOR_OUTPUT=ansi
   CODEXPLAIN_TUI_COLOR_VALUE=$(sed -n 's/.*"tuiAssistantColor"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$CODEXPLAIN_PROJECT_DIR/.codexplain/config.json" 2>/dev/null | head -n 1)
-  export CODEXPLAIN_TUI_COLOR="${CODEXPLAIN_TUI_COLOR_VALUE:-semantic}"
+  export CODEXPLAIN_TUI_COLOR="${CODEXPLAIN_TUI_COLOR_VALUE:-full}"
   export CLICOLOR_FORCE=1
   export FORCE_COLOR=3
   export COLORTERM=truecolor
@@ -5109,6 +5420,11 @@ Default answer style:
 - For explanatory answers, prefer Korean when the user writes Korean.
 - Use TLDR, Unicode tables, flow diagrams, pros/cons, formula boxes, progress UI, and next actions when they improve scanning.
 - Prefer Markdown-safe chat highlights in chat hosts; use ANSI terminal colors in terminal hosts; fall back to plain text when exact formatting matters.
+- Avoid hand-drawn long raw box tables that can overflow narrow terminals; prefer width-safe renderer output or Markdown tables. If Unicode boxes are used, every body row must be wrapped, padded, and separated by the renderer contract.
+- Collapse verbose Explored/Ran/Read transcripts into macro progress phases before details.
+- Split "two paths", "두 가지", "과정", and "단계" explanations into numbered sections with active blank lines.
+- Architecture explanations should use boxed components and flow boxes before prose; tables should show row dividers and wrap long cells.
+- Process answers should use short numbered sections, with one idea per paragraph and blank lines between sections.
 - Keep technical facts, commands, file paths, risks, and test evidence intact.
 <!-- CODEXPLAIN:END -->"#;
 
@@ -5130,8 +5446,16 @@ fn set_executable(path: &Path) -> io::Result<()> {
 }
 
 fn install_codex_project(args: &[String]) -> io::Result<()> {
-    let install_local =
-        args.iter().any(|arg| arg == "--local") || !args.iter().any(|arg| arg == "--global");
+    if args.iter().any(|arg| arg == "--session") {
+        print_session_activation_hint();
+        return Ok(());
+    }
+
+    let install_local = args.iter().any(|arg| arg == "--local")
+        || args.iter().any(|arg| arg == "--project")
+        || !args
+            .iter()
+            .any(|arg| matches!(arg.as_str(), "--global" | "--session"));
     let install_global = args.iter().any(|arg| arg == "--global");
 
     if install_local {
@@ -5141,6 +5465,14 @@ fn install_codex_project(args: &[String]) -> io::Result<()> {
         install_global_codex_guidance()?;
     }
     Ok(())
+}
+
+fn print_session_activation_hint() {
+    let activate = project_path(".codexplain/activate");
+    println!(
+        "Codexplain session activation:\n1. current shell only\n2. run: source {}\n3. verify: which codex",
+        activate.display()
+    );
 }
 
 fn install_local_codex_project() -> io::Result<()> {
@@ -5196,8 +5528,18 @@ fn install_global_codex_guidance() -> io::Result<()> {
 }
 
 fn uninstall_codex_project(args: &[String]) -> io::Result<()> {
-    let uninstall_local =
-        args.iter().any(|arg| arg == "--local") || !args.iter().any(|arg| arg == "--global");
+    if args.iter().any(|arg| arg == "--session") {
+        println!(
+            "Codexplain session deactivation:\n1. close this shell, or\n2. remove .codexplain/bin from PATH in this shell\n3. no project/global files are changed"
+        );
+        return Ok(());
+    }
+
+    let uninstall_local = args.iter().any(|arg| arg == "--local")
+        || args.iter().any(|arg| arg == "--project")
+        || !args
+            .iter()
+            .any(|arg| matches!(arg.as_str(), "--global" | "--session"));
     let uninstall_global = args.iter().any(|arg| arg == "--global");
     let remove_profile = args.iter().any(|arg| arg == "--remove-profile");
 
@@ -5512,13 +5854,16 @@ fn resolve_real_codex_binary() -> PathBuf {
 }
 
 fn local_patched_codex_binary() -> Option<PathBuf> {
-    [
+    let mut candidates = [
         project_path(".codexplain/patched-codex/bin/codex"),
         project_path(".codexplain/state/codex-upstream/codex-rs/target/release/codex"),
         project_path(".codexplain/state/codex-upstream/codex-rs/target/debug/codex"),
     ]
     .into_iter()
-    .find(|path| path.exists())
+    .filter(|path| path.exists())
+    .collect::<Vec<_>>();
+    candidates.sort_by_key(|path| fs::metadata(path).and_then(|meta| meta.modified()).ok());
+    candidates.pop()
 }
 
 fn is_executable_file(path: &Path) -> bool {
@@ -5615,21 +5960,295 @@ fn cleanup_patched_codex_target(root: &Path) -> io::Result<TargetCleanup> {
     Ok(TargetCleanup::Removed)
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct QualityReport {
+    width: usize,
+    overflow_lines: usize,
+    row_dividers: usize,
+    architecture_boxes: usize,
+    flow_arrows: usize,
+    numbered_sections: usize,
+    score: u8,
+}
+
+impl QualityReport {
+    fn passed(&self) -> bool {
+        self.overflow_lines == 0
+            && self.row_dividers >= 3
+            && self.architecture_boxes >= 6
+            && self.flow_arrows >= 4
+            && self.numbered_sections >= 2
+            && self.score >= 90
+    }
+}
+
+fn quality_report(width: usize) -> QualityReport {
+    let width = width.max(50);
+    let profile = Profile {
+        theme: Theme::None,
+        frame: Frame::Unicode,
+        ..Profile::default()
+    };
+    let architecture = shape(
+        "이 프로젝트 아키텍처를 표와 흐름도로 설명해줘",
+        "Codexplain은 Rust CLI core가 Codex 출력과 사용자 응답을 받아 strict-output policy, profile resolver, renderer selector, terminal renderer, lifecycle installer, storage controls를 통과시킵니다.",
+        &profile,
+        width,
+    );
+    let long_table = table(
+        &["대상", "상태", "근거"],
+        &[
+            vec![
+                "프로젝트 설정".to_string(),
+                "켜짐".to_string(),
+                "AGENTS.md의 관리 블록과 .codexplain/config.json으로 프로젝트 로컬 UX를 적용합니다."
+                    .to_string(),
+            ],
+            vec![
+                "현재 셸 PATH".to_string(),
+                "검증 필요".to_string(),
+                "source .codexplain/activate 이후 which codex가 프로젝트 shim을 가리켜야 합니다."
+                    .to_string(),
+            ],
+            vec![
+                "strict 출력".to_string(),
+                "보존".to_string(),
+                "JSON/code/diff/log/test output은 설명 UX를 적용하지 않고 원문을 유지합니다."
+                    .to_string(),
+            ],
+        ],
+        profile.frame,
+        profile.theme,
+        true,
+        width,
+    );
+    let numbered = shape(
+        "실행 흐름은 크게 두 가지로 설명해줘",
+        "실행 흐름은 크게 두 가지입니다. codexplain shape/post-response는 입력 텍스트를 바로 후처리합니다. codexplain codex --local-shape는 실제 codex CLI를 실행한 뒤 stdout을 캡처해서 렌더러에 통과시킵니다.",
+        &profile,
+        width,
+    );
+    let combined = format!("{architecture}\n{long_table}\n{numbered}");
+    let overflow_lines = combined
+        .lines()
+        .filter(|line| visible_width(line) > width)
+        .count();
+    let row_dividers = long_table
+        .lines()
+        .filter(|line| line.starts_with('├') && line.ends_with('┤'))
+        .count();
+    let architecture_boxes = architecture.matches('┌').count();
+    let flow_arrows = architecture.matches('▼').count();
+    let numbered_sections = ["1. │", "2. │", "01. │", "02. │", "a. │", "b. │"]
+        .iter()
+        .filter(|needle| numbered.contains(**needle))
+        .count();
+    let mut score: i32 = 100;
+    score -= (overflow_lines as i32) * 20;
+    if row_dividers < 3 {
+        score -= ((3 - row_dividers) as i32) * 10;
+    }
+    if architecture_boxes < 6 {
+        score -= ((6 - architecture_boxes) as i32) * 8;
+    }
+    if flow_arrows < 4 {
+        score -= ((4 - flow_arrows) as i32) * 8;
+    }
+    if numbered_sections < 2 {
+        score -= ((2 - numbered_sections) as i32) * 10;
+    }
+
+    QualityReport {
+        width,
+        overflow_lines,
+        row_dividers,
+        architecture_boxes,
+        flow_arrows,
+        numbered_sections,
+        score: score.clamp(0, 100) as u8,
+    }
+}
+
+fn print_quality_report(report: &QualityReport) {
+    println!("contract=codexplain.quality-check.v1");
+    println!("width={}", report.width);
+    println!("overflow_lines={}", report.overflow_lines);
+    println!("row_dividers={}", report.row_dividers);
+    println!("architecture_boxes={}", report.architecture_boxes);
+    println!("flow_arrows={}", report.flow_arrows);
+    println!("numbered_sections={}", report.numbered_sections);
+    println!("score={}", report.score);
+    println!("result={}", if report.passed() { "pass" } else { "fail" });
+}
+
+fn settings_ui() -> io::Result<()> {
+    let mut profile = load_profile();
+    println!(
+        "{}",
+        table(
+            &["설정", "현재값"],
+            &[
+                vec!["theme".to_string(), profile.theme.name().to_string()],
+                vec![
+                    "frame".to_string(),
+                    if profile.frame == Frame::Ascii {
+                        "ascii".to_string()
+                    } else {
+                        "unicode".to_string()
+                    },
+                ],
+                vec![
+                    "explanationDepth".to_string(),
+                    profile.explanation_depth.clone(),
+                ],
+                vec![
+                    "architectureDepth".to_string(),
+                    profile.architecture_depth.clone(),
+                ],
+                vec![
+                    "abstractionLevel".to_string(),
+                    profile.abstraction_level.clone(),
+                ],
+                vec!["uxDensity".to_string(), profile.ux_density.to_string()],
+            ],
+            profile.frame,
+            profile.theme,
+            true,
+            78,
+        )
+    );
+    println!("\nEnter를 누르면 현재값을 유지합니다.");
+
+    if let Some(value) = prompt_choice(
+        "theme",
+        profile.theme.name(),
+        &[
+            "ocean", "forest", "warm", "sunset", "grape", "slate", "rose", "mono", "none",
+        ],
+    )? {
+        profile.theme = Theme::parse(Some(&value));
+    }
+    if let Some(value) = prompt_choice("frame", "unicode", &["unicode", "ascii"])? {
+        profile.frame = Frame::parse(Some(&value));
+    }
+    if let Some(value) = prompt_choice(
+        "explanationDepth",
+        &profile.explanation_depth,
+        &["light", "standard", "deep"],
+    )? {
+        profile.explanation_depth = normalize_explanation_depth(&value, &profile.explanation_depth);
+    }
+    if let Some(value) = prompt_choice(
+        "architectureDepth",
+        &profile.architecture_depth,
+        &["overview", "system", "internals"],
+    )? {
+        profile.architecture_depth =
+            normalize_architecture_depth(&value, &profile.architecture_depth);
+    }
+    if let Some(value) = prompt_choice(
+        "abstractionLevel",
+        &profile.abstraction_level,
+        &["concrete", "architecture", "strategy"],
+    )? {
+        profile.abstraction_level = normalize_abstraction_level(&value, &profile.abstraction_level);
+    }
+    if let Some(value) = prompt_choice(
+        "uxDensity",
+        &profile.ux_density.to_string(),
+        &["35", "65", "90"],
+    )? {
+        if let Some(parsed) = parse_control_value(&value) {
+            profile.ux_density = parsed;
+        }
+    }
+
+    save_profile(&profile)?;
+    write_color_config("ansi", "ansi", "full")?;
+    println!("saved=.codexplain/ux-profile.json");
+    println!("color=ansi");
+    Ok(())
+}
+
+fn prompt_choice(label: &str, current: &str, options: &[&str]) -> io::Result<Option<String>> {
+    print!("{label} [{current}] options={} > ", options.join("/"));
+    io::stdout().flush()?;
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
+    let value = input.trim();
+    if value.is_empty() {
+        return Ok(None);
+    }
+    if options.iter().any(|option| *option == value) {
+        Ok(Some(value.to_string()))
+    } else {
+        println!("ignored={label}: unsupported value '{value}'");
+        Ok(None)
+    }
+}
+
+fn install_app_launchers() -> io::Result<()> {
+    let app_dir = project_path(".codexplain/app");
+    fs::create_dir_all(&app_dir)?;
+    let root = env::current_dir()?;
+    let bin = root.join("bin/codexplain");
+    let mac = app_dir.join("Codexplain Settings.command");
+    let linux = app_dir.join("codexplain-settings.desktop");
+    let windows = app_dir.join("codexplain-settings.cmd");
+
+    fs::write(
+        &mac,
+        format!(
+            "#!/usr/bin/env sh\ncd '{}'\nexec '{}' settings-ui\n",
+            shell_single_quote(&root.display().to_string()),
+            shell_single_quote(&bin.display().to_string())
+        ),
+    )?;
+    set_executable(&mac)?;
+    fs::write(
+        &linux,
+        format!(
+            "[Desktop Entry]\nType=Application\nName=Codexplain Settings\nExec={} settings-ui\nTerminal=true\nCategories=Development;\n",
+            bin.display()
+        ),
+    )?;
+    fs::write(
+        &windows,
+        format!(
+            "@echo off\r\ncd /d \"{}\"\r\n\"{}\" settings-ui\r\n",
+            root.display(),
+            bin.display()
+        ),
+    )?;
+    println!("installed={}", app_dir.display());
+    println!("mac={}", mac.display());
+    println!("linux={}", linux.display());
+    println!("windows={}", windows.display());
+    Ok(())
+}
+
+fn shell_single_quote(value: &str) -> String {
+    value.replace('\'', "'\\''")
+}
+
 fn usage() -> &'static str {
     "Usage:
   codexplain shape --prompt <text> [--response <text>] [--width <n>] [--chat-color|--color-output markdown|html|ansi|plain]
   codexplain post-response --prompt <text> [--width <n>] [--chat-color|--color-output markdown|html|ansi|plain]
   codexplain codex --prompt <text> [--local-shape] [codex exec args...]
-  codexplain install-codex [--local] [--global] [--force]
-  codexplain uninstall-codex [--local] [--global] [--remove-profile]
+  codexplain on|install-codex [--project|--local] [--global] [--session] [--force]
+  codexplain off|uninstall-codex [--project|--local] [--global] [--session] [--remove-profile]
   codexplain color on|off|status
   codexplain tui-color on|full|off|status
-  codexplain style add <name> --trigger <text> --renderers <tldr,table,flow,pros-cons,formula,indexed,progress> --description <text>
+  codexplain style add <name> --trigger <text> --renderers <tldr,table,flow,pros-cons,formula,cause-effect,indexed,progress> --description <text>
   codexplain style list|show <name>|remove <name>
   codexplain feedback|rlhf --rating <1-5> --comment <text>
   codexplain profile --show|--theme <name>|--frame <unicode|ascii|fallback|auto>|--index-style <style>|--detail <level>
   codexplain profile --explanation-depth <light|standard|deep>|--architecture-depth <overview|system|internals>|--abstraction-level <concrete|architecture|strategy>
   codexplain profile --detail-scale <0-100>|--ux-density <0-100>|--risk-sensitivity <0-100>
+  codexplain settings-ui
+  codexplain install-app
+  codexplain quality-check [--width <n>]
   codexplain demo
   codexplain build-size
   codexplain build-clean --target|--patched-codex
@@ -5650,8 +6269,11 @@ Storage-check output contract:
 
 Themes: none, ocean, forest, warm, sunset, grape, slate, rose, mono
 Color outputs: terminal, ansi, markdown, html, plain. Use --chat-color as an alias for --color-output ansi in Codex CLI.
+Scopes: --project/--local writes only this repository's managed Codexplain files; --global writes only managed guidance under CODEX_HOME; --session prints the current-shell activation command because a child process cannot mutate its parent shell.
 Color toggle: `codexplain color on` forces ANSI text color for Codexplain-shaped exec/review output and best-effort Codex TUI color env; `codexplain color off` restores plain output.
-TUI assistant color: `codexplain tui-color on` enables project-local semantic assistant-message color when a patched Codex binary exists under .codexplain/state/codex-upstream/codex-rs/target/release/codex or target/debug/codex; `off` disables only that hook.
+TUI assistant color: `codexplain tui-color on` enables project-local full assistant-message color when a patched Codex binary exists under .codexplain/state/codex-upstream/codex-rs/target/release/codex or target/debug/codex; `off` disables only that hook.
+Settings UI: `codexplain settings-ui` opens a dependency-free Rust terminal UI for theme, frame, depth, abstraction, UX density, and color mode; `codexplain install-app` writes lightweight macOS/Linux/Windows launchers under .codexplain/app.
+Quality gate: `codexplain quality-check --width 88` fails if generated tables overflow, body row dividers disappear, architecture boxes are too sparse, flow arrows are missing, or two-path explanations are not numbered.
 Build cleanup: `codexplain build-clean --patched-codex` removes only the ignored project-local patched Codex Cargo target directory.
 Index styles: decimal, zero-padded, alpha-lower, alpha-upper, roman-lower, roman-upper"
 }
@@ -5677,7 +6299,7 @@ fn main() {
         }
         "post-response" => post_response(&args),
         "codex" => std::process::exit(run_codex(&args[1..])),
-        "install-codex" | "init" => {
+        "on" | "install-codex" | "init" => {
             if let Err(error) = install_codex_project(&args) {
                 eprintln!("failed to install Codexplain files: {error}");
                 std::process::exit(1);
@@ -5791,6 +6413,28 @@ fn main() {
             }
             print_profile(&profile);
         }
+        "settings-ui" => {
+            if let Err(error) = settings_ui() {
+                eprintln!("failed to run Codexplain settings UI: {error}");
+                std::process::exit(1);
+            }
+        }
+        "install-app" => {
+            if let Err(error) = install_app_launchers() {
+                eprintln!("failed to install Codexplain app launchers: {error}");
+                std::process::exit(1);
+            }
+        }
+        "quality-check" => {
+            let width = arg_value(&args, "--width")
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(88);
+            let report = quality_report(width);
+            print_quality_report(&report);
+            if !report.passed() {
+                std::process::exit(1);
+            }
+        }
         "storage-check" => storage_check(&args),
         "build-size" => build_size(),
         "build-clean" => {
@@ -5799,7 +6443,13 @@ fn main() {
                 std::process::exit(1);
             }
         }
-        "pros-cons" => println!("{}", pros_cons(&load_profile_for_args(&args))),
+        "pros-cons" => {
+            let profile = load_profile_for_args(&args);
+            let width = arg_value(&args, "--width")
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(100);
+            println!("{}", pros_cons_for_width(&profile, width));
+        }
         "formula" => println!(
             "{}",
             formula(
@@ -5811,7 +6461,7 @@ fn main() {
             let profile = load_profile_for_args(&args);
             println!(
                 "{}\n\n{}",
-                pros_cons(&profile),
+                pros_cons_for_width(&profile, 100),
                 formula(
                     &profile,
                     "초기에는 반복속도, 제품화에는 배포/안정성 가중치가 커집니다."
@@ -5915,7 +6565,7 @@ mod tests {
         );
         assert_eq!(
             layout.border(FrameRule::Top, Theme::None),
-            "┌───────────┬───────────────────────────────────┬──────────────────────────────────┬───────────────────────┐"
+            "┌───────────┬───────────────┬────────────────────┬───────────────────────┐"
         );
         assert!(output.contains("│ 선택지"));
         assert!(output.contains("│ 장점"));
@@ -5935,17 +6585,17 @@ mod tests {
         assert_eq!(
             output,
             [
-                "┌───────────┬───────────────────────────────────┬──────────────────────────────────┬───────────────────────┐",
-                "│ 선택지    │ 장점                              │ 단점                             │ 적합한 때             │",
-                "├───────────┼───────────────────────────────────┼──────────────────────────────────┼───────────────────────┤",
-                "│ JS / Node │ 빠른 수정                         │ 런타임 의존성                    │ UX 실험과 피드백 루프 │",
-                "│           │ provider 연동                     │ 단일 바이너리 약함               │                       │",
-                "│           │ JSON 처리                         │                                  │                       │",
-                "├───────────┼───────────────────────────────────┼──────────────────────────────────┼───────────────────────┤",
-                "│ Rust      │ 단일 바이너리                     │ 초기 구현 비용                   │ 안정화된 CLI core     │",
-                "│           │ 빠른 시작                         │ provider 실험 비용               │                       │",
-                "│           │ 낮은 메모리                       │                                  │                       │",
-                "└───────────┴───────────────────────────────────┴──────────────────────────────────┴───────────────────────┘",
+                "┌───────────┬───────────────┬────────────────────┬───────────────────────┐",
+                "│ 선택지    │ 장점          │ 단점               │ 적합한 때             │",
+                "├───────────┼───────────────┼────────────────────┼───────────────────────┤",
+                "│ JS / Node │ 빠른 수정     │ 런타임 의존성      │ UX 실험과 피드백 루프 │",
+                "│           │ provider 연동 │ 단일 바이너리 약함 │                       │",
+                "│           │ JSON 처리     │                    │                       │",
+                "├───────────┼───────────────┼────────────────────┼───────────────────────┤",
+                "│ Rust      │ 단일 바이너리 │ 초기 구현 비용     │ 안정화된 CLI core     │",
+                "│           │ 빠른 시작     │ provider 실험 비용 │                       │",
+                "│           │ 낮은 메모리   │                    │                       │",
+                "└───────────┴───────────────┴────────────────────┴───────────────────────┘",
             ]
             .join("\n")
         );
@@ -6297,7 +6947,7 @@ after
     #[test]
     fn custom_style_parser_sanitizes_and_loads_renderer_plan() {
         let style = parse_custom_style(
-            "name: research-card!\ntrigger: 연구 카드\nrenderers: tldr,table,formula\nbody:\n배경, 근거, 한계, 다음 행동을 분리한다.\n",
+            "name: research-card!\ntrigger: 연구 카드\nrenderers: tldr,table,formula,cause-effect\nbody:\n배경, 근거, 한계, 다음 행동을 분리한다.\n",
         )
         .unwrap();
 
@@ -6308,7 +6958,8 @@ after
             vec![
                 RendererKind::TldrProse,
                 RendererKind::Table,
-                RendererKind::Formula
+                RendererKind::Formula,
+                RendererKind::CauseEffect
             ]
         );
         assert!(style.body.contains("근거"));
@@ -6364,10 +7015,12 @@ after
         ]));
         assert!(local_config_json("plain", "plain", "off")
             .contains("\"defaultColorOutput\": \"plain\""));
-        assert!(local_config_json("ansi", "ansi", "semantic")
-            .contains("\"chatHighlightOutput\": \"ansi\""));
-        assert!(local_config_json("ansi", "ansi", "semantic")
-            .contains("\"tuiAssistantColor\": \"semantic\""));
+        assert!(
+            local_config_json("ansi", "ansi", "full").contains("\"chatHighlightOutput\": \"ansi\"")
+        );
+        assert!(
+            local_config_json("ansi", "ansi", "full").contains("\"tuiAssistantColor\": \"full\"")
+        );
     }
 
     #[test]
@@ -6753,6 +7406,57 @@ after
         assert!(output.contains("바이너리"));
         assert!(output.contains("provider"));
         assert!(output.contains("실험"));
+    }
+
+    #[test]
+    fn cause_effect_report_wraps_rows_and_maps_causal_language() {
+        let profile = Profile {
+            theme: Theme::None,
+            ..Profile::default()
+        };
+        let output = shape(
+            "원인-결과 리포트로 설명해줘",
+            "표 셀이 길어서 박스를 벗어납니다. 그래서 사용자가 구조를 신뢰하기 어렵습니다. 색상이 없어서 attention 신호가 약합니다.",
+            &profile,
+            70,
+        );
+
+        assert_visible_lines_fit(&output, 70);
+        assert!(output.contains("│ 원인"), "{output}");
+        assert!(output.contains("│ 결과"), "{output}");
+        assert!(output.contains("│ 대응"), "{output}");
+        assert!(output.contains("표 셀이"), "{output}");
+        assert!(output.contains("사용자가"), "{output}");
+    }
+
+    #[test]
+    fn pros_cons_shape_uses_requested_width_instead_of_fixed_snapshot_width() {
+        let profile = Profile {
+            theme: Theme::None,
+            ..Profile::default()
+        };
+        let output = shape(
+            "JS와 Rust 장단점을 pros and cons 표로 비교해줘",
+            "JS는 실험이 빠르고 Rust는 배포가 단순합니다.",
+            &profile,
+            58,
+        );
+
+        assert_visible_lines_fit(&output, 58);
+        assert!(output.contains("JS / Node"), "{output}");
+        assert!(output.contains("Rust"), "{output}");
+    }
+
+    #[test]
+    fn quality_report_enforces_width_row_divider_and_architecture_contracts() {
+        let report = quality_report(88);
+
+        assert_eq!(report.overflow_lines, 0, "{report:?}");
+        assert!(report.row_dividers >= 3, "{report:?}");
+        assert!(report.architecture_boxes >= 6, "{report:?}");
+        assert!(report.flow_arrows >= 4, "{report:?}");
+        assert!(report.numbered_sections >= 2, "{report:?}");
+        assert!(report.passed(), "{report:?}");
     }
 
     #[test]
@@ -7602,6 +8306,7 @@ after
             RendererKind::Table,
             RendererKind::ProsCons,
             RendererKind::Formula,
+            RendererKind::CauseEffect,
             RendererKind::IndexedList,
             RendererKind::Flow,
             RendererKind::Progress,
@@ -7619,6 +8324,9 @@ after
         assert!(catalog
             .iter()
             .any(|signal| signal.intent == ExplanationIntent::DecisionRule));
+        assert!(catalog
+            .iter()
+            .any(|signal| signal.intent == ExplanationIntent::CauseEffectReport));
         assert!(catalog
             .iter()
             .any(|signal| signal.intent == ExplanationIntent::OrderedSteps));
@@ -7658,6 +8366,11 @@ after
                 "판단 공식을 수식으로 보여줘",
                 RendererKind::Formula,
                 ExplanationIntent::DecisionRule,
+            ),
+            (
+                "원인-결과 리포트로 설명해줘",
+                RendererKind::CauseEffect,
+                ExplanationIntent::CauseEffectReport,
             ),
             (
                 "1,2,3 번호 목록으로 설명",
@@ -7715,10 +8428,16 @@ after
                 "설명",
             ),
             (
+                "원인-결과 리포트로 설명해줘",
+                RendererKind::CauseEffect,
+                "원인",
+                "결과",
+            ),
+            (
                 "1,2,3 번호 목록으로 설명",
                 RendererKind::IndexedList,
-                "1. │ 작업 완료.",
-                "2. │ 검증 완료.",
+                "1. │ 작업 완료",
+                "2. │ 검증 완료",
             ),
             (
                 "처리 흐름을 보여줘",
@@ -7757,6 +8476,27 @@ after
     }
 
     #[test]
+    fn two_paths_prompt_shapes_dense_paragraph_as_numbered_sections() {
+        let profile = Profile {
+            theme: Theme::None,
+            ..Profile::default()
+        };
+        let output = shape(
+            "실행 흐름은 크게 두 가지로 설명해줘",
+            "실행 흐름은 크게 두 가지입니다. codexplain shape/post-response는 입력 텍스트를 바로 후처리합니다. codexplain codex --local-shape는 실제 codex CLI를 실행한 뒤 stdout을 캡처해서 렌더러에 통과시킵니다.",
+            &profile,
+            80,
+        );
+
+        assert!(output.contains("1. │ codexplain shape/post-response"));
+        assert!(output.contains("2. │ codexplain codex --local-shape"));
+        assert!(
+            !output.contains("실행 흐름은 크게 두 가지입니다."),
+            "intro sentence should not consume a numbered slot: {output}"
+        );
+    }
+
+    #[test]
     fn progress_renderer_reports_status_text_bar_and_detail_table() {
         let profile = Profile {
             theme: Theme::None,
@@ -7776,6 +8516,38 @@ after
         );
         assert!(output.contains("│ 진척      │ 진행 중 · 60%"), "{output}");
         assert!(output.contains("│ 다음 행동 │"), "{output}");
+    }
+
+    #[test]
+    fn macro_progress_collapses_codex_activity_transcript() {
+        let profile = Profile {
+            theme: Theme::None,
+            ..Profile::default()
+        };
+        let transcript = "\
+• Explored
+  └ Read codexplain, codexplain-codex
+• Ran ls bin dist rust scripts docs 2>/dev/null || true
+• Explored
+  └ Search *.rs in rust
+• Ran find .codexplain -maxdepth 2 -type f -print 2>/dev/null || true
+  └ .codexplain/config.json
+";
+        let output = shape(
+            "이 작업 로그를 전체적인 프로세스로 설명해줘",
+            transcript,
+            &profile,
+            88,
+        );
+
+        assert!(output.contains("│ 🧭 탐색"), "{output}");
+        assert!(output.contains("│ 🔎 검색"), "{output}");
+        assert!(output.contains("│ ⚙️ 실행"), "{output}");
+        assert!(output.contains("│ 🎛️ 설정"), "{output}");
+        assert!(output.contains("macro-progress"), "{output}");
+        assert!(output.contains("UX 적용"), "{output}");
+        assert!(!output.contains("codexplain-codex"), "{output}");
+        assert_visible_lines_fit(&output, 88);
     }
 
     #[test]
@@ -8019,7 +8791,8 @@ after
         let cases = [
             (ExplanationIntent::Comparison, "JS / Node"),
             (ExplanationIntent::DecisionRule, "핵심식 : 설명 품질 = f"),
-            (ExplanationIntent::OrderedSteps, "1. │ 첫째입니다."),
+            (ExplanationIntent::OrderedSteps, "1. │ 첫째입니다"),
+            (ExplanationIntent::CauseEffectReport, "원인"),
             (ExplanationIntent::ProcessFlow, "▼"),
             (ExplanationIntent::StructuredSummary, "┌"),
             (ExplanationIntent::StatusSummary, "TLDR: "),
