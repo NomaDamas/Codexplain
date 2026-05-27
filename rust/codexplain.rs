@@ -4,7 +4,7 @@ use std::io::{self, Read};
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Frame {
@@ -1773,7 +1773,11 @@ fn strip_korean_particle(value: &str) -> String {
 
 fn color_output_mode(args: &[String]) -> ColorOutput {
     if args.iter().any(|arg| arg == "--chat-color") {
-        return ColorOutput::Markdown;
+        return if color_feature_enabled() {
+            ColorOutput::Ansi
+        } else {
+            ColorOutput::Plain
+        };
     }
     if let Some(value) = arg_value(args, "--color-output") {
         return parse_color_output(value);
@@ -1801,6 +1805,12 @@ fn configured_color_output() -> Option<ColorOutput> {
             .or_else(|| extract_json_string(&raw, "colorOutput"))
             .map(|value| parse_color_output(&value))
     })
+}
+
+fn color_feature_enabled() -> bool {
+    !matches!(configured_color_output(), Some(ColorOutput::Plain))
+        && !env_flag_enabled(env::var("CODEXPLAIN_NO_COLOR").ok())
+        && !env_flag_enabled(env::var("CLAUDEX_NO_COLOR").ok())
 }
 
 fn parse_color_output(value: &str) -> ColorOutput {
@@ -2002,13 +2012,11 @@ fn markdown_highlight_panel(items: &[(String, &'static str)]) -> String {
     let parts = select_chat_highlights(items)
         .iter()
         .map(|(label, role)| match *role {
-            "success" => format!("🟩 **OK** {}", escape_markdown_token(label)),
-            "danger" => format!("🟥 **RISK** {}", escape_markdown_token(label)),
-            "warning" => format!("🟨 **WARN** {}", escape_markdown_token(label)),
-            "heading" => format!("🟦 **KEY** {}", escape_markdown_token(label)),
-            "command" | "path" | "artifact" => {
-                format!("🟦 `{}`", label.replace('`', "\\`"))
-            }
+            "success" => format!("**[OK]** {}", escape_markdown_token(label)),
+            "danger" => format!("**[RISK]** {}", escape_markdown_token(label)),
+            "warning" => format!("**[WARN]** {}", escape_markdown_token(label)),
+            "heading" => format!("**[KEY]** {}", escape_markdown_token(label)),
+            "command" | "path" | "artifact" => format!("**[REF]** `{}`", label.replace('`', "\\`")),
             _ => escape_markdown_token(label),
         })
         .collect::<Vec<_>>();
@@ -4067,6 +4075,70 @@ fn save_profile(profile: &Profile) -> io::Result<()> {
     )
 }
 
+fn color_command(args: &[String]) -> io::Result<()> {
+    let action = args.get(1).map(String::as_str).unwrap_or("status");
+    match action {
+        "on" | "enable" => {
+            write_color_config("ansi", "ansi")?;
+            println!("Codexplain color: on\n- defaultColorOutput: ansi\n- chatHighlightOutput: ansi\n- TUI env: CLICOLOR_FORCE=1 FORCE_COLOR=3 COLORTERM=truecolor");
+        }
+        "off" | "disable" => {
+            write_color_config("plain", "plain")?;
+            println!("Codexplain color: off\n- defaultColorOutput: plain\n- chatHighlightOutput: plain\n- TUI env: NO_COLOR=1");
+        }
+        "status" | "--show" | "show" => {
+            let raw =
+                fs::read_to_string(config_path()).unwrap_or_else(|_| LOCAL_CONFIG.to_string());
+            let default = extract_json_string(&raw, "defaultColorOutput")
+                .unwrap_or_else(|| "terminal".to_string());
+            let chat =
+                extract_json_string(&raw, "chatHighlightOutput").unwrap_or_else(|| default.clone());
+            let state = if matches!(parse_color_output(&default), ColorOutput::Plain) {
+                "off"
+            } else {
+                "on"
+            };
+            println!(
+                "Codexplain color: {state}\n- defaultColorOutput: {default}\n- chatHighlightOutput: {chat}"
+            );
+        }
+        other => {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("unknown color action: {other}"),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn write_color_config(default_output: &str, chat_output: &str) -> io::Result<()> {
+    fs::create_dir_all(project_path(".codexplain"))?;
+    fs::write(
+        config_path(),
+        local_config_json(default_output, chat_output),
+    )
+}
+
+fn local_config_json(default_output: &str, chat_output: &str) -> String {
+    format!(
+        concat!(
+            "{{\n",
+            "  \"schemaVersion\": 1,\n",
+            "  \"defaultColorOutput\": \"{}\",\n",
+            "  \"chatHighlightOutput\": \"{}\",\n",
+            "  \"storageCheck\": {{\n",
+            "    \"minFree\": {{\n",
+            "      \"value\": 5,\n",
+            "      \"unit\": \"gb\"\n",
+            "    }}\n",
+            "  }}\n",
+            "}}\n"
+        ),
+        default_output, chat_output
+    )
+}
+
 fn extract_json_string(raw: &str, key: &str) -> Option<String> {
     let needle = format!("\"{key}\"");
     let index = raw.find(&needle)?;
@@ -4791,10 +4863,10 @@ Default answer style:
 - Use concise Korean first when the user writes Korean.
 - Use connected Unicode boxes or tables when structure helps scanning.
 - Use semantic ANSI colors for labels, risks, success states, artifact names, commands, paths, and next actions when the terminal supports color.
-- Use ANSI terminal color by default when Codexplain config asks for `defaultColorOutput: ansi`; use subtle Markdown color chips when chat output cannot render ANSI/HTML. Do not print raw HTML spans in plain Markdown chat hosts.
+- Use ANSI terminal color by default when Codexplain config asks for `defaultColorOutput: ansi`; for Codex CLI chat output, prefer real ANSI text color over emoji chips or raw HTML spans.
 - Respect explanationDepth light/standard/deep, architectureDepth overview/system/internals, and abstractionLevel concrete/architecture/strategy.
 - Select renderers dynamically: TLDR prose, progress, tables, flow diagrams, pros/cons, formula boxes, status badges, checklists, risk panels, confidence meters, decision matrices, ETA strips, callouts, and next-action footers.
-- When Codexplain is ON in a chat host, highlight important terms with subtle Markdown color chips: blue KEY/artifact, green OK, yellow WARN, red RISK. Keep chips sparse.
+- When Codexplain is ON in Codex CLI, highlight important terms with sparse semantic ANSI colors. Emojis may be used only as light explanatory supplements, not as the color system.
 - Treat UX blocks like tool choices: combine the smallest useful set from prompt, response, profile, and optional planner hints.
 - Keep commands, paths, risks, test evidence, and exact technical facts intact.
 - Do not continue an Ouroboros evolve/ralph lineage if drift is detected. Restart with an explicit project-local Seed.
@@ -4820,6 +4892,16 @@ codex exec "이 프로젝트 아키텍처를 표와 흐름도로 설명해줘"
 ```
 
 The shim only prepends `.codexplain/bin` in the current shell. `codexplain uninstall-codex --local` removes the shim files and the managed AGENTS.md block.
+
+Color can be toggled without uninstalling Codexplain:
+
+```bash
+codexplain color on
+codexplain color off
+codexplain color status
+```
+
+`codex exec` and `codex review` can be post-processed with Codexplain ANSI text color. Interactive Codex TUI is passed through to the real Codex process with best-effort color env (`CLICOLOR_FORCE`, `FORCE_COLOR`, `COLORTERM`), but native assistant-message recoloring inside ratatui requires Codex renderer support.
 
 Use this adapter when a host can pipe a completed answer into a post-response command:
 
@@ -4851,7 +4933,7 @@ codexplain style remove research-card
 const LOCAL_CONFIG: &str = r#"{
   "schemaVersion": 1,
   "defaultColorOutput": "ansi",
-  "chatHighlightOutput": "markdown",
+  "chatHighlightOutput": "ansi",
   "storageCheck": {
     "minFree": {
       "value": 5,
@@ -4872,8 +4954,19 @@ ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 export CODEXPLAIN_PROJECT_DIR="$ROOT"
 export CODEXPLAIN_LOCAL_SHAPE=1
 export CODEXPLAIN_SHIM_PATH="$0"
-export CODEXPLAIN_COLOR=always
-export CLICOLOR_FORCE=1
+if grep -Eq '"defaultColorOutput"[[:space:]]*:[[:space:]]*"(plain|none|off|no-color)"' "$ROOT/.codexplain/config.json" 2>/dev/null; then
+  export CODEXPLAIN_COLOR=never
+  export CODEXPLAIN_COLOR_OUTPUT=plain
+  export NO_COLOR=1
+  unset CLICOLOR_FORCE FORCE_COLOR
+else
+  export CODEXPLAIN_COLOR=always
+  export CODEXPLAIN_COLOR_OUTPUT=ansi
+  export CLICOLOR_FORCE=1
+  export FORCE_COLOR=3
+  export COLORTERM=truecolor
+  unset NO_COLOR
+fi
 exec "$ROOT/bin/codexplain" codex --local-shape "$@"
 "#;
 
@@ -4882,8 +4975,19 @@ const ACTIVATE_SH: &str = r#"#!/usr/bin/env sh
 CODEXPLAIN_PROJECT_DIR=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE:-$0}")/.." && pwd)
 export CODEXPLAIN_PROJECT_DIR
 export CODEXPLAIN_LOCAL_SHAPE=1
-export CODEXPLAIN_COLOR=always
-export CLICOLOR_FORCE=1
+if grep -Eq '"defaultColorOutput"[[:space:]]*:[[:space:]]*"(plain|none|off|no-color)"' "$CODEXPLAIN_PROJECT_DIR/.codexplain/config.json" 2>/dev/null; then
+  export CODEXPLAIN_COLOR=never
+  export CODEXPLAIN_COLOR_OUTPUT=plain
+  export NO_COLOR=1
+  unset CLICOLOR_FORCE FORCE_COLOR
+else
+  export CODEXPLAIN_COLOR=always
+  export CODEXPLAIN_COLOR_OUTPUT=ansi
+  export CLICOLOR_FORCE=1
+  export FORCE_COLOR=3
+  export COLORTERM=truecolor
+  unset NO_COLOR
+fi
 case ":$PATH:" in
   *":$CODEXPLAIN_PROJECT_DIR/.codexplain/bin:"*) ;;
   *) export PATH="$CODEXPLAIN_PROJECT_DIR/.codexplain/bin:$PATH" ;;
@@ -5176,7 +5280,31 @@ fn run_codex(args: &[String]) -> i32 {
         }
     }
     let codex_bin = resolve_real_codex_binary();
-    let output = Command::new(&codex_bin).args(&codex_args).output();
+    if !should_capture_codex_output(&codex_args) {
+        let mut command = Command::new(&codex_bin);
+        command.args(&codex_args);
+        apply_codex_color_env(&mut command, color_feature_enabled());
+        let status = command
+            .stdin(Stdio::inherit())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .status();
+        return match status {
+            Ok(status) => status.code().unwrap_or(1),
+            Err(error) => {
+                eprintln!(
+                    "failed to run codex at {}; ensure Codex CLI is installed and on PATH: {error}",
+                    codex_bin.display()
+                );
+                127
+            }
+        };
+    }
+
+    let mut command = Command::new(&codex_bin);
+    command.args(&codex_args);
+    apply_codex_color_env(&mut command, color_feature_enabled());
+    let output = command.output();
     let Ok(output) = output else {
         eprintln!(
             "failed to run codex at {}; ensure Codex CLI is installed and on PATH",
@@ -5204,6 +5332,35 @@ fn run_codex(args: &[String]) -> i32 {
         print!("{stdout}");
     }
     output.status.code().unwrap_or(1)
+}
+
+fn should_capture_codex_output(codex_args: &[String]) -> bool {
+    codex_args
+        .iter()
+        .any(|arg| matches!(arg.as_str(), "exec" | "e" | "review"))
+}
+
+fn apply_codex_color_env(command: &mut Command, enabled: bool) {
+    if enabled {
+        command.env_remove("NO_COLOR");
+        command.env("CODEXPLAIN_COLOR", "always");
+        command.env("CODEXPLAIN_COLOR_OUTPUT", "ansi");
+        command.env("CLICOLOR_FORCE", "1");
+        command.env("FORCE_COLOR", "3");
+        command.env("COLORTERM", "truecolor");
+        if env::var("TERM")
+            .map(|value| value == "dumb" || value.trim().is_empty())
+            .unwrap_or(true)
+        {
+            command.env("TERM", "xterm-256color");
+        }
+    } else {
+        command.env("CODEXPLAIN_COLOR", "never");
+        command.env("CODEXPLAIN_COLOR_OUTPUT", "plain");
+        command.env("NO_COLOR", "1");
+        command.env_remove("CLICOLOR_FORCE");
+        command.env_remove("FORCE_COLOR");
+    }
 }
 
 fn resolve_real_codex_binary() -> PathBuf {
@@ -5298,6 +5455,7 @@ fn usage() -> &'static str {
   codexplain codex --prompt <text> [--local-shape] [codex exec args...]
   codexplain install-codex [--local] [--global] [--force]
   codexplain uninstall-codex [--local] [--global] [--remove-profile]
+  codexplain color on|off|status
   codexplain style add <name> --trigger <text> --renderers <tldr,table,flow,pros-cons,formula,indexed,progress> --description <text>
   codexplain style list|show <name>|remove <name>
   codexplain feedback|rlhf --rating <1-5> --comment <text>
@@ -5323,7 +5481,8 @@ Storage-check output contract:
   cleaned=target|target_already_absent, clean_error=target:<message>, or suggested_cleanup=<text> may appear only when status=low-space
 
 Themes: none, ocean, forest, warm, sunset, grape, slate, rose, mono
-Color outputs: terminal, ansi, markdown, html, plain. Use --chat-color as an alias for --color-output markdown.
+Color outputs: terminal, ansi, markdown, html, plain. Use --chat-color as an alias for --color-output ansi in Codex CLI.
+Color toggle: `codexplain color on` forces ANSI text color for Codexplain-shaped exec/review output and best-effort Codex TUI color env; `codexplain color off` restores plain output.
 Index styles: decimal, zero-padded, alpha-lower, alpha-upper, roman-lower, roman-upper"
 }
 
@@ -5357,6 +5516,12 @@ fn main() {
         "uninstall-codex" | "off" => {
             if let Err(error) = uninstall_codex_project(&args) {
                 eprintln!("failed to uninstall Codexplain files: {error}");
+                std::process::exit(1);
+            }
+        }
+        "color" => {
+            if let Err(error) = color_command(&args) {
+                eprintln!("failed to update Codexplain color: {error}");
                 std::process::exit(1);
             }
         }
@@ -6004,13 +6169,29 @@ after
         assert!(CODEX_SHIM_SH.contains("CODEXPLAIN_PROJECT_DIR"));
         assert!(CODEX_SHIM_SH.contains("CODEXPLAIN_LOCAL_SHAPE=1"));
         assert!(CODEX_SHIM_SH.contains("codex --local-shape"));
+        assert!(CODEX_SHIM_SH.contains("FORCE_COLOR=3"));
+        assert!(CODEX_SHIM_SH.contains("NO_COLOR=1"));
         assert!(ACTIVATE_SH.contains(".codexplain/bin:$PATH"));
+        assert!(ACTIVATE_SH.contains("CODEXPLAIN_COLOR_OUTPUT=ansi"));
         assert!(LOCAL_README.contains("source .codexplain/activate"));
+        assert!(LOCAL_README.contains("codexplain color on"));
         assert!(LOCAL_README.contains("codexplain style add"));
     }
 
     #[test]
-    fn chat_color_output_converts_ansi_to_markdown_highlight() {
+    fn codex_capture_policy_preserves_tui_passthrough() {
+        assert!(should_capture_codex_output(&["exec".to_string()]));
+        assert!(should_capture_codex_output(&["review".to_string()]));
+        assert!(!should_capture_codex_output(&[]));
+        assert!(!should_capture_codex_output(&[
+            "이 프로젝트 설명".to_string()
+        ]));
+        assert!(local_config_json("plain", "plain").contains("\"defaultColorOutput\": \"plain\""));
+        assert!(local_config_json("ansi", "ansi").contains("\"chatHighlightOutput\": \"ansi\""));
+    }
+
+    #[test]
+    fn markdown_output_converts_ansi_to_text_badge_highlight() {
         let profile = Profile {
             theme: Theme::Sunset,
             ..Profile::default()
@@ -6025,9 +6206,12 @@ after
 
         assert!(!output.contains("<span"), "{output}");
         assert!(!output.contains("\x1b["), "{output}");
-        assert!(output.contains("🟦 **KEY** CODEXPLAIN"), "{output}");
-        assert!(output.contains("🟦 **KEY** Renderer"), "{output}");
-        assert!(output.contains("🟦 `JSON/code/diff/log/test`"), "{output}");
+        assert!(output.contains("**[KEY]** CODEXPLAIN"), "{output}");
+        assert!(output.contains("**[KEY]** Renderer"), "{output}");
+        assert!(
+            output.contains("**[REF]** `JSON/code/diff/log/test`"),
+            "{output}"
+        );
     }
 
     #[test]
@@ -6592,7 +6776,7 @@ after
     }
 
     #[test]
-    fn markdown_chat_highlight_panel_does_not_inject_markup_inside_table() {
+    fn markdown_highlight_panel_does_not_inject_markup_inside_table() {
         let profile = Profile {
             theme: Theme::Ocean,
             ..Profile::default()
@@ -6606,8 +6790,8 @@ after
         );
 
         assert!(output.starts_with("**Codexplain highlights**:"), "{output}");
-        assert!(output.contains("🟩 **OK** 있음"), "{output}");
-        assert!(output.contains("🟥 **RISK** 안"), "{output}");
+        assert!(output.contains("**[OK]** 있음"), "{output}");
+        assert!(output.contains("**[RISK]** 안"), "{output}");
         assert!(
             !output
                 .lines()

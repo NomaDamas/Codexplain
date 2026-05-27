@@ -2,7 +2,9 @@
 set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 BIN="$ROOT/target/release/codexplain"
-if [ -x "$BIN" ]; then
+SRC="$ROOT/rust/codexplain.rs"
+MANIFEST="$ROOT/Cargo.toml"
+if [ -x "$BIN" ] && [ ! "$SRC" -nt "$BIN" ] && [ ! "$MANIFEST" -nt "$BIN" ]; then
   exec "$BIN" "$@"
 fi
 exec cargo run --quiet --manifest-path "$ROOT/Cargo.toml" -- "$@"

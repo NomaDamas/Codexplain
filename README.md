@@ -105,9 +105,17 @@ for this project command:
 CODEXPLAIN_COLOR=always codexplain shape --theme grape --prompt "강조해서 설명" --response "완료 PASS"
 ```
 
-For chat or Markdown surfaces that can render inline HTML, explicitly use `--chat-color`.
-It converts terminal ANSI styles into `<span style="color: ...">` markup while
-still preserving strict JSON, diffs, code, and logs unchanged:
+Turn the Codexplain color layer on or off for this project:
+
+```bash
+codexplain color on
+codexplain color off
+codexplain color status
+```
+
+For Codex CLI chat output, explicitly use `--chat-color` when you want real
+terminal text color. It keeps ANSI styling instead of substituting emoji chips,
+while still preserving strict JSON, diffs, code, and logs unchanged:
 
 ```bash
 codexplain shape --chat-color --theme sunset \
@@ -115,11 +123,18 @@ codexplain shape --chat-color --theme sunset \
   --response "Codexplain은 Rust-only 설명 UX 렌더러입니다."
 ```
 
-Equivalent explicit form:
+For HTML-capable surfaces only, use the explicit HTML form:
 
 ```bash
 codexplain shape --color-output html --theme sunset --prompt "요약" --response "본문"
 ```
+
+Interactive Codex TUI note: Codexplain can force terminal color environment for
+the real Codex TUI, but it cannot recolor Codex's internal ratatui message
+widgets after they are rendered. Full native assistant-message recoloring inside
+interactive TUI requires an upstream Codex renderer hook or a fork of Codex's TUI
+renderer. For guaranteed Codexplain-colored explanations, use `codex exec`
+through the local shim or `codexplain-codex --local-shape`.
 
 Give feedback after an answer:
 

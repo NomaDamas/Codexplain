@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "defaultColorOutput": "ansi",
-  "chatHighlightOutput": "markdown",
+  "chatHighlightOutput": "ansi",
   "storageCheck": {
     "minFree": {
       "value": 5,

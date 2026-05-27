@@ -11,6 +11,16 @@ codex exec "이 프로젝트 아키텍처를 표와 흐름도로 설명해줘"
 
 The shim only prepends `.codexplain/bin` in the current shell. `codexplain uninstall-codex --local` removes the shim files and the managed AGENTS.md block.
 
+Color can be toggled without uninstalling Codexplain:
+
+```bash
+codexplain color on
+codexplain color off
+codexplain color status
+```
+
+`codex exec` and `codex review` can be post-processed with Codexplain ANSI text color. Interactive Codex TUI is passed through to the real Codex process with best-effort color env (`CLICOLOR_FORCE`, `FORCE_COLOR`, `COLORTERM`), but native assistant-message recoloring inside ratatui requires Codex renderer support.
+
 Use this adapter when a host can pipe a completed answer into a post-response command:
 
 ```bash
