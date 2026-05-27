@@ -4,6 +4,8 @@ coverage/
 .env
 .env.*
 .codex/
+.codexplain/activate
+.codexplain/bin/
 .codexplain/state/
 .claudex/state/
 .ouroboros/

@@ -1813,6 +1813,46 @@ fn color_feature_enabled() -> bool {
         && !env_flag_enabled(env::var("CLAUDEX_NO_COLOR").ok())
 }
 
+fn configured_tui_color_mode() -> String {
+    fs::read_to_string(config_path())
+        .ok()
+        .and_then(|raw| extract_json_string(&raw, "tuiAssistantColor"))
+        .unwrap_or_else(|| {
+            if color_feature_enabled() {
+                "semantic".to_string()
+            } else {
+                "off".to_string()
+            }
+        })
+}
+
+fn tui_color_feature_enabled() -> bool {
+    if !color_feature_enabled() {
+        return false;
+    }
+    !matches!(
+        configured_tui_color_mode()
+            .trim()
+            .to_ascii_lowercase()
+            .as_str(),
+        "plain" | "none" | "off" | "no-color" | "false" | "0"
+    )
+}
+
+fn tui_color_env_value() -> String {
+    let value = configured_tui_color_mode();
+    if matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "full" | "semantic"
+    ) {
+        value
+    } else if tui_color_feature_enabled() {
+        "semantic".to_string()
+    } else {
+        "off".to_string()
+    }
+}
+
 fn parse_color_output(value: &str) -> ColorOutput {
     match value.trim().to_ascii_lowercase().as_str() {
         "ansi" | "terminal-force" | "force" => ColorOutput::Ansi,
@@ -4079,12 +4119,12 @@ fn color_command(args: &[String]) -> io::Result<()> {
     let action = args.get(1).map(String::as_str).unwrap_or("status");
     match action {
         "on" | "enable" => {
-            write_color_config("ansi", "ansi")?;
-            println!("Codexplain color: on\n- defaultColorOutput: ansi\n- chatHighlightOutput: ansi\n- TUI env: CLICOLOR_FORCE=1 FORCE_COLOR=3 COLORTERM=truecolor");
+            write_color_config("ansi", "ansi", "semantic")?;
+            println!("Codexplain color: on\n- defaultColorOutput: ansi\n- chatHighlightOutput: ansi\n- tuiAssistantColor: semantic\n- TUI env: CLICOLOR_FORCE=1 FORCE_COLOR=3 COLORTERM=truecolor CODEXPLAIN_TUI_COLOR=semantic");
         }
         "off" | "disable" => {
-            write_color_config("plain", "plain")?;
-            println!("Codexplain color: off\n- defaultColorOutput: plain\n- chatHighlightOutput: plain\n- TUI env: NO_COLOR=1");
+            write_color_config("plain", "plain", "off")?;
+            println!("Codexplain color: off\n- defaultColorOutput: plain\n- chatHighlightOutput: plain\n- tuiAssistantColor: off\n- TUI env: NO_COLOR=1 CODEXPLAIN_TUI_COLOR=off");
         }
         "status" | "--show" | "show" => {
             let raw =
@@ -4093,13 +4133,19 @@ fn color_command(args: &[String]) -> io::Result<()> {
                 .unwrap_or_else(|| "terminal".to_string());
             let chat =
                 extract_json_string(&raw, "chatHighlightOutput").unwrap_or_else(|| default.clone());
+            let tui = extract_json_string(&raw, "tuiAssistantColor")
+                .unwrap_or_else(|| "semantic".to_string());
             let state = if matches!(parse_color_output(&default), ColorOutput::Plain) {
                 "off"
             } else {
                 "on"
             };
             println!(
-                "Codexplain color: {state}\n- defaultColorOutput: {default}\n- chatHighlightOutput: {chat}"
+                "Codexplain color: {state}\n- defaultColorOutput: {default}\n- chatHighlightOutput: {chat}\n- tuiAssistantColor: {tui}\n- patchedCodex: {}",
+                local_patched_codex_binary()
+                    .filter(|path| is_executable_file(path))
+                    .map(|path| path.display().to_string())
+                    .unwrap_or_else(|| "not-built".to_string())
             );
         }
         other => {
@@ -4112,21 +4158,61 @@ fn color_command(args: &[String]) -> io::Result<()> {
     Ok(())
 }
 
-fn write_color_config(default_output: &str, chat_output: &str) -> io::Result<()> {
+fn tui_color_command(args: &[String]) -> io::Result<()> {
+    let action = args.get(1).map(String::as_str).unwrap_or("status");
+    match action {
+        "on" | "enable" => {
+            write_color_config("ansi", "ansi", "semantic")?;
+            println!("Codexplain TUI assistant color: on\n- scope: project-local only\n- mode: semantic\n- patchedCodex: {}", patched_codex_status());
+        }
+        "full" => {
+            write_color_config("ansi", "ansi", "full")?;
+            println!("Codexplain TUI assistant color: on\n- scope: project-local only\n- mode: full\n- patchedCodex: {}", patched_codex_status());
+        }
+        "off" | "disable" => {
+            write_color_config("ansi", "ansi", "off")?;
+            println!("Codexplain TUI assistant color: off\n- scope: project-local only\n- Codexplain exec/review color remains ansi unless `codexplain color off` is used");
+        }
+        "status" | "--show" | "show" => {
+            println!(
+                "Codexplain TUI assistant color\n- mode: {}\n- scope: project-local\n- patchedCodex: {}\n- note: interactive TUI color requires a patched Codex binary; exec/review output is still shaped by Codexplain",
+                configured_tui_color_mode(),
+                patched_codex_status()
+            );
+        }
+        other => {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("unknown tui-color action: {other}"),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn patched_codex_status() -> String {
+    local_patched_codex_binary()
+        .filter(|path| is_executable_file(path))
+        .map(|path| path.display().to_string())
+        .unwrap_or_else(|| "not-built".to_string())
+}
+
+fn write_color_config(default_output: &str, chat_output: &str, tui_output: &str) -> io::Result<()> {
     fs::create_dir_all(project_path(".codexplain"))?;
     fs::write(
         config_path(),
-        local_config_json(default_output, chat_output),
+        local_config_json(default_output, chat_output, tui_output),
     )
 }
 
-fn local_config_json(default_output: &str, chat_output: &str) -> String {
+fn local_config_json(default_output: &str, chat_output: &str, tui_output: &str) -> String {
     format!(
         concat!(
             "{{\n",
             "  \"schemaVersion\": 1,\n",
             "  \"defaultColorOutput\": \"{}\",\n",
             "  \"chatHighlightOutput\": \"{}\",\n",
+            "  \"tuiAssistantColor\": \"{}\",\n",
             "  \"storageCheck\": {{\n",
             "    \"minFree\": {{\n",
             "      \"value\": 5,\n",
@@ -4135,7 +4221,7 @@ fn local_config_json(default_output: &str, chat_output: &str) -> String {
             "  }}\n",
             "}}\n"
         ),
-        default_output, chat_output
+        default_output, chat_output, tui_output
     )
 }
 
@@ -4901,7 +4987,18 @@ codexplain color off
 codexplain color status
 ```
 
-`codex exec` and `codex review` can be post-processed with Codexplain ANSI text color. Interactive Codex TUI is passed through to the real Codex process with best-effort color env (`CLICOLOR_FORCE`, `FORCE_COLOR`, `COLORTERM`), but native assistant-message recoloring inside ratatui requires Codex renderer support.
+`codex exec` and `codex review` can be post-processed with Codexplain ANSI text color. Interactive Codex TUI is passed through to the real Codex process with color env (`CLICOLOR_FORCE`, `FORCE_COLOR`, `COLORTERM`). Assistant-message recoloring inside ratatui requires the project-local patched Codex renderer.
+
+Project-local interactive TUI assistant color can be toggled without touching global Codex settings:
+
+```bash
+codexplain tui-color on
+codexplain tui-color full
+codexplain tui-color off
+codexplain tui-color status
+```
+
+The shim routes to `.codexplain/state/codex-upstream/codex-rs/target/release/codex` or `.codexplain/state/codex-upstream/codex-rs/target/debug/codex` when that binary exists and `tuiAssistantColor` is enabled.
 
 Use this adapter when a host can pipe a completed answer into a post-response command:
 
@@ -4934,6 +5031,7 @@ const LOCAL_CONFIG: &str = r#"{
   "schemaVersion": 1,
   "defaultColorOutput": "ansi",
   "chatHighlightOutput": "ansi",
+  "tuiAssistantColor": "semantic",
   "storageCheck": {
     "minFree": {
       "value": 5,
@@ -4957,11 +5055,14 @@ export CODEXPLAIN_SHIM_PATH="$0"
 if grep -Eq '"defaultColorOutput"[[:space:]]*:[[:space:]]*"(plain|none|off|no-color)"' "$ROOT/.codexplain/config.json" 2>/dev/null; then
   export CODEXPLAIN_COLOR=never
   export CODEXPLAIN_COLOR_OUTPUT=plain
+  export CODEXPLAIN_TUI_COLOR=off
   export NO_COLOR=1
   unset CLICOLOR_FORCE FORCE_COLOR
 else
   export CODEXPLAIN_COLOR=always
   export CODEXPLAIN_COLOR_OUTPUT=ansi
+  CODEXPLAIN_TUI_COLOR_VALUE=$(sed -n 's/.*"tuiAssistantColor"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$ROOT/.codexplain/config.json" 2>/dev/null | head -n 1)
+  export CODEXPLAIN_TUI_COLOR="${CODEXPLAIN_TUI_COLOR_VALUE:-semantic}"
   export CLICOLOR_FORCE=1
   export FORCE_COLOR=3
   export COLORTERM=truecolor
@@ -4978,11 +5079,14 @@ export CODEXPLAIN_LOCAL_SHAPE=1
 if grep -Eq '"defaultColorOutput"[[:space:]]*:[[:space:]]*"(plain|none|off|no-color)"' "$CODEXPLAIN_PROJECT_DIR/.codexplain/config.json" 2>/dev/null; then
   export CODEXPLAIN_COLOR=never
   export CODEXPLAIN_COLOR_OUTPUT=plain
+  export CODEXPLAIN_TUI_COLOR=off
   export NO_COLOR=1
   unset CLICOLOR_FORCE FORCE_COLOR
 else
   export CODEXPLAIN_COLOR=always
   export CODEXPLAIN_COLOR_OUTPUT=ansi
+  CODEXPLAIN_TUI_COLOR_VALUE=$(sed -n 's/.*"tuiAssistantColor"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$CODEXPLAIN_PROJECT_DIR/.codexplain/config.json" 2>/dev/null | head -n 1)
+  export CODEXPLAIN_TUI_COLOR="${CODEXPLAIN_TUI_COLOR_VALUE:-semantic}"
   export CLICOLOR_FORCE=1
   export FORCE_COLOR=3
   export COLORTERM=truecolor
@@ -5345,6 +5449,7 @@ fn apply_codex_color_env(command: &mut Command, enabled: bool) {
         command.env_remove("NO_COLOR");
         command.env("CODEXPLAIN_COLOR", "always");
         command.env("CODEXPLAIN_COLOR_OUTPUT", "ansi");
+        command.env("CODEXPLAIN_TUI_COLOR", tui_color_env_value());
         command.env("CLICOLOR_FORCE", "1");
         command.env("FORCE_COLOR", "3");
         command.env("COLORTERM", "truecolor");
@@ -5357,6 +5462,7 @@ fn apply_codex_color_env(command: &mut Command, enabled: bool) {
     } else {
         command.env("CODEXPLAIN_COLOR", "never");
         command.env("CODEXPLAIN_COLOR_OUTPUT", "plain");
+        command.env("CODEXPLAIN_TUI_COLOR", "off");
         command.env("NO_COLOR", "1");
         command.env_remove("CLICOLOR_FORCE");
         command.env_remove("FORCE_COLOR");
@@ -5367,6 +5473,12 @@ fn resolve_real_codex_binary() -> PathBuf {
     if let Ok(path) = env::var("CODEXPLAIN_REAL_CODEX") {
         let path = PathBuf::from(path);
         if is_executable_file(&path) {
+            return path;
+        }
+    }
+
+    if tui_color_feature_enabled() {
+        if let Some(path) = local_patched_codex_binary().filter(|path| is_executable_file(path)) {
             return path;
         }
     }
@@ -5397,6 +5509,16 @@ fn resolve_real_codex_binary() -> PathBuf {
         return candidate;
     }
     PathBuf::from("codex")
+}
+
+fn local_patched_codex_binary() -> Option<PathBuf> {
+    [
+        project_path(".codexplain/patched-codex/bin/codex"),
+        project_path(".codexplain/state/codex-upstream/codex-rs/target/release/codex"),
+        project_path(".codexplain/state/codex-upstream/codex-rs/target/debug/codex"),
+    ]
+    .into_iter()
+    .find(|path| path.exists())
 }
 
 fn is_executable_file(path: &Path) -> bool {
@@ -5437,6 +5559,13 @@ fn build_size() {
 
 fn build_clean(args: &[String]) -> io::Result<()> {
     let root = project_path(".");
+    if args.iter().any(|arg| arg == "--patched-codex") {
+        match cleanup_patched_codex_target(&root)? {
+            TargetCleanup::Removed => println!("cleaned=patched_codex_target"),
+            TargetCleanup::AlreadyAbsent => println!("cleaned=patched_codex_target_already_absent"),
+        }
+        return Ok(());
+    }
     if args.iter().any(|arg| arg == "--target") || args.iter().any(|arg| arg == "--all") {
         match cleanup_project_storage_dir(&root, "target")? {
             TargetCleanup::Removed => println!("cleaned=target"),
@@ -5448,6 +5577,44 @@ fn build_clean(args: &[String]) -> io::Result<()> {
     Ok(())
 }
 
+fn cleanup_patched_codex_target(root: &Path) -> io::Result<TargetCleanup> {
+    let root = root.canonicalize()?;
+    let target = root.join(".codexplain/state/codex-upstream/codex-rs/target");
+    let metadata = match fs::symlink_metadata(&target) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            return Ok(TargetCleanup::AlreadyAbsent);
+        }
+        Err(error) => return Err(error),
+    };
+
+    if metadata.file_type().is_symlink() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "refusing to clean patched Codex target because it is a symlink",
+        ));
+    }
+    if !metadata.is_dir() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "refusing to clean patched Codex target because it is not a directory",
+        ));
+    }
+
+    let resolved_target = target.canonicalize()?;
+    if !resolved_target.starts_with(root.join(".codexplain/state/codex-upstream/codex-rs"))
+        || resolved_target.file_name().and_then(|name| name.to_str()) != Some("target")
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "refusing to clean any path outside the project-local patched Codex target directory",
+        ));
+    }
+
+    fs::remove_dir_all(&target)?;
+    Ok(TargetCleanup::Removed)
+}
+
 fn usage() -> &'static str {
     "Usage:
   codexplain shape --prompt <text> [--response <text>] [--width <n>] [--chat-color|--color-output markdown|html|ansi|plain]
@@ -5456,6 +5623,7 @@ fn usage() -> &'static str {
   codexplain install-codex [--local] [--global] [--force]
   codexplain uninstall-codex [--local] [--global] [--remove-profile]
   codexplain color on|off|status
+  codexplain tui-color on|full|off|status
   codexplain style add <name> --trigger <text> --renderers <tldr,table,flow,pros-cons,formula,indexed,progress> --description <text>
   codexplain style list|show <name>|remove <name>
   codexplain feedback|rlhf --rating <1-5> --comment <text>
@@ -5464,7 +5632,7 @@ fn usage() -> &'static str {
   codexplain profile --detail-scale <0-100>|--ux-density <0-100>|--risk-sensitivity <0-100>
   codexplain demo
   codexplain build-size
-  codexplain build-clean --target
+  codexplain build-clean --target|--patched-codex
   codexplain storage-check [--min-free-gb 5] [--clean]
 
 Storage-check output contract:
@@ -5483,6 +5651,8 @@ Storage-check output contract:
 Themes: none, ocean, forest, warm, sunset, grape, slate, rose, mono
 Color outputs: terminal, ansi, markdown, html, plain. Use --chat-color as an alias for --color-output ansi in Codex CLI.
 Color toggle: `codexplain color on` forces ANSI text color for Codexplain-shaped exec/review output and best-effort Codex TUI color env; `codexplain color off` restores plain output.
+TUI assistant color: `codexplain tui-color on` enables project-local semantic assistant-message color when a patched Codex binary exists under .codexplain/state/codex-upstream/codex-rs/target/release/codex or target/debug/codex; `off` disables only that hook.
+Build cleanup: `codexplain build-clean --patched-codex` removes only the ignored project-local patched Codex Cargo target directory.
 Index styles: decimal, zero-padded, alpha-lower, alpha-upper, roman-lower, roman-upper"
 }
 
@@ -5522,6 +5692,12 @@ fn main() {
         "color" => {
             if let Err(error) = color_command(&args) {
                 eprintln!("failed to update Codexplain color: {error}");
+                std::process::exit(1);
+            }
+        }
+        "tui-color" => {
+            if let Err(error) = tui_color_command(&args) {
+                eprintln!("failed to update Codexplain TUI color: {error}");
                 std::process::exit(1);
             }
         }
@@ -6186,8 +6362,12 @@ after
         assert!(!should_capture_codex_output(&[
             "이 프로젝트 설명".to_string()
         ]));
-        assert!(local_config_json("plain", "plain").contains("\"defaultColorOutput\": \"plain\""));
-        assert!(local_config_json("ansi", "ansi").contains("\"chatHighlightOutput\": \"ansi\""));
+        assert!(local_config_json("plain", "plain", "off")
+            .contains("\"defaultColorOutput\": \"plain\""));
+        assert!(local_config_json("ansi", "ansi", "semantic")
+            .contains("\"chatHighlightOutput\": \"ansi\""));
+        assert!(local_config_json("ansi", "ansi", "semantic")
+            .contains("\"tuiAssistantColor\": \"semantic\""));
     }
 
     #[test]
@@ -7071,6 +7251,36 @@ after
         assert!(!root.join("target").exists());
         assert!(root.join("dist/app.js").exists());
         assert!(root.join("node_modules/package.txt").exists());
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn cleanup_patched_codex_target_deletes_only_project_local_build_cache() {
+        let root = env::temp_dir().join(format!(
+            "codexplain-patched-codex-clean-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        let patched_target = root.join(".codexplain/state/codex-upstream/codex-rs/target/debug");
+        fs::create_dir_all(&patched_target).unwrap();
+        fs::create_dir_all(root.join(".codexplain/state/codex-upstream/codex-rs/tui")).unwrap();
+        fs::write(patched_target.join("codex"), b"binary").unwrap();
+        fs::write(
+            root.join(".codexplain/state/codex-upstream/codex-rs/tui/source.rs"),
+            b"source",
+        )
+        .unwrap();
+
+        let cleaned = cleanup_patched_codex_target(&root).unwrap();
+
+        assert_eq!(cleaned, TargetCleanup::Removed);
+        assert!(!root
+            .join(".codexplain/state/codex-upstream/codex-rs/target")
+            .exists());
+        assert!(root
+            .join(".codexplain/state/codex-upstream/codex-rs/tui/source.rs")
+            .exists());
 
         fs::remove_dir_all(root).unwrap();
     }

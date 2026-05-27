@@ -1,6 +1,6 @@
 {
   "name": "codexplain",
-  "version": "0.18.3",
+  "version": "0.18.4",
   "description": "Readable explanation UX layer for Codex responses",
   "bin": {
     "codexplain": "bin/codexplain",
@@ -15,8 +15,10 @@
     "build:rust": "cargo build --release",
     "test:rust": "cargo test",
     "storage-check": "cargo run --quiet -- storage-check",
-    "on": "cargo run --quiet -- install-codex --local --global --force",
-    "off": "cargo run --quiet -- uninstall-codex --local --global",
+    "on": "cargo run --quiet -- install-codex --local --force",
+    "off": "cargo run --quiet -- uninstall-codex --local",
+    "on:global": "cargo run --quiet -- install-codex --global --force",
+    "off:global": "cargo run --quiet -- uninstall-codex --global",
     "build-size": "cargo run --quiet -- build-size",
     "build-clean": "cargo run --quiet -- build-clean --target"
   },

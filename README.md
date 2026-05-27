@@ -30,16 +30,28 @@ Install from this repository and enable it in the current project:
 npm install -g github:NomaDamas/Codexplain && codexplain install-codex --local --force
 ```
 
+Optional global Codex guidance for release users:
+
+```bash
+codexplain install-codex --global --force
+```
+
 If you are inside this repository while developing it:
 
 ```bash
 npm run on
 ```
 
-Cleanly uninstall the managed local/global integration:
+Cleanly uninstall the managed local integration:
 
 ```bash
 npm run off
+```
+
+Cleanly uninstall only the managed global Codexplain block:
+
+```bash
+codexplain uninstall-codex --global
 ```
 
 Keep feedback preferences by default. To remove `.codexplain/ux-profile.json` too:
@@ -48,7 +60,7 @@ Keep feedback preferences by default. To remove `.codexplain/ux-profile.json` to
 codexplain uninstall-codex --local --remove-profile
 ```
 
-After setup, Codex receives project-local `AGENTS.md` guidance. For global Codex guidance, run `codexplain install-codex --global --force`; `npm run on` in this repo installs both local and global guidance. `npm run off` cleanly removes the managed Codexplain blocks and local adapter files.
+After local setup, Codex receives project-local `AGENTS.md` guidance. Release users can opt into global Codex guidance with `codexplain install-codex --global --force`. `npm run on` and `npm run off` in this repo are intentionally project-local; use `npm run on:global` and `npm run off:global` only when you explicitly want to modify global Codex guidance.
 
 ## 🚀 One-Line Use
 
@@ -113,6 +125,17 @@ codexplain color off
 codexplain color status
 ```
 
+Turn the project-local interactive Codex TUI assistant-message color hook on or
+off. This does not modify global Codex settings. It only routes through a
+project-local patched Codex binary when one exists:
+
+```bash
+codexplain tui-color on
+codexplain tui-color full
+codexplain tui-color off
+codexplain tui-color status
+```
+
 For Codex CLI chat output, explicitly use `--chat-color` when you want real
 terminal text color. It keeps ANSI styling instead of substituting emoji chips,
 while still preserving strict JSON, diffs, code, and logs unchanged:
@@ -129,12 +152,12 @@ For HTML-capable surfaces only, use the explicit HTML form:
 codexplain shape --color-output html --theme sunset --prompt "요약" --response "본문"
 ```
 
-Interactive Codex TUI note: Codexplain can force terminal color environment for
-the real Codex TUI, but it cannot recolor Codex's internal ratatui message
-widgets after they are rendered. Full native assistant-message recoloring inside
-interactive TUI requires an upstream Codex renderer hook or a fork of Codex's TUI
-renderer. For guaranteed Codexplain-colored explanations, use `codex exec`
-through the local shim or `codexplain-codex --local-shape`.
+Interactive Codex TUI note: the stock npm-installed Codex binary renders
+assistant messages inside its native ratatui renderer, so stdout post-processing
+cannot recolor those in-place widgets. Codexplain's `tui-color` hook solves this
+only when the project-local shim can route to a patched Codex binary under
+`.codexplain/state/codex-upstream/codex-rs/target/release/codex` or
+`.codexplain/state/codex-upstream/codex-rs/target/debug/codex`.
 
 Give feedback after an answer:
 
@@ -322,6 +345,7 @@ cargo run --bin codexplain -- pros-cons
 cargo run --bin codexplain -- formula --frame ascii
 cargo run --bin codexplain -- build-size
 cargo run --bin codexplain -- build-clean --target
+cargo run --bin codexplain -- build-clean --patched-codex
 cargo run --bin codexplain -- storage-check --min-free-gb 5
 cargo run --bin codexplain -- storage-check --min-free-gb 5 --clean
 cargo test
@@ -355,6 +379,9 @@ by Cargo. The command prints stable `key=value` lines beginning with
 This cleanup rule is intentionally narrow:
 
 - `target/` can be deleted because Cargo can rebuild it.
+- `.codexplain/state/codex-upstream/codex-rs/target/` can be deleted only with
+  explicit `build-clean --patched-codex` because it is the project-local patched
+  Codex build cache.
 - `dist/` is reported but never removed automatically.
 - `node_modules/` is reported but never removed automatically.
 - Cleanup only runs when available storage is below the effective threshold.

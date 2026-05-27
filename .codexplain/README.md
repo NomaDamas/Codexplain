@@ -19,7 +19,18 @@ codexplain color off
 codexplain color status
 ```
 
-`codex exec` and `codex review` can be post-processed with Codexplain ANSI text color. Interactive Codex TUI is passed through to the real Codex process with best-effort color env (`CLICOLOR_FORCE`, `FORCE_COLOR`, `COLORTERM`), but native assistant-message recoloring inside ratatui requires Codex renderer support.
+`codex exec` and `codex review` can be post-processed with Codexplain ANSI text color. Interactive Codex TUI is passed through to the real Codex process with color env (`CLICOLOR_FORCE`, `FORCE_COLOR`, `COLORTERM`). Assistant-message recoloring inside ratatui requires the project-local patched Codex renderer.
+
+Project-local interactive TUI assistant color can be toggled without touching global Codex settings:
+
+```bash
+codexplain tui-color on
+codexplain tui-color full
+codexplain tui-color off
+codexplain tui-color status
+```
+
+The shim routes to `.codexplain/state/codex-upstream/codex-rs/target/release/codex` or `.codexplain/state/codex-upstream/codex-rs/target/debug/codex` when that binary exists and `tuiAssistantColor` is enabled.
 
 Use this adapter when a host can pipe a completed answer into a post-response command:
 

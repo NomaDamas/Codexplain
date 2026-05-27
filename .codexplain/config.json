@@ -2,6 +2,7 @@
   "schemaVersion": 1,
   "defaultColorOutput": "ansi",
   "chatHighlightOutput": "ansi",
+  "tuiAssistantColor": "semantic",
   "storageCheck": {
     "minFree": {
       "value": 5,
