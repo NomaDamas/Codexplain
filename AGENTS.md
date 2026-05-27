@@ -9,8 +9,8 @@ Default answer style:
 - Start with the outcome or current state, not implementation detail.
 - Use concise Korean first when the user writes Korean.
 - Use connected Unicode boxes or tables when structure helps scanning.
-- Use semantic ANSI colors for labels, risks, success states, and next actions when the terminal supports color.
-- Use ANSI terminal color by default when Codexplain config asks for `defaultColorOutput: ansi`; use HTML span markup only when chat-color output is requested.
+- Use semantic ANSI colors for labels, risks, success states, artifact names, commands, paths, and next actions when the terminal supports color.
+- Use ANSI terminal color by default when Codexplain config asks for `defaultColorOutput: ansi`; use subtle Markdown color chips for KEY/WARN/RISK/OK when the chat host cannot render ANSI/HTML. Do not print raw HTML spans in plain Markdown chat hosts.
 - Respect explanationDepth light/standard/deep, architectureDepth overview/system/internals, and abstractionLevel concrete/architecture/strategy.
 - Select renderers dynamically: TLDR prose, progress, tables, flow diagrams, pros/cons, formula boxes, status badges, checklists, risk panels, confidence meters, decision matrices, ETA strips, callouts, and next-action footers.
 - Treat UX blocks like tool choices: combine the smallest useful set from prompt, response, profile, and optional planner hints.

@@ -38,6 +38,7 @@ enum ColorOutput {
     Terminal,
     Ansi,
     Html,
+    Markdown,
     Plain,
 }
 
@@ -50,6 +51,9 @@ enum AnsiRole {
     Success,
     Warning,
     Danger,
+    Command,
+    Path,
+    Artifact,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -66,6 +70,9 @@ struct ThemeSpec {
     success: AnsiStyle,
     warning: AnsiStyle,
     danger: AnsiStyle,
+    command: AnsiStyle,
+    path: AnsiStyle,
+    artifact: AnsiStyle,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -254,6 +261,14 @@ struct RendererSelection {
     signal: PromptSignal,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct CustomStyle {
+    name: String,
+    trigger: String,
+    renderers: Vec<RendererKind>,
+    body: String,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum UxComponent {
     StatusBadge,
@@ -308,7 +323,7 @@ impl Default for Profile {
             frame: Frame::Unicode,
             index_style: IndexStyle::Decimal,
             detail: "deep".to_string(),
-            style: "plain".to_string(),
+            style: "technical".to_string(),
             audience: "general".to_string(),
             preferred_structure: "auto".to_string(),
             abstraction_min: "concrete".to_string(),
@@ -937,6 +952,13 @@ fn requested_renderers(prompt: &str) -> Vec<RendererKind> {
             renderers.push(signal.renderer);
         }
     }
+    for style in matching_custom_styles(prompt) {
+        for renderer in style.renderers {
+            if !renderers.contains(&renderer) {
+                renderers.push(renderer);
+            }
+        }
+    }
     renderers
 }
 
@@ -1421,6 +1443,9 @@ impl AnsiRole {
             "success" => Self::Success,
             "warning" => Self::Warning,
             "danger" => Self::Danger,
+            "command" => Self::Command,
+            "path" => Self::Path,
+            "artifact" => Self::Artifact,
             _ => Self::Accent,
         }
     }
@@ -1451,6 +1476,9 @@ impl ThemeSpec {
         success: AnsiStyle::PLAIN,
         warning: AnsiStyle::PLAIN,
         danger: AnsiStyle::PLAIN,
+        command: AnsiStyle::PLAIN,
+        path: AnsiStyle::PLAIN,
+        artifact: AnsiStyle::PLAIN,
     };
 
     fn style(self, role: AnsiRole) -> AnsiStyle {
@@ -1462,6 +1490,9 @@ impl ThemeSpec {
             AnsiRole::Success => self.success,
             AnsiRole::Warning => self.warning,
             AnsiRole::Danger => self.danger,
+            AnsiRole::Command => self.command,
+            AnsiRole::Path => self.path,
+            AnsiRole::Artifact => self.artifact,
         }
     }
 }
@@ -1511,6 +1542,9 @@ impl Theme {
                 success: AnsiStyle::new("\x1b[1;32m"),
                 warning: AnsiStyle::new("\x1b[1;33m"),
                 danger: AnsiStyle::new("\x1b[1;31m"),
+                command: AnsiStyle::new("\x1b[1;35m"),
+                path: AnsiStyle::new("\x1b[1;36m"),
+                artifact: AnsiStyle::new("\x1b[1;33m"),
             },
             Self::Forest => ThemeSpec {
                 border: AnsiStyle::new("\x1b[32m"),
@@ -1520,6 +1554,9 @@ impl Theme {
                 success: AnsiStyle::new("\x1b[1;32m"),
                 warning: AnsiStyle::new("\x1b[1;33m"),
                 danger: AnsiStyle::new("\x1b[1;31m"),
+                command: AnsiStyle::new("\x1b[1;36m"),
+                path: AnsiStyle::new("\x1b[1;34m"),
+                artifact: AnsiStyle::new("\x1b[1;33m"),
             },
             Self::Warm => ThemeSpec {
                 border: AnsiStyle::new("\x1b[33m"),
@@ -1529,6 +1566,9 @@ impl Theme {
                 success: AnsiStyle::new("\x1b[1;32m"),
                 warning: AnsiStyle::new("\x1b[1;33m"),
                 danger: AnsiStyle::new("\x1b[1;31m"),
+                command: AnsiStyle::new("\x1b[1;35m"),
+                path: AnsiStyle::new("\x1b[1;36m"),
+                artifact: AnsiStyle::new("\x1b[1;33m"),
             },
             Self::Sunset => ThemeSpec {
                 border: AnsiStyle::new("\x1b[38;5;208m"),
@@ -1538,6 +1578,9 @@ impl Theme {
                 success: AnsiStyle::new("\x1b[1;38;5;118m"),
                 warning: AnsiStyle::new("\x1b[1;38;5;220m"),
                 danger: AnsiStyle::new("\x1b[1;38;5;196m"),
+                command: AnsiStyle::new("\x1b[1;38;5;199m"),
+                path: AnsiStyle::new("\x1b[1;38;5;45m"),
+                artifact: AnsiStyle::new("\x1b[1;38;5;220m"),
             },
             Self::Grape => ThemeSpec {
                 border: AnsiStyle::new("\x1b[38;5;141m"),
@@ -1547,6 +1590,9 @@ impl Theme {
                 success: AnsiStyle::new("\x1b[1;38;5;120m"),
                 warning: AnsiStyle::new("\x1b[1;38;5;222m"),
                 danger: AnsiStyle::new("\x1b[1;38;5;204m"),
+                command: AnsiStyle::new("\x1b[1;38;5;213m"),
+                path: AnsiStyle::new("\x1b[1;38;5;87m"),
+                artifact: AnsiStyle::new("\x1b[1;38;5;222m"),
             },
             Self::Slate => ThemeSpec {
                 border: AnsiStyle::new("\x1b[38;5;67m"),
@@ -1556,6 +1602,9 @@ impl Theme {
                 success: AnsiStyle::new("\x1b[1;38;5;114m"),
                 warning: AnsiStyle::new("\x1b[1;38;5;179m"),
                 danger: AnsiStyle::new("\x1b[1;38;5;167m"),
+                command: AnsiStyle::new("\x1b[1;38;5;141m"),
+                path: AnsiStyle::new("\x1b[1;38;5;153m"),
+                artifact: AnsiStyle::new("\x1b[1;38;5;179m"),
             },
             Self::Rose => ThemeSpec {
                 border: AnsiStyle::new("\x1b[38;5;211m"),
@@ -1565,6 +1614,9 @@ impl Theme {
                 success: AnsiStyle::new("\x1b[1;38;5;120m"),
                 warning: AnsiStyle::new("\x1b[1;38;5;222m"),
                 danger: AnsiStyle::new("\x1b[1;38;5;197m"),
+                command: AnsiStyle::new("\x1b[1;38;5;135m"),
+                path: AnsiStyle::new("\x1b[1;38;5;45m"),
+                artifact: AnsiStyle::new("\x1b[1;38;5;220m"),
             },
             Self::Mono => ThemeSpec {
                 border: AnsiStyle::new("\x1b[90m"),
@@ -1574,6 +1626,9 @@ impl Theme {
                 success: AnsiStyle::new("\x1b[1m"),
                 warning: AnsiStyle::new("\x1b[1m"),
                 danger: AnsiStyle::new("\x1b[1m"),
+                command: AnsiStyle::new("\x1b[1m"),
+                path: AnsiStyle::new("\x1b[4m"),
+                artifact: AnsiStyle::new("\x1b[1m"),
             },
         }
     }
@@ -1598,21 +1653,140 @@ fn color(theme: Theme, role: &str, value: &str) -> String {
     theme.style(AnsiRole::parse(role)).apply(value)
 }
 
+fn semantic_highlight(theme: Theme, text: &str, fallback_role: &str) -> String {
+    if theme == Theme::None || text.trim().is_empty() || text.contains("[") {
+        return color(theme, fallback_role, text);
+    }
+    if !text
+        .split_whitespace()
+        .any(|token| highlight_role(token).is_some())
+    {
+        return color(theme, fallback_role, text);
+    }
+    let mut out = String::new();
+    let mut token = String::new();
+    for ch in text.chars() {
+        if ch.is_whitespace() {
+            flush_highlight_token(theme, &mut out, &mut token, fallback_role);
+            out.push(ch);
+        } else {
+            token.push(ch);
+        }
+    }
+    flush_highlight_token(theme, &mut out, &mut token, fallback_role);
+    out
+}
+
+fn flush_highlight_token(theme: Theme, out: &mut String, token: &mut String, fallback_role: &str) {
+    if token.is_empty() {
+        return;
+    }
+    let role = highlight_role(token).unwrap_or(fallback_role);
+    out.push_str(&color(theme, role, token));
+    token.clear();
+}
+
+fn highlight_role(token: &str) -> Option<&'static str> {
+    let normalized = token.trim_matches(highlight_trim_char).to_ascii_lowercase();
+    let normalized = strip_korean_particle(&normalized);
+    match normalized.as_str() {
+        "pass" | "passed" | "success" | "완료" | "통과" | "보존" | "있음" | "가능" | "가능한" => {
+            Some("success")
+        }
+        "fail" | "failed" | "error" | "blocked" | "실패" | "오류" | "없음" | "안" | "불가" => {
+            Some("danger")
+        }
+        "warn" | "warning" | "주의" | "남음" | "진행" | "필요" | "수정" | "우회" | "hook"
+        | "hooks" | "후처리" => Some("warning"),
+        "json" | "code" | "diff" | "log" | "logs" | "test" | "테스트" | "syntax" | "status"
+        | "stdout" | "stderr" | "output" | "artifact" | "artifacts" => Some("artifact"),
+        "on" | "off" | "install" | "uninstall" | "install-codex" | "uninstall-codex" => {
+            Some("command")
+        }
+        "cli" | "policy" | "profile" | "config" | "renderer" | "renderers" | "selector"
+        | "core" | "semantic" | "highlight" | "integration" | "codexplain" | "rust" | "ux"
+        | "gateway" | "runner" | "lifecycle" | "tui" | "terminal" | "color" | "colors"
+        | "architecture" | "아키텍처" | "통합" | "색상" | "렌더링" | "support" | "감지"
+        | "감지함" | "assistant" | "응답" | "wrapper" | "shim" | "wrapper/shim"
+        | "openai/codex" => Some("heading"),
+        _ => {
+            if normalized.contains("json")
+                || normalized.contains("diff")
+                || normalized.contains("log")
+                || normalized.contains("test")
+            {
+                Some("artifact")
+            } else if normalized.contains("wrapper")
+                || normalized.contains("shim")
+                || normalized.contains("openai/codex")
+                || normalized.contains("codexplain")
+            {
+                Some("heading")
+            } else if normalized.contains("hook") {
+                Some("warning")
+            } else if normalized.contains("없")
+                || normalized.contains("안보")
+                || normalized.contains("안-보")
+            {
+                Some("danger")
+            } else if normalized.contains("가능") || normalized.contains("있") {
+                Some("success")
+            } else if normalized.contains("agents.md")
+                || normalized.contains(".codexplain")
+                || normalized.contains(".codex/")
+                || normalized.contains("ux-profile.json")
+                || normalized.contains("config.json")
+                || normalized.contains("post-response")
+                || normalized.contains("build-size")
+                || normalized.contains("storage-check")
+                || normalized.starts_with("~/")
+                || normalized.starts_with("./")
+            {
+                Some("path")
+            } else {
+                None
+            }
+        }
+    }
+}
+
+fn highlight_trim_char(ch: char) -> bool {
+    matches!(
+        ch,
+        ',' | '.' | ';' | ':' | ')' | '(' | '[' | ']' | '`' | '"' | '\'' | '“' | '”' | '‘' | '’'
+    )
+}
+
+fn strip_korean_particle(value: &str) -> String {
+    for suffix in [
+        "으로", "에게", "에서", "부터", "까지", "은", "는", "이", "가", "을", "를", "와", "과",
+        "에", "로",
+    ] {
+        if let Some(stripped) = value.strip_suffix(suffix) {
+            if !stripped.is_empty() {
+                return stripped.to_string();
+            }
+        }
+    }
+    value.to_string()
+}
+
 fn color_output_mode(args: &[String]) -> ColorOutput {
     if args.iter().any(|arg| arg == "--chat-color") {
-        return ColorOutput::Html;
+        return ColorOutput::Markdown;
     }
     if let Some(value) = arg_value(args, "--color-output") {
         return parse_color_output(value);
     }
     if let Ok(value) = env::var("CODEXPLAIN_CHAT_COLOR") {
-        if env_flag_enabled(Some(value.clone()))
-            || matches!(
-                value.trim().to_ascii_lowercase().as_str(),
-                "html" | "markdown" | "chat"
-            )
-        {
-            return ColorOutput::Html;
+        if env_flag_enabled(Some(value.clone())) {
+            return ColorOutput::Markdown;
+        }
+        if matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "html" | "markdown" | "chat"
+        ) {
+            return parse_color_output(&value);
         }
     }
     if let Ok(value) = env::var("CODEXPLAIN_COLOR_OUTPUT") {
@@ -1632,7 +1806,8 @@ fn configured_color_output() -> Option<ColorOutput> {
 fn parse_color_output(value: &str) -> ColorOutput {
     match value.trim().to_ascii_lowercase().as_str() {
         "ansi" | "terminal-force" | "force" => ColorOutput::Ansi,
-        "html" | "chat" | "markdown" | "md" => ColorOutput::Html,
+        "html" => ColorOutput::Html,
+        "chat" | "markdown" | "md" | "chat-markdown" | "markdown-chat" => ColorOutput::Markdown,
         "plain" | "none" | "off" | "no-color" => ColorOutput::Plain,
         _ => ColorOutput::Terminal,
     }
@@ -1646,6 +1821,7 @@ fn apply_color_output(rendered: &str, mode: ColorOutput, strict: bool) -> String
         ColorOutput::Terminal | ColorOutput::Ansi => rendered.to_string(),
         ColorOutput::Plain => strip_ansi(rendered),
         ColorOutput::Html => ansi_to_html_pre(rendered),
+        ColorOutput::Markdown => ansi_to_markdown_highlight(rendered),
     }
 }
 
@@ -1716,6 +1892,226 @@ fn ansi_to_html_spans(value: &str) -> String {
         out.push_str("</span>");
     }
     out
+}
+
+fn ansi_to_markdown_highlight(value: &str) -> String {
+    let plain = strip_ansi(value);
+    let terms = markdown_highlight_terms(&plain);
+    if terms.is_empty() {
+        return plain;
+    }
+    format!("{}\n\n{}", markdown_highlight_panel(&terms), plain)
+}
+
+fn markdown_highlight_terms(value: &str) -> Vec<(String, &'static str)> {
+    let mut items = Vec::new();
+    let mut token = String::new();
+    for ch in value.chars() {
+        if ch.is_whitespace() || is_box_drawing(ch) {
+            push_markdown_highlight_term(&mut items, &mut token);
+        } else {
+            token.push(ch);
+        }
+    }
+    push_markdown_highlight_term(&mut items, &mut token);
+    items
+}
+
+fn push_markdown_highlight_term(items: &mut Vec<(String, &'static str)>, token: &mut String) {
+    if token.is_empty() {
+        return;
+    }
+    if let Some(role) = highlight_role(token) {
+        let Some(label) = markdown_highlight_label(token) else {
+            token.clear();
+            return;
+        };
+        if should_add_markdown_highlight(items, &label)
+            && !items
+                .iter()
+                .any(|(existing, _)| existing.eq_ignore_ascii_case(&label))
+        {
+            if label == "JSON/code/diff/log/test" {
+                items.retain(|(existing, _)| {
+                    !matches!(
+                        existing.to_ascii_uppercase().as_str(),
+                        "JSON" | "CODE" | "DIFF" | "LOG" | "TEST"
+                    )
+                });
+            }
+            items.push((label, role));
+        }
+    }
+    token.clear();
+}
+
+fn should_add_markdown_highlight(items: &[(String, &'static str)], label: &str) -> bool {
+    let upper = label.to_ascii_uppercase();
+    if matches!(upper.as_str(), "JSON" | "CODE" | "DIFF" | "LOG" | "TEST")
+        && items
+            .iter()
+            .any(|(existing, _)| existing == "JSON/code/diff/log/test")
+    {
+        return false;
+    }
+    true
+}
+
+fn markdown_highlight_label(token: &str) -> Option<String> {
+    let trimmed = token.trim_matches(highlight_trim_char);
+    if trimmed.is_empty() {
+        return None;
+    }
+    let stripped = strip_korean_particle(trimmed);
+    let canonical = match stripped.to_ascii_lowercase().as_str() {
+        value
+            if value.contains("json")
+                || value.contains("code")
+                || value.contains("diff")
+                || value.contains("log")
+                || value.contains("test") =>
+        {
+            if value.contains('/') {
+                "JSON/code/diff/log/test".to_string()
+            } else {
+                stripped.to_ascii_uppercase()
+            }
+        }
+        "cli" => "CLI".to_string(),
+        "tui" => "TUI".to_string(),
+        "ux" => "UX".to_string(),
+        "codexplain" => "Codexplain".to_string(),
+        "renderer" | "renderers" => "Renderer".to_string(),
+        "selector" => "Selector".to_string(),
+        "policy" => "Policy".to_string(),
+        "profile" => "Profile".to_string(),
+        "gateway" => "Gateway".to_string(),
+        "runner" => "Runner".to_string(),
+        "hook" | "hooks" => "hook".to_string(),
+        _ => stripped,
+    };
+    if canonical.chars().count() <= 1 && canonical != "안" {
+        None
+    } else {
+        Some(canonical)
+    }
+}
+
+fn markdown_highlight_panel(items: &[(String, &'static str)]) -> String {
+    let mut out = String::from("**Codexplain highlights**: ");
+    let parts = select_chat_highlights(items)
+        .iter()
+        .map(|(label, role)| match *role {
+            "success" => format!("🟩 **OK** {}", escape_markdown_token(label)),
+            "danger" => format!("🟥 **RISK** {}", escape_markdown_token(label)),
+            "warning" => format!("🟨 **WARN** {}", escape_markdown_token(label)),
+            "heading" => format!("🟦 **KEY** {}", escape_markdown_token(label)),
+            "command" | "path" | "artifact" => {
+                format!("🟦 `{}`", label.replace('`', "\\`"))
+            }
+            _ => escape_markdown_token(label),
+        })
+        .collect::<Vec<_>>();
+    out.push_str(&parts.join(" · "));
+    out
+}
+
+fn select_chat_highlights(items: &[(String, &'static str)]) -> Vec<(String, &'static str)> {
+    let mut selected = Vec::new();
+    let mut heading_count = 0;
+    let mut warning_count = 0;
+    let mut danger_count = 0;
+    let mut success_count = 0;
+    let mut utility_count = 0;
+
+    for (label, role) in items {
+        if selected.len() >= 6 {
+            break;
+        }
+        let allowed = match *role {
+            "danger" if danger_count < 1 => {
+                danger_count += 1;
+                true
+            }
+            "warning" if warning_count < 2 => {
+                warning_count += 1;
+                true
+            }
+            "success" if success_count < 1 => {
+                success_count += 1;
+                true
+            }
+            "heading" if heading_count < 2 => {
+                heading_count += 1;
+                true
+            }
+            "command" | "path" | "artifact" if utility_count < 1 => {
+                utility_count += 1;
+                true
+            }
+            _ => false,
+        };
+        if allowed {
+            selected.push((label.clone(), *role));
+        }
+    }
+    selected
+}
+
+#[allow(dead_code)]
+fn inline_markdown_highlight(value: &str) -> String {
+    let plain = strip_ansi(value);
+    let mut out = String::new();
+    let mut token = String::new();
+    for ch in plain.chars() {
+        if ch.is_whitespace() || is_box_drawing(ch) {
+            flush_markdown_token(&mut out, &mut token);
+            out.push(ch);
+        } else {
+            token.push(ch);
+        }
+    }
+    flush_markdown_token(&mut out, &mut token);
+    out
+}
+
+fn flush_markdown_token(out: &mut String, token: &mut String) {
+    if token.is_empty() {
+        return;
+    }
+    if let Some(role) = highlight_role(token) {
+        let escaped = escape_markdown_token(token);
+        match role {
+            "heading" | "success" | "danger" | "warning" => {
+                out.push_str("**");
+                out.push_str(&escaped);
+                out.push_str("**");
+            }
+            "command" | "path" | "artifact" => {
+                out.push('`');
+                out.push_str(&token.replace('`', "\\`"));
+                out.push('`');
+            }
+            _ => out.push_str(&escaped),
+        }
+    } else {
+        out.push_str(token);
+    }
+    token.clear();
+}
+
+fn escape_markdown_token(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('*', "\\*")
+        .replace('_', "\\_")
+}
+
+fn is_box_drawing(ch: char) -> bool {
+    matches!(
+        ch,
+        '┌' | '┬' | '┐' | '│' | '├' | '┼' | '┤' | '└' | '┴' | '┘' | '─' | '▼' | '▶'
+    )
 }
 
 fn push_html_escaped(out: &mut String, ch: char) {
@@ -1853,14 +2249,44 @@ fn ansi_256_hex(code: u16) -> Option<&'static str> {
 
 fn role_for(value: &str, fallback: &str) -> &'static str {
     match value.trim().to_ascii_lowercase().as_str() {
-        "tldr" | "핵심" | "결론" | "장점" | "pros" | "success" | "완료" | "pass" => {
-            "success"
-        }
-        "단점" | "위험" | "주의" | "cons" | "risk" | "warning" | "진행" | "남음" => {
-            "warning"
-        }
-        "오류" | "실패" | "danger" | "error" | "blocked" => "danger",
-        "다음 행동" | "선택기" | "아키텍처" | "추상화" | "구현" => "heading",
+        "tldr"
+        | "핵심"
+        | "결론"
+        | "장점"
+        | "pros"
+        | "success"
+        | "완료"
+        | "pass"
+        | "gateway"
+        | "runner"
+        | "profile"
+        | "codex 자체 색상" => "success",
+        "단점"
+        | "위험"
+        | "주의"
+        | "cons"
+        | "risk"
+        | "warning"
+        | "진행"
+        | "남음"
+        | "policy"
+        | "hook"
+        | "외부 후처리 hook"
+        | "가능한 우회"
+        | "외부 후처리" => "warning",
+        "오류" | "실패" | "danger" | "error" | "blocked" | "진짜 통합" => "danger",
+        "다음 행동"
+        | "선택기"
+        | "아키텍처"
+        | "추상화"
+        | "구현"
+        | "selector"
+        | "renderer"
+        | "lifecycle"
+        | "levels"
+        | "색상 적용 대상"
+        | "색상"
+        | "렌더링" => "heading",
         _ => match fallback {
             "heading" => "heading",
             "border" => "border",
@@ -1915,6 +2341,108 @@ fn wrap_text(text: &str, width: usize) -> Vec<String> {
     if text.is_empty() {
         return vec![String::new()];
     }
+    let width = width.max(1);
+    let mut lines = Vec::new();
+    let mut current = String::new();
+    let mut current_width = 0;
+    let mut word = String::new();
+    let mut chars = text.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch == '\x1b' {
+            word.push(ch);
+            append_ansi_escape(&mut chars, &mut word);
+            continue;
+        }
+        if ch == '\n' {
+            emit_wrapped_word(
+                &mut lines,
+                &mut current,
+                &mut current_width,
+                &mut word,
+                width,
+            );
+            lines.push(current.trim_end().to_string());
+            current.clear();
+            current_width = 0;
+            continue;
+        }
+        if ch.is_whitespace() {
+            emit_wrapped_word(
+                &mut lines,
+                &mut current,
+                &mut current_width,
+                &mut word,
+                width,
+            );
+            continue;
+        }
+        word.push(ch);
+    }
+
+    emit_wrapped_word(
+        &mut lines,
+        &mut current,
+        &mut current_width,
+        &mut word,
+        width,
+    );
+    if !current.is_empty() {
+        lines.push(current.trim_end().to_string());
+    }
+    if lines.is_empty() {
+        lines.push(String::new());
+    }
+    lines
+}
+
+fn emit_wrapped_word(
+    lines: &mut Vec<String>,
+    current: &mut String,
+    current_width: &mut usize,
+    word: &mut String,
+    width: usize,
+) {
+    if word.is_empty() {
+        return;
+    }
+
+    let word_width = visible_width(word);
+    if word_width > width {
+        if !current.is_empty() {
+            lines.push(current.trim_end().to_string());
+            current.clear();
+            *current_width = 0;
+        }
+        let hard_lines = wrap_text_hard(word, width);
+        for (index, line) in hard_lines.iter().enumerate() {
+            if index + 1 == hard_lines.len() {
+                current.push_str(line);
+                *current_width = visible_width(current);
+            } else {
+                lines.push(line.clone());
+            }
+        }
+        word.clear();
+        return;
+    }
+
+    let separator_width = if current.is_empty() { 0 } else { 1 };
+    if *current_width + separator_width + word_width > width {
+        lines.push(current.trim_end().to_string());
+        current.clear();
+        *current_width = 0;
+    }
+    if !current.is_empty() {
+        current.push(' ');
+        *current_width += 1;
+    }
+    current.push_str(word);
+    *current_width += word_width;
+    word.clear();
+}
+
+fn wrap_text_hard(text: &str, width: usize) -> Vec<String> {
     let mut lines = Vec::new();
     let mut current = String::new();
     let mut current_width = 0;
@@ -1926,13 +2454,10 @@ fn wrap_text(text: &str, width: usize) -> Vec<String> {
             continue;
         }
         let ch_width = char_width(ch);
-        if ch == '\n' || current_width + ch_width > width {
+        if current_width > 0 && current_width + ch_width > width {
             lines.push(current.trim_end().to_string());
             current.clear();
             current_width = 0;
-            if ch == '\n' {
-                continue;
-            }
         }
         current.push(ch);
         current_width += ch_width;
@@ -2060,9 +2585,11 @@ fn roman_index(mut number: usize) -> String {
 fn compact(text: &str, limit: usize) -> String {
     let mut out = Vec::new();
     let mut sentence = String::new();
-    for ch in text.replace('\n', " ").chars() {
+    let normalized = text.replace('\n', " ");
+    let mut chars = normalized.chars().peekable();
+    while let Some(ch) = chars.next() {
         sentence.push(ch);
-        if matches!(ch, '.' | '!' | '?' | '。' | '！' | '？') {
+        if is_sentence_boundary(ch, chars.peek().copied()) {
             if !sentence.trim().is_empty() {
                 out.push(sentence.trim().to_string());
             }
@@ -2082,6 +2609,14 @@ fn compact(text: &str, limit: usize) -> String {
             .join(" ")
     } else {
         out.join(" ")
+    }
+}
+
+fn is_sentence_boundary(ch: char, next: Option<char>) -> bool {
+    match ch {
+        '!' | '?' | '。' | '！' | '？' => true,
+        '.' => !next.is_some_and(|value| value.is_ascii_alphanumeric()),
+        _ => false,
     }
 }
 
@@ -2179,7 +2714,16 @@ fn wrapped_row(
                 .map(String::as_str)
                 .unwrap_or("");
             let role = role_for_cell(cell, default_role, cell_index);
-            line = line.text(color(theme, role, &layout.padded_cell(cell, *width)));
+            let cell_text = if cell
+                .split_whitespace()
+                .any(|token| highlight_role(token).is_some())
+            {
+                let highlighted = semantic_highlight(theme, cell, role);
+                layout.padded_cell(&highlighted, *width)
+            } else {
+                color(theme, role, &layout.padded_cell(cell, *width))
+            };
+            line = line.text(cell_text);
             line = line.text(color(
                 theme,
                 "border",
@@ -2194,13 +2738,19 @@ fn wrapped_row(
 fn codexplain_flow(frame: Frame, theme: Theme, max_width: usize) -> String {
     let diagram = FlowDiagram::new(
         [
-            FlowStep::new("입력"),
+            FlowStep::new("Prompt Input"),
+            FlowStep::new("Project Shim"),
+            FlowStep::new("Codex Runner"),
             FlowStep::with_branches(
-                "정책 검사",
-                ["strict 출력 보존".to_string(), "설명 UX 렌더링".to_string()],
+                "Strict Policy",
+                [
+                    "artifact passthrough".to_string(),
+                    "explanation shaping".to_string(),
+                ],
             ),
-            FlowStep::new("UX 프로필"),
-            FlowStep::new("출력"),
+            FlowStep::new("Profile Resolver"),
+            FlowStep::new("Renderer Selector"),
+            FlowStep::new("ANSI Terminal Output"),
         ],
         max_width,
     );
@@ -2869,7 +3419,13 @@ fn shape(prompt: &str, response: &str, profile: &Profile, width: usize) -> Strin
     }
     let summary = compact(response, summary_sentence_limit(profile));
     let selection = select_renderer(prompt, profile);
-    dispatch_explanation(selection, prompt, response, &summary, profile, width)
+    let mut output = dispatch_explanation(selection, prompt, response, &summary, profile, width);
+    let matched_styles = matching_custom_styles(prompt);
+    if !matched_styles.is_empty() {
+        let style_section = render_custom_style_section(&matched_styles, profile, width);
+        output = format!("{style_section}\n\n{output}");
+    }
+    output
 }
 
 fn dispatch_explanation(
@@ -2894,7 +3450,7 @@ fn dispatch_explanation(
         } else if requested.contains(&RendererKind::Table) {
             sections.push(table(
                 &["구분", "내용"],
-                &layer_rows(summary, profile),
+                &structured_summary_rows(response, summary, profile),
                 profile.frame,
                 profile.theme,
                 true,
@@ -2941,7 +3497,40 @@ fn dispatch_explanation(
     }
 
     if !ux_components.is_empty() {
-        let mut sections = ux_component_sections(profile, response, summary, width, &ux_components);
+        let mut sections = Vec::new();
+        match selection.renderer {
+            RendererKind::Table => sections.push(table(
+                &["구분", "내용"],
+                &structured_summary_rows(response, summary, profile),
+                profile.frame,
+                profile.theme,
+                true,
+                width,
+            )),
+            RendererKind::Flow => {
+                sections.push(codexplain_flow(profile.frame, profile.theme, width))
+            }
+            RendererKind::ProsCons => sections.push(pros_cons(profile)),
+            RendererKind::Formula => sections.push(formula(profile, summary)),
+            RendererKind::IndexedList => {
+                let items = split_sentences(summary);
+                sections.push(indexed(
+                    &items,
+                    profile.frame,
+                    profile.theme,
+                    width,
+                    profile.index_style,
+                ));
+            }
+            RendererKind::Progress | RendererKind::TldrProse | RendererKind::Prose => {}
+        }
+        sections.extend(ux_component_sections(
+            profile,
+            response,
+            summary,
+            width,
+            &ux_components,
+        ));
         if requested.contains(&RendererKind::Progress) {
             sections.insert(0, progress_report(profile, response, summary, width));
         }
@@ -2975,7 +3564,7 @@ fn dispatch_explanation(
         ExplanationIntent::ProgressReport => progress_report(profile, response, summary, width),
         ExplanationIntent::StructuredSummary => table(
             &["구분", "내용"],
-            &layer_rows(summary, profile),
+            &structured_summary_rows(response, summary, profile),
             profile.frame,
             profile.theme,
             true,
@@ -3075,49 +3664,203 @@ fn split_sentences(text: &str) -> Vec<String> {
 }
 
 fn layer_rows(summary: &str, profile: &Profile) -> Vec<Vec<String>> {
-    let mut rows = vec![
-        vec!["TLDR".to_string(), compact(summary, 1)],
-        vec!["핵심".to_string(), summary.to_string()],
-    ];
+    let mut rows = vec![vec!["TLDR".to_string(), compact(summary, 1)]];
 
-    let architecture = match profile.architecture_depth.as_str() {
-        "overview" => "CLI → Policy → Renderer 흐름만 빠르게 봅니다.",
-        "internals" => {
-            "CLI wrapper → Rust selector → table/flow/formula primitives → ANSI/theme 출력까지 봅니다."
-        }
-        _ => "CLI → Policy → Evolution → Shaper → Renderer 순서로 책임을 나눕니다.",
-    };
-    rows.push(vec!["아키텍처".to_string(), architecture.to_string()]);
-
-    if profile.architecture_depth != "overview" {
-        rows.push(vec![
-            "선택기".to_string(),
-            "명시적 룰, 점수 기반 UX selector, 선택적 planner hint를 조합합니다.".to_string(),
-        ]);
-    }
-
-    if profile.architecture_depth == "internals" || profile.explanation_depth == "deep" {
-        rows.push(vec![
-            "구현".to_string(),
-            "프로필, 환경변수, prompt/response 신호를 Rust core에서 안전하게 합칩니다.".to_string(),
-        ]);
-    }
-
-    let abstraction = match profile.abstraction_level.as_str() {
-        "concrete" => "명령, 파일, 테스트처럼 바로 실행 가능한 수준으로 설명합니다.",
-        "strategy" => "왜 이 구조가 제품/사용자 경험에 유리한지 상위 의사결정으로 설명합니다.",
-        _ => "컴포넌트 책임과 데이터 흐름을 중심으로 설명합니다.",
-    };
-    rows.push(vec!["추상화".to_string(), abstraction.to_string()]);
+    rows.extend(architecture_layer_rows(profile));
 
     if profile.explanation_depth != "light" {
         rows.push(vec![
-            "다음 행동".to_string(),
-            "필요하면 explanation-depth, architecture-depth, abstraction-level을 3단계로 조절합니다."
+            "Levels".to_string(),
+            "Level Controls: explanation-depth, architecture-depth, abstraction-level을 light/standard/deep 계열 3단계로 조절합니다."
                 .to_string(),
         ]);
     }
 
+    rows
+}
+
+fn structured_summary_rows(response: &str, summary: &str, profile: &Profile) -> Vec<Vec<String>> {
+    let claim_rows = claim_rows_from_text(response);
+    if claim_rows.len() >= 2 {
+        claim_rows
+    } else {
+        layer_rows(summary, profile)
+    }
+}
+
+fn claim_rows_from_text(text: &str) -> Vec<Vec<String>> {
+    let mut rows: Vec<Vec<String>> = Vec::new();
+    for clause in split_claim_clauses(text) {
+        let clause = clause.trim();
+        if clause.is_empty() {
+            continue;
+        }
+        if let Some((label, value)) = split_claim_clause(clause) {
+            if label.chars().count() <= 24 && value.chars().count() >= 2 {
+                rows.push(vec![label, value]);
+            }
+        } else if let Some(last) = rows.last_mut() {
+            if let Some(value) = last.get_mut(1) {
+                if !value.ends_with('.') {
+                    value.push('.');
+                }
+                value.push(' ');
+                value.push_str(clause);
+            }
+        }
+    }
+    rows
+}
+
+fn split_claim_clauses(text: &str) -> Vec<String> {
+    let normalized = text.replace('\n', " ");
+    let mut clauses = Vec::new();
+    let mut current = String::new();
+    let mut chars = normalized.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if matches!(ch, '.' | ';' | '。' | '！' | '？' | '!' | '?') {
+            push_claim_clause(&mut clauses, &mut current);
+            continue;
+        }
+        if ch == ',' && next_chunk_has_claim_marker(chars.clone()) {
+            push_claim_clause(&mut clauses, &mut current);
+            continue;
+        }
+        current.push(ch);
+    }
+    push_claim_clause(&mut clauses, &mut current);
+    clauses
+}
+
+fn push_claim_clause(clauses: &mut Vec<String>, current: &mut String) {
+    let value = current.trim();
+    if !value.is_empty() {
+        clauses.push(value.to_string());
+    }
+    current.clear();
+}
+
+fn next_chunk_has_claim_marker<I>(chars: std::iter::Peekable<I>) -> bool
+where
+    I: Iterator<Item = char>,
+{
+    let mut chunk = String::new();
+    for ch in chars.take(32) {
+        if matches!(ch, '.' | ';' | '。' | '！' | '？' | '!' | '?' | ',') {
+            break;
+        }
+        chunk.push(ch);
+    }
+    find_claim_marker(&chunk).is_some()
+}
+
+fn split_claim_clause(clause: &str) -> Option<(String, String)> {
+    if let Some(index) = clause.find(':') {
+        return claim_pair(&clause[..index], &clause[index + 1..]);
+    }
+    if let Some(index) = find_claim_marker(clause) {
+        let marker_width = clause[index..].chars().next()?.len_utf8();
+        return claim_pair(&clause[..index], &clause[index + marker_width..]);
+    }
+    None
+}
+
+fn find_claim_marker(clause: &str) -> Option<usize> {
+    for (index, ch) in clause.char_indices() {
+        if matches!(ch, '은' | '는') {
+            return Some(index);
+        }
+    }
+    None
+}
+
+fn claim_pair(label: &str, value: &str) -> Option<(String, String)> {
+    let label = label.trim().trim_matches(highlight_trim_char).to_string();
+    let value = value.trim().trim_matches(highlight_trim_char).to_string();
+    if label.is_empty() || value.is_empty() {
+        None
+    } else {
+        Some((label, value))
+    }
+}
+
+fn architecture_layer_rows(profile: &Profile) -> Vec<Vec<String>> {
+    match profile.abstraction_level.as_str() {
+        "concrete" => concrete_architecture_rows(profile),
+        "strategy" => strategy_architecture_rows(profile),
+        _ => technical_architecture_rows(profile),
+    }
+}
+
+fn technical_architecture_rows(profile: &Profile) -> Vec<Vec<String>> {
+    let mut rows = vec![
+        vec![
+            "Gateway".to_string(),
+            "Input Gateway: project-local shim이 현재 프로젝트의 Codex 호출만 Codexplain wrapper로 전달합니다."
+                .to_string(),
+        ],
+        vec![
+            "Runner".to_string(),
+            "Codex Runner: real Codex CLI를 찾아 실행하고 stdout/stderr와 exit code를 보존합니다.".to_string(),
+        ],
+        vec![
+            "Policy".to_string(),
+            "Strict Policy: JSON, code, diff, log, test output은 renderer 전에 그대로 통과시킵니다.".to_string(),
+        ],
+        vec![
+            "Profile".to_string(),
+            "Profile Resolver: theme, depth, abstraction, custom style, UX density 설정을 병합합니다.".to_string(),
+        ],
+        vec![
+            "Selector".to_string(),
+            "Renderer Selector: prompt 신호로 table, flow, pros-cons, formula, progress renderer를 조합합니다."
+                .to_string(),
+        ],
+        vec![
+            "Renderer".to_string(),
+            "Terminal Renderer: Unicode box drawing, ANSI highlight, wrapping, visible-width 계산을 담당합니다."
+                .to_string(),
+        ],
+    ];
+    if profile.architecture_depth == "internals" || profile.explanation_depth == "deep" {
+        rows.push(vec![
+            "Lifecycle".to_string(),
+            "Lifecycle Manager: install/on은 shim과 managed guidance를 넣고 off/uninstall은 Codexplain 관리분만 제거합니다."
+                .to_string(),
+        ]);
+    }
+    rows
+}
+
+fn concrete_architecture_rows(profile: &Profile) -> Vec<Vec<String>> {
+    let mut rows = technical_architecture_rows(profile);
+    rows.push(vec![
+        "Concrete".to_string(),
+        "Concrete View: bin/codexplain, .codexplain/bin/codex, AGENTS.md managed block 같은 실행 단위를 함께 설명합니다."
+            .to_string(),
+    ]);
+    rows
+}
+
+fn strategy_architecture_rows(profile: &Profile) -> Vec<Vec<String>> {
+    let mut rows = vec![
+        vec![
+            "Boundary".to_string(),
+            "모델 자체를 바꾸지 않고 Codex 출력 경계에서 설명 UX를 개선합니다.".to_string(),
+        ],
+        vec![
+            "Safety".to_string(),
+            "정확한 산출물은 보존하고 사람에게 읽히는 설명만 재구성합니다.".to_string(),
+        ],
+        vec![
+            "Adapt".to_string(),
+            "Adaptation: 사용자 스타일과 피드백을 renderer 선택에 반영해 설명 방식을 진화시킵니다."
+                .to_string(),
+        ],
+    ];
+    if profile.explanation_depth == "deep" {
+        rows.extend(technical_architecture_rows(profile));
+    }
     rows
 }
 
@@ -3134,6 +3877,10 @@ fn profile_path() -> PathBuf {
 
 fn config_path() -> PathBuf {
     project_path(".codexplain/config.json")
+}
+
+fn styles_dir() -> PathBuf {
+    project_path(".codexplain/styles")
 }
 
 fn load_profile() -> Profile {
@@ -3265,7 +4012,7 @@ fn load_profile_for_args(args: &[String]) -> Profile {
             .theme
             .apply_terminal_policy(|key| env::var(key).ok()),
         ColorOutput::Plain => Theme::None,
-        ColorOutput::Ansi | ColorOutput::Html => profile.theme,
+        ColorOutput::Ansi | ColorOutput::Html | ColorOutput::Markdown => profile.theme,
     };
     profile
 }
@@ -3444,6 +4191,230 @@ fn arg_value<'a>(args: &'a [String], name: &str) -> Option<&'a str> {
         .position(|item| item == name)
         .and_then(|index| args.get(index + 1))
         .map(String::as_str)
+}
+
+fn sanitize_style_name(value: &str) -> Option<String> {
+    let name = value
+        .trim()
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric() || *ch == '-' || *ch == '_')
+        .collect::<String>();
+    if name.is_empty() {
+        None
+    } else {
+        Some(name)
+    }
+}
+
+fn style_path(name: &str) -> Option<PathBuf> {
+    sanitize_style_name(name).map(|safe| styles_dir().join(format!("{safe}.style")))
+}
+
+fn parse_renderer_list(value: &str) -> Vec<RendererKind> {
+    value
+        .split(',')
+        .filter_map(RendererKind::from_structure)
+        .fold(Vec::new(), |mut items, renderer| {
+            if !items.contains(&renderer) {
+                items.push(renderer);
+            }
+            items
+        })
+}
+
+fn renderers_to_names(renderers: &[RendererKind]) -> String {
+    renderers
+        .iter()
+        .map(|renderer| match renderer {
+            RendererKind::Table => "table",
+            RendererKind::ProsCons => "pros-cons",
+            RendererKind::Formula => "formula",
+            RendererKind::IndexedList => "indexed",
+            RendererKind::Flow => "flow",
+            RendererKind::Progress => "progress",
+            RendererKind::TldrProse => "tldr",
+            RendererKind::Prose => "prose",
+        })
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+fn parse_custom_style(raw: &str) -> Option<CustomStyle> {
+    let mut name = String::new();
+    let mut trigger = String::new();
+    let mut renderers = Vec::new();
+    let mut body = String::new();
+    let mut in_body = false;
+    for line in raw.lines() {
+        if in_body {
+            body.push_str(line);
+            body.push('\n');
+            continue;
+        }
+        if let Some(value) = line.strip_prefix("name:") {
+            name = value.trim().to_string();
+        } else if let Some(value) = line.strip_prefix("trigger:") {
+            trigger = value.trim().to_string();
+        } else if let Some(value) = line.strip_prefix("renderers:") {
+            renderers = parse_renderer_list(value);
+        } else if line.trim() == "body:" {
+            in_body = true;
+        }
+    }
+    let name = sanitize_style_name(&name)?;
+    if trigger.trim().is_empty() {
+        trigger = name.clone();
+    }
+    if renderers.is_empty() {
+        renderers.push(RendererKind::TldrProse);
+    }
+    Some(CustomStyle {
+        name,
+        trigger,
+        renderers,
+        body: body.trim().to_string(),
+    })
+}
+
+fn load_custom_styles() -> Vec<CustomStyle> {
+    let Ok(entries) = fs::read_dir(styles_dir()) else {
+        return Vec::new();
+    };
+    let mut styles = entries
+        .flatten()
+        .filter_map(|entry| fs::read_to_string(entry.path()).ok())
+        .filter_map(|raw| parse_custom_style(&raw))
+        .collect::<Vec<_>>();
+    styles.sort_by(|a, b| a.name.cmp(&b.name));
+    styles
+}
+
+fn matching_custom_styles(prompt: &str) -> Vec<CustomStyle> {
+    let prompt_lower = prompt.to_ascii_lowercase();
+    load_custom_styles()
+        .into_iter()
+        .filter(|style| {
+            prompt_lower.contains(&style.name.to_ascii_lowercase())
+                || prompt_lower.contains(&style.trigger.to_ascii_lowercase())
+        })
+        .collect()
+}
+
+fn render_custom_style_section(styles: &[CustomStyle], profile: &Profile, width: usize) -> String {
+    let rows = styles
+        .iter()
+        .map(|style| {
+            vec![
+                style.name.clone(),
+                style.trigger.clone(),
+                renderers_to_names(&style.renderers),
+                if style.body.is_empty() {
+                    "사용자 정의 형식 신호만 적용합니다.".to_string()
+                } else {
+                    style.body.clone()
+                },
+            ]
+        })
+        .collect::<Vec<_>>();
+    table(
+        &["사용자 스타일", "트리거", "렌더러", "설명 규칙"],
+        &rows,
+        profile.frame,
+        profile.theme,
+        true,
+        width,
+    )
+}
+
+fn write_custom_style(args: &[String]) -> io::Result<()> {
+    let Some(name) = args.get(2).and_then(|value| sanitize_style_name(value)) else {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "style add requires a safe style name",
+        ));
+    };
+    let trigger = arg_value(args, "--trigger").unwrap_or(&name);
+    let renderers = arg_value(args, "--renderers")
+        .or_else(|| arg_value(args, "--renderer"))
+        .unwrap_or("tldr,table");
+    let body = arg_value(args, "--description")
+        .or_else(|| arg_value(args, "--template"))
+        .unwrap_or("사용자가 추가한 설명 방식입니다.");
+    fs::create_dir_all(styles_dir())?;
+    let path = style_path(&name).expect("sanitized name should produce a path");
+    fs::write(
+        &path,
+        format!("name: {name}\ntrigger: {trigger}\nrenderers: {renderers}\nbody:\n{body}\n"),
+    )?;
+    println!("Added Codexplain style: {}", path.display());
+    Ok(())
+}
+
+fn remove_custom_style(args: &[String]) -> io::Result<()> {
+    let Some(name) = args.get(2) else {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "style remove requires a style name",
+        ));
+    };
+    if let Some(path) = style_path(name) {
+        remove_file_if_exists(&path)?;
+        remove_dir_if_empty(&styles_dir())?;
+        println!("Removed Codexplain style: {}", path.display());
+    }
+    Ok(())
+}
+
+fn list_custom_styles() {
+    let styles = load_custom_styles();
+    if styles.is_empty() {
+        println!("No custom Codexplain styles");
+        return;
+    }
+    for style in styles {
+        println!(
+            "{}\ttrigger={}\trenderers={}",
+            style.name,
+            style.trigger,
+            renderers_to_names(&style.renderers)
+        );
+    }
+}
+
+fn show_custom_style(args: &[String]) -> io::Result<()> {
+    let Some(name) = args.get(2) else {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "style show requires a style name",
+        ));
+    };
+    let Some(path) = style_path(name) else {
+        return Ok(());
+    };
+    match fs::read_to_string(&path) {
+        Ok(raw) => print!("{raw}"),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            println!("Style not found: {name}");
+        }
+        Err(error) => return Err(error),
+    }
+    Ok(())
+}
+
+fn style_command(args: &[String]) -> io::Result<()> {
+    match args.get(1).map(String::as_str) {
+        Some("add") => write_custom_style(args),
+        Some("remove") | Some("rm") | Some("delete") => remove_custom_style(args),
+        Some("list") | None => {
+            list_custom_styles();
+            Ok(())
+        }
+        Some("show") => show_custom_style(args),
+        Some(other) => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("unknown style command: {other}"),
+        )),
+    }
 }
 
 fn read_stdin_if_needed() -> String {
@@ -3819,10 +4790,11 @@ Default answer style:
 - Start with the outcome or current state, not implementation detail.
 - Use concise Korean first when the user writes Korean.
 - Use connected Unicode boxes or tables when structure helps scanning.
-- Use semantic ANSI colors for labels, risks, success states, and next actions when the terminal supports color.
-- Use ANSI terminal color by default when Codexplain config asks for `defaultColorOutput: ansi`; use HTML span markup only when chat-color output is requested.
+- Use semantic ANSI colors for labels, risks, success states, artifact names, commands, paths, and next actions when the terminal supports color.
+- Use ANSI terminal color by default when Codexplain config asks for `defaultColorOutput: ansi`; use subtle Markdown color chips when chat output cannot render ANSI/HTML. Do not print raw HTML spans in plain Markdown chat hosts.
 - Respect explanationDepth light/standard/deep, architectureDepth overview/system/internals, and abstractionLevel concrete/architecture/strategy.
 - Select renderers dynamically: TLDR prose, progress, tables, flow diagrams, pros/cons, formula boxes, status badges, checklists, risk panels, confidence meters, decision matrices, ETA strips, callouts, and next-action footers.
+- When Codexplain is ON in a chat host, highlight important terms with subtle Markdown color chips: blue KEY/artifact, green OK, yellow WARN, red RISK. Keep chips sparse.
 - Treat UX blocks like tool choices: combine the smallest useful set from prompt, response, profile, and optional planner hints.
 - Keep commands, paths, risks, test evidence, and exact technical facts intact.
 - Do not continue an Ouroboros evolve/ralph lineage if drift is detected. Restart with an explicit project-local Seed.
@@ -3839,6 +4811,15 @@ Terminal UX:
 const LOCAL_README: &str = r#"# Codexplain Local Adapter
 
 This directory is project-local and Rust-only at runtime. The default output mode is ANSI terminal color for explanation surfaces.
+
+To route this project's terminal Codex calls through Codexplain, activate the local shim:
+
+```bash
+source .codexplain/activate
+codex exec "이 프로젝트 아키텍처를 표와 흐름도로 설명해줘"
+```
+
+The shim only prepends `.codexplain/bin` in the current shell. `codexplain uninstall-codex --local` removes the shim files and the managed AGENTS.md block.
 
 Use this adapter when a host can pipe a completed answer into a post-response command:
 
@@ -3857,11 +4838,20 @@ abstractionLevel concrete/architecture/strategy
 ```
 
 UX selection combines explicit rules, score thresholds, and optional planner hints through `CODEXPLAIN_UX_PLAN` or `CODEXPLAIN_UX_PLANNER_COMMAND`.
+
+Custom explanation styles:
+
+```bash
+codexplain style add research-card --trigger "연구 카드" --renderers "tldr,table,formula" --description "배경, 근거, 한계, 다음 행동을 분리한다."
+codexplain style list
+codexplain style remove research-card
+```
 "#;
 
 const LOCAL_CONFIG: &str = r#"{
   "schemaVersion": 1,
   "defaultColorOutput": "ansi",
+  "chatHighlightOutput": "markdown",
   "storageCheck": {
     "minFree": {
       "value": 5,
@@ -3876,6 +4866,31 @@ set -eu
 exec codexplain post-response "$@"
 "#;
 
+const CODEX_SHIM_SH: &str = r#"#!/usr/bin/env sh
+set -eu
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
+export CODEXPLAIN_PROJECT_DIR="$ROOT"
+export CODEXPLAIN_LOCAL_SHAPE=1
+export CODEXPLAIN_SHIM_PATH="$0"
+export CODEXPLAIN_COLOR=always
+export CLICOLOR_FORCE=1
+exec "$ROOT/bin/codexplain" codex --local-shape "$@"
+"#;
+
+const ACTIVATE_SH: &str = r#"#!/usr/bin/env sh
+# shellcheck shell=sh
+CODEXPLAIN_PROJECT_DIR=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE:-$0}")/.." && pwd)
+export CODEXPLAIN_PROJECT_DIR
+export CODEXPLAIN_LOCAL_SHAPE=1
+export CODEXPLAIN_COLOR=always
+export CLICOLOR_FORCE=1
+case ":$PATH:" in
+  *":$CODEXPLAIN_PROJECT_DIR/.codexplain/bin:"*) ;;
+  *) export PATH="$CODEXPLAIN_PROJECT_DIR/.codexplain/bin:$PATH" ;;
+esac
+echo "Codexplain on: project-local codex shim is first on PATH"
+"#;
+
 const GLOBAL_CODEX_GUIDANCE: &str = r#"<!-- CODEXPLAIN:START -->
 # Codexplain Global Response UX
 
@@ -3885,7 +4900,7 @@ Default answer style:
 - Preserve exact JSON, code, diffs, patches, logs, test output, and commit messages.
 - For explanatory answers, prefer Korean when the user writes Korean.
 - Use TLDR, Unicode tables, flow diagrams, pros/cons, formula boxes, progress UI, and next actions when they improve scanning.
-- Prefer color-aware chat output when the host can render HTML spans; otherwise use ANSI terminal colors or plain text safely.
+- Prefer Markdown-safe chat highlights in chat hosts; use ANSI terminal colors in terminal hosts; fall back to plain text when exact formatting matters.
 - Keep technical facts, commands, file paths, risks, and test evidence intact.
 <!-- CODEXPLAIN:END -->"#;
 
@@ -3923,12 +4938,20 @@ fn install_codex_project(args: &[String]) -> io::Result<()> {
 fn install_local_codex_project() -> io::Result<()> {
     let root = project_path(".");
     let codexplain_dir = root.join(".codexplain");
+    let codexplain_bin_dir = codexplain_dir.join("bin");
     fs::create_dir_all(&codexplain_dir)?;
+    fs::create_dir_all(&codexplain_bin_dir)?;
     fs::write(codexplain_dir.join("README.md"), LOCAL_README)?;
     fs::write(codexplain_dir.join("config.json"), LOCAL_CONFIG)?;
     let post_response = codexplain_dir.join("post-response");
     fs::write(&post_response, POST_RESPONSE_SH)?;
     set_executable(&post_response)?;
+    let codex_shim = codexplain_bin_dir.join("codex");
+    fs::write(&codex_shim, CODEX_SHIM_SH)?;
+    set_executable(&codex_shim)?;
+    let activate = codexplain_dir.join("activate");
+    fs::write(&activate, ACTIVATE_SH)?;
+    set_executable(&activate)?;
 
     let agents_path = root.join("AGENTS.md");
     let next = if let Ok(current) = fs::read_to_string(&agents_path) {
@@ -3940,7 +4963,7 @@ fn install_local_codex_project() -> io::Result<()> {
         )
     };
     fs::write(agents_path, next)?;
-    println!("Installed project-local Codex UX: .codexplain/post-response, .codexplain/README.md, .codexplain/config.json, AGENTS.md");
+    println!("Installed project-local Codex UX: .codexplain/bin/codex, .codexplain/activate, .codexplain/post-response, .codexplain/README.md, .codexplain/config.json, AGENTS.md");
     Ok(())
 }
 
@@ -3985,6 +5008,9 @@ fn uninstall_local_codex_project(remove_profile: bool) -> io::Result<()> {
     remove_guidance_file_block(&agents_path)?;
 
     let codexplain_dir = root.join(".codexplain");
+    remove_file_if_exists(&codexplain_dir.join("bin/codex"))?;
+    remove_dir_if_empty(&codexplain_dir.join("bin"))?;
+    remove_file_if_exists(&codexplain_dir.join("activate"))?;
     remove_file_if_exists(&codexplain_dir.join("post-response"))?;
     remove_file_if_exists(&codexplain_dir.join("README.md"))?;
     remove_file_if_exists(&codexplain_dir.join("config.json"))?;
@@ -4149,9 +5175,13 @@ fn run_codex(args: &[String]) -> i32 {
             codex_args.push(prompt.clone());
         }
     }
-    let output = Command::new("codex").args(&codex_args).output();
+    let codex_bin = resolve_real_codex_binary();
+    let output = Command::new(&codex_bin).args(&codex_args).output();
     let Ok(output) = output else {
-        eprintln!("failed to run codex; ensure Codex CLI is installed and on PATH");
+        eprintln!(
+            "failed to run codex at {}; ensure Codex CLI is installed and on PATH",
+            codex_bin.display()
+        );
         return 127;
     };
     if !output.stderr.is_empty() {
@@ -4174,6 +5204,59 @@ fn run_codex(args: &[String]) -> i32 {
         print!("{stdout}");
     }
     output.status.code().unwrap_or(1)
+}
+
+fn resolve_real_codex_binary() -> PathBuf {
+    if let Ok(path) = env::var("CODEXPLAIN_REAL_CODEX") {
+        let path = PathBuf::from(path);
+        if is_executable_file(&path) {
+            return path;
+        }
+    }
+
+    let shim = env::var("CODEXPLAIN_SHIM_PATH")
+        .ok()
+        .map(PathBuf::from)
+        .and_then(|path| path.canonicalize().ok());
+    let path_var = env::var_os("PATH").unwrap_or_default();
+    for dir in env::split_paths(&path_var) {
+        let candidate = dir.join("codex");
+        if !is_executable_file(&candidate) {
+            continue;
+        }
+        let canonical = candidate.canonicalize().unwrap_or(candidate.clone());
+        if shim
+            .as_ref()
+            .is_some_and(|shim_path| *shim_path == canonical)
+        {
+            continue;
+        }
+        if canonical
+            .to_string_lossy()
+            .contains("/.codexplain/bin/codex")
+        {
+            continue;
+        }
+        return candidate;
+    }
+    PathBuf::from("codex")
+}
+
+fn is_executable_file(path: &Path) -> bool {
+    let Ok(metadata) = fs::metadata(path) else {
+        return false;
+    };
+    if !metadata.is_file() {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        metadata.permissions().mode() & 0o111 != 0
+    }
+    #[cfg(not(unix))]
+    {
+        true
+    }
 }
 
 fn terminal_width() -> usize {
@@ -4210,11 +5293,13 @@ fn build_clean(args: &[String]) -> io::Result<()> {
 
 fn usage() -> &'static str {
     "Usage:
-  codexplain shape --prompt <text> [--response <text>] [--width <n>] [--chat-color|--color-output html|ansi|plain]
-  codexplain post-response --prompt <text> [--width <n>] [--chat-color|--color-output html|ansi|plain]
+  codexplain shape --prompt <text> [--response <text>] [--width <n>] [--chat-color|--color-output markdown|html|ansi|plain]
+  codexplain post-response --prompt <text> [--width <n>] [--chat-color|--color-output markdown|html|ansi|plain]
   codexplain codex --prompt <text> [--local-shape] [codex exec args...]
   codexplain install-codex [--local] [--global] [--force]
   codexplain uninstall-codex [--local] [--global] [--remove-profile]
+  codexplain style add <name> --trigger <text> --renderers <tldr,table,flow,pros-cons,formula,indexed,progress> --description <text>
+  codexplain style list|show <name>|remove <name>
   codexplain feedback|rlhf --rating <1-5> --comment <text>
   codexplain profile --show|--theme <name>|--frame <unicode|ascii|fallback|auto>|--index-style <style>|--detail <level>
   codexplain profile --explanation-depth <light|standard|deep>|--architecture-depth <overview|system|internals>|--abstraction-level <concrete|architecture|strategy>
@@ -4238,7 +5323,7 @@ Storage-check output contract:
   cleaned=target|target_already_absent, clean_error=target:<message>, or suggested_cleanup=<text> may appear only when status=low-space
 
 Themes: none, ocean, forest, warm, sunset, grape, slate, rose, mono
-Color outputs: terminal, ansi, html, plain. Use --chat-color as an alias for --color-output html.
+Color outputs: terminal, ansi, markdown, html, plain. Use --chat-color as an alias for --color-output markdown.
 Index styles: decimal, zero-padded, alpha-lower, alpha-upper, roman-lower, roman-upper"
 }
 
@@ -4276,6 +5361,12 @@ fn main() {
             }
         }
         "guide" => guide(&args),
+        "style" => {
+            if let Err(error) = style_command(&args) {
+                eprintln!("failed to manage Codexplain style: {error}");
+                std::process::exit(1);
+            }
+        }
         "feedback" => {
             if let Err(error) = feedback(&args, false) {
                 eprintln!("failed to save feedback: {error}");
@@ -4550,8 +5641,8 @@ mod tests {
                 "│ 핵심식 : 설명 품질 = f(명확성, 구조, 근거, 다음 행동)               │",
                 "├─────────────────────────────────────────────────────────────────────┤",
                 "│ 의미   : 색은 보조 신호이고 텍스트 label/value가 의미를 보존합니다. │",
-                "│ 설명   : 초기에는 반복속도, 제품화에는 배포/안정성 가중치가 커집니  │",
-                "│          다.                                                        │",
+                "│ 설명   : 초기에는 반복속도, 제품화에는 배포/안정성 가중치가         │",
+                "│          커집니다.                                                  │",
                 "└─────────────────────────────────────────────────────────────────────┘",
             ]
             .join("\n")
@@ -4579,7 +5670,7 @@ mod tests {
 
         assert_visible_lines_fit(&output, 44);
         assert!(output.contains("│ Rule : choice = f(iteration"));
-        assert!(output.contains("│        n, safety)                        │"));
+        assert!(output.contains("distribution, safety)"));
         assert!(output.contains("│ Risk : Keep color supplemental"));
         assert!(!output.contains("----"));
         assert!(!output.contains("===="));
@@ -4863,7 +5954,84 @@ after
     }
 
     #[test]
-    fn chat_color_output_converts_ansi_to_html_spans() {
+    fn custom_style_parser_sanitizes_and_loads_renderer_plan() {
+        let style = parse_custom_style(
+            "name: research-card!\ntrigger: 연구 카드\nrenderers: tldr,table,formula\nbody:\n배경, 근거, 한계, 다음 행동을 분리한다.\n",
+        )
+        .unwrap();
+
+        assert_eq!(style.name, "research-card");
+        assert_eq!(style.trigger, "연구 카드");
+        assert_eq!(
+            style.renderers,
+            vec![
+                RendererKind::TldrProse,
+                RendererKind::Table,
+                RendererKind::Formula
+            ]
+        );
+        assert!(style.body.contains("근거"));
+    }
+
+    #[test]
+    fn custom_style_section_uses_table_interface_without_losing_rule_text() {
+        let style = CustomStyle {
+            name: "research-card".to_string(),
+            trigger: "연구 카드".to_string(),
+            renderers: vec![RendererKind::TldrProse, RendererKind::Table],
+            body: "배경, 근거, 한계, 다음 행동을 분리한다.".to_string(),
+        };
+
+        let output = render_custom_style_section(
+            &[style],
+            &Profile {
+                theme: Theme::None,
+                ..Profile::default()
+            },
+            88,
+        );
+
+        assert!(output.contains("┌"));
+        assert!(output.contains("사용자 스타일"));
+        assert!(output.contains("research-card"));
+        assert!(output.contains("tldr,table"));
+        assert!(output.contains("다음 행동"));
+        assert_visible_lines_fit(&output, 88);
+    }
+
+    #[test]
+    fn codex_shim_assets_are_project_local_and_reversible() {
+        assert!(CODEX_SHIM_SH.contains("CODEXPLAIN_PROJECT_DIR"));
+        assert!(CODEX_SHIM_SH.contains("CODEXPLAIN_LOCAL_SHAPE=1"));
+        assert!(CODEX_SHIM_SH.contains("codex --local-shape"));
+        assert!(ACTIVATE_SH.contains(".codexplain/bin:$PATH"));
+        assert!(LOCAL_README.contains("source .codexplain/activate"));
+        assert!(LOCAL_README.contains("codexplain style add"));
+    }
+
+    #[test]
+    fn chat_color_output_converts_ansi_to_markdown_highlight() {
+        let profile = Profile {
+            theme: Theme::Sunset,
+            ..Profile::default()
+        };
+        let output = shape_for_output(
+            "아키텍처를 표로 설명해줘",
+            "Codexplain은 Renderer와 Policy로 구성되고 JSON/code/diff/log/test output을 보존합니다.",
+            &profile,
+            80,
+            ColorOutput::Markdown,
+        );
+
+        assert!(!output.contains("<span"), "{output}");
+        assert!(!output.contains("\x1b["), "{output}");
+        assert!(output.contains("🟦 **KEY** CODEXPLAIN"), "{output}");
+        assert!(output.contains("🟦 **KEY** Renderer"), "{output}");
+        assert!(output.contains("🟦 `JSON/code/diff/log/test`"), "{output}");
+    }
+
+    #[test]
+    fn explicit_html_output_converts_ansi_to_html_spans() {
         let profile = Profile {
             theme: Theme::Sunset,
             ..Profile::default()
@@ -4876,21 +6044,9 @@ after
             ColorOutput::Html,
         );
 
-        assert!(
-            output.starts_with(r#"<pre class="codexplain-chat-color""#),
-            "{output}"
-        );
-        assert!(
-            output.contains(r#"<span style="color: #dc2626; font-weight: 700">요약하면, </span>"#),
-            "{output}"
-        );
-        assert!(
-            output.contains(
-                r#"<span style="color: #fb923c">본문에도 채팅 색상이 들어갑니다.</span>"#
-            ),
-            "{output}"
-        );
-        assert!(!output.contains("\x1b["), "{output}");
+        assert!(output.starts_with(r#"<pre class="codexplain-chat-color""#));
+        assert!(output.contains(r#"<span style="color: #"#));
+        assert!(!output.contains("\x1b["));
     }
 
     #[test]
@@ -4899,7 +6055,13 @@ after
             theme: Theme::Sunset,
             ..Profile::default()
         };
-        let output = shape_for_output("JSON만", r#"{"ok":true}"#, &profile, 80, ColorOutput::Html);
+        let output = shape_for_output(
+            "JSON만",
+            r#"{"ok":true}"#,
+            &profile,
+            80,
+            ColorOutput::Markdown,
+        );
 
         assert_eq!(output, r#"{"ok":true}"#);
     }
@@ -5199,9 +6361,9 @@ after
                 "┌───────────┬──────────────────────────┐",
                 "│ 구분      │ 내용                     │",
                 "├───────────┼──────────────────────────┤",
-                "│ 다음 행동 │ 필요하면 abstraction ran │",
-                "│           │ ge와 detail layers를 조  │",
-                "│           │ 절합니다.                │",
+                "│ 다음 행동 │ 필요하면 abstraction     │",
+                "│           │ range와 detail layers를  │",
+                "│           │ 조절합니다.              │",
                 "└───────────┴──────────────────────────┘",
             ]
             .join("\n")
@@ -5223,7 +6385,8 @@ after
         assert!(output.contains("선택지"));
         assert!(output.contains("장점"));
         assert!(output.contains("단점"));
-        assert!(output.contains("│ 단일 바"));
+        assert!(output.contains("단일"));
+        assert!(output.contains("바이너리"));
         assert!(output.contains("provider"));
         assert!(output.contains("실험"));
     }
@@ -5278,6 +6441,186 @@ after
         assert_eq!(
             layout.padded_cell("\x1b[32mA\x1b[0m", 3),
             " \x1b[32mA\x1b[0m   "
+        );
+    }
+
+    #[test]
+    fn narrow_table_wraps_long_install_explanations_without_overflow() {
+        let output = table(
+            &["명령", "동작"],
+            &[
+                vec![
+                    "on".to_string(),
+                    "AGENTS.md와 ~/.codex/AGENTS.md에 관리 블록 추가".to_string(),
+                ],
+                vec![
+                    "off".to_string(),
+                    "Codexplain이 넣은 관리 블록만 제거".to_string(),
+                ],
+                vec![
+                    "로컬 파일".to_string(),
+                    ".codexplain/post-response, README, config 제거".to_string(),
+                ],
+                vec![
+                    "프로필".to_string(),
+                    "ux-profile.json은 기본 보존".to_string(),
+                ],
+            ],
+            Frame::Unicode,
+            Theme::None,
+            true,
+            58,
+        );
+
+        assert_visible_lines_fit(&output, 58);
+        assert_eq!(
+            output
+                .lines()
+                .filter(|line| line.starts_with('├') && line.ends_with('┤'))
+                .count(),
+            4
+        );
+        assert!(output.contains("AGENTS.md와 ~/.codex/"));
+        assert!(output.contains(".codexplain/post-r"));
+        assert!(output.contains("│ 프로필"));
+    }
+
+    #[test]
+    fn semantic_highlight_keeps_table_widths_and_colors_only_significant_tokens() {
+        let rows = [vec![
+            "보존".to_string(),
+            "JSON/code/diff/log는 strict 출력이고 AGENTS.md와 .codexplain/config.json은 설정입니다."
+                .to_string(),
+        ]];
+        let plain = table(
+            &["명령", "동작"],
+            &rows,
+            Frame::Unicode,
+            Theme::None,
+            true,
+            64,
+        );
+        let colored = table(
+            &["명령", "동작"],
+            &rows,
+            Frame::Unicode,
+            Theme::Ocean,
+            true,
+            64,
+        );
+
+        assert_visible_lines_fit(&colored, 64);
+        assert_eq!(visible_line_widths(&colored), visible_line_widths(&plain));
+        assert!(colored.contains("\x1b[1;32m보존"));
+        assert!(colored.contains("\x1b[1;33mJSON/code/diff/log는"));
+        assert!(colored.contains("\x1b[1;36mAGENTS.md와"));
+        assert!(semantic_highlight(
+            Theme::Ocean,
+            "on은 off는 AGENTS.md와 JSON/code/diff/log는",
+            "accent"
+        )
+        .contains("\x1b[1;35mon은"));
+        assert!(semantic_highlight(
+            Theme::Ocean,
+            "on은 off는 AGENTS.md와 JSON/code/diff/log는",
+            "accent"
+        )
+        .contains("\x1b[1;36mAGENTS.md와"));
+        assert!(semantic_highlight(
+            Theme::Ocean,
+            "on은 off는 AGENTS.md와 JSON/code/diff/log는",
+            "accent"
+        )
+        .contains("\x1b[1;33mJSON/code/diff/log는"));
+        assert!(semantic_highlight(
+            Theme::Ocean,
+            "CLI Policy Renderer Profile Semantic Highlight Output Mode",
+            "accent"
+        )
+        .contains("\x1b[1;34mCLI"));
+    }
+
+    #[test]
+    fn codex_architecture_summary_table_wraps_without_overflow_and_uses_attention_roles() {
+        let rows = [
+            vec![
+                "Codex 자체 색상".to_string(),
+                "있음. TUI가 terminal color support를 감지함".to_string(),
+            ],
+            vec![
+                "색상 적용 대상".to_string(),
+                "code syntax, diff, status, error 등".to_string(),
+            ],
+            vec![
+                "외부 후처리 hook".to_string(),
+                "최종 assistant 응답 렌더링용은 안 보임".to_string(),
+            ],
+            vec![
+                "가능한 우회".to_string(),
+                "wrapper/shim으로 stdout 후처리".to_string(),
+            ],
+            vec![
+                "진짜 통합".to_string(),
+                "openai/codex TUI renderer 내부 수정 필요".to_string(),
+            ],
+        ];
+        let plain = table(
+            &["구분", "결론"],
+            &rows,
+            Frame::Unicode,
+            Theme::None,
+            true,
+            78,
+        );
+        let colored = table(
+            &["구분", "결론"],
+            &rows,
+            Frame::Unicode,
+            Theme::Ocean,
+            true,
+            78,
+        );
+
+        assert_visible_lines_fit(&plain, 78);
+        assert_visible_lines_fit(&colored, 78);
+        assert_eq!(visible_line_widths(&plain), visible_line_widths(&colored));
+        assert!(plain.contains("최종 assistant 응답"));
+        assert!(colored.contains("\x1b[1;32m있음"));
+        assert!(colored.contains("\x1b[1;33mhook"));
+        assert!(colored.contains("\x1b[1;31m안"));
+        assert!(colored.contains("\x1b[1;34mTUI"));
+    }
+
+    #[test]
+    fn markdown_chat_highlight_panel_does_not_inject_markup_inside_table() {
+        let profile = Profile {
+            theme: Theme::Ocean,
+            ..Profile::default()
+        };
+        let output = shape_for_output(
+            "표로 정리",
+            "Codex 자체 색상은 있음, 외부 후처리 hook은 안 보임, 가능한 우회는 wrapper shim입니다.",
+            &profile,
+            78,
+            ColorOutput::Markdown,
+        );
+
+        assert!(output.starts_with("**Codexplain highlights**:"), "{output}");
+        assert!(output.contains("🟩 **OK** 있음"), "{output}");
+        assert!(output.contains("🟥 **RISK** 안"), "{output}");
+        assert!(
+            !output
+                .lines()
+                .any(|line| line.starts_with('│') && line.contains("**")),
+            "{output}"
+        );
+        assert_visible_lines_fit(
+            &output
+                .lines()
+                .filter(|line| !line.starts_with("**Codexplain highlights**:"))
+                .collect::<Vec<_>>()
+                .join("\n"),
+            78,
         );
     }
 
@@ -5394,7 +6737,8 @@ after
         assert!(output.contains("\x1b[1;34m Label "));
         assert!(output.contains("\x1b[1;32m TLDR "));
         assert!(output.contains("\x1b[1;33m 위험 "));
-        assert!(output.contains("\x1b[96m color is supplemental "));
+        assert!(output.contains("\x1b[1;34mcolor"));
+        assert!(output.contains("supplemental"));
         assert!(output.contains("TLDR"));
         assert!(output.contains("위험"));
         assert!(output.contains("ready"));
@@ -5982,7 +7326,12 @@ after
                 "1. │ 작업 완료.",
                 "2. │ 검증 완료.",
             ),
-            ("처리 흐름을 보여줘", RendererKind::Flow, "▼", "정책 검사"),
+            (
+                "처리 흐름을 보여줘",
+                RendererKind::Flow,
+                "▼",
+                "Strict Policy",
+            ),
             (
                 "진행상황을 progress bar로 보고해줘",
                 RendererKind::Progress,
@@ -6056,20 +7405,17 @@ after
         let light_output = shape("아키텍처를 표로 설명해줘", response, &light, 100);
         let deep_output = shape("아키텍처를 표로 설명해줘", response, &deep, 100);
 
+        assert!(light_output.contains("Input Gateway"), "{light_output}");
+        assert!(light_output.contains("Concrete View"), "{light_output}");
         assert!(
-            light_output.contains("CLI → Policy → Renderer"),
+            !light_output.contains("Lifecycle Manager"),
             "{light_output}"
         );
-        assert!(
-            light_output.contains("바로 실행 가능한 수준"),
-            "{light_output}"
-        );
-        assert!(!light_output.contains("선택기"), "{light_output}");
         assert!(!light_output.contains("다음 행동"), "{light_output}");
-        assert!(deep_output.contains("Rust selector"), "{deep_output}");
-        assert!(deep_output.contains("선택적 planner hint"), "{deep_output}");
-        assert!(deep_output.contains("상위 의사결정"), "{deep_output}");
-        assert!(deep_output.contains("다음 행동"), "{deep_output}");
+        assert!(deep_output.contains("Boundary"), "{deep_output}");
+        assert!(deep_output.contains("Adaptation"), "{deep_output}");
+        assert!(deep_output.contains("Terminal Renderer"), "{deep_output}");
+        assert!(deep_output.contains("Level Controls"), "{deep_output}");
     }
 
     #[test]
@@ -6180,10 +7526,11 @@ after
         );
 
         assert!(output.contains("│ 계층"), "{output}");
-        assert!(output.contains("│ 입력"), "{output}");
+        assert!(output.contains("│ Prompt Input"), "{output}");
         assert!(output.contains("JS / Node"), "{output}");
         assert!(output.contains("Rust"), "{output}");
         assert!(output.contains("핵심식 : 설명 품질 = f"), "{output}");
+        assert_visible_lines_fit(&output, 132);
     }
 
     #[test]
@@ -6200,10 +7547,11 @@ after
         );
 
         assert!(output.contains("│ 계층"), "{output}");
-        assert!(output.contains("│ 입력"), "{output}");
+        assert!(output.contains("│ Prompt Input"), "{output}");
         let table_pos = output.find("│ 계층").unwrap();
-        let flow_pos = output.find("│ 입력").unwrap();
+        let flow_pos = output.find("│ Prompt Input").unwrap();
         assert!(flow_pos > table_pos, "{output}");
+        assert_visible_lines_fit(&output, 60);
     }
 
     #[test]
