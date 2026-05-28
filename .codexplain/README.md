@@ -11,6 +11,14 @@ codex exec "이 프로젝트 아키텍처를 표와 흐름도로 설명해줘"
 
 The shim only prepends `.codexplain/bin` in the current shell. `codexplain uninstall-codex --local` removes the shim files and the managed AGENTS.md block.
 
+On/off is reversible by design:
+
+- `codexplain on --local` adds only Codexplain-managed project files and the
+  managed `CODEXPLAIN:START` block.
+- `codexplain off --local` removes only those managed files and blocks.
+- `codexplain tui-color off` disables only the project-local TUI color adapter
+  mode and does not remove unrelated Codex settings.
+
 Activation scopes:
 
 ```bash
@@ -75,6 +83,13 @@ Tables are renderer-owned. If text may be long, use the Codexplain renderer,
 Markdown tables, or short boxes instead of hand-drawing raw Unicode tables. The
 Rust renderer wraps by visible width, fills each cell with padding, and inserts
 body row dividers.
+
+Architecture, flow, and expansion diagrams are renderer-owned too. If labels
+may wrap, use Codexplain flow/diagram output so box width, arrows, connectors,
+and branch labels are measured instead of hand-drawn.
+
+Numbered index lists leave a blank line between semantic items so numbered
+explanations stay readable instead of collapsing into a dense block.
 
 Renderer quality can be checked locally:
 

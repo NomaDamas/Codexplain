@@ -64,6 +64,24 @@ codexplain uninstall-codex --local --remove-profile
 
 After local setup, Codex receives project-local `AGENTS.md` guidance. Release users can opt into global Codex guidance with `codexplain install-codex --global --force`. `npm run on` and `npm run off` in this repo are intentionally project-local; use `npm run on:global` and `npm run off:global` only when you explicitly want to modify global Codex guidance.
 
+### Reversible on/off contract
+
+`codexplain on --local` is project-scoped. It writes only Codexplain-managed
+project files such as `.codexplain/bin/codex`, `.codexplain/activate`,
+`.codexplain/post-response`, `.codexplain/config.json`, and the managed
+`CODEXPLAIN:START` block in `AGENTS.md`.
+
+`codexplain off --local` removes only those managed files and blocks. It does
+not remove user-authored Codex settings, unrelated `AGENTS.md` content, or
+global Codex configuration. Use `codexplain off --global` only when you want to
+remove the managed global Codexplain block under `CODEX_HOME/AGENTS.md`.
+
+Interactive TUI assistant-message color is tracked separately through
+`codexplain tui-color on|off`. This switch changes the project-local
+`.codexplain/config.json` adapter mode only; turning it off restores the normal
+Codex TUI path while keeping ordinary Codexplain `exec`/`review` ANSI shaping
+available unless `codexplain color off` is also used.
+
 ## 🚀 One-Line Use
 
 Run Codex through Codexplain and locally shape the captured output:
@@ -239,6 +257,8 @@ The result should be:
 - Dynamic renderer selection: TLDR prose, progress reports, table, flow,
   pros/cons panels, cause-effect reports, numbered index lists, formula boxes,
   and richer status UX components when they help scanning.
+- Numbered index lists keep a blank line between semantic items so multi-step
+  explanations do not collapse into a dense block.
 - Compositional renderer selection: when a prompt asks for architecture,
   tradeoffs, and formulas together, Codexplain can combine table/flow context,
   pros/cons comparison, and formula boxes instead of choosing only the first
@@ -405,14 +425,19 @@ answers hard to read:
 
 The contract fails if generated output exceeds the requested width, table body
 row dividers disappear, architecture explanations do not contain enough boxes,
-flow arrows are missing, or “two paths / 두 가지” explanations are not numbered.
+flow arrows are missing, flow boxes/connectors break, expansion diagrams
+overflow, or “two paths / 두 가지” explanations are not numbered.
 
 ```text
 contract=codexplain.quality-check.v1
 overflow_lines=0
 row_dividers>=3
 architecture_boxes>=6
+architecture_panel_overflows=0
 flow_arrows>=4
+flow_box_overflows=0
+flow_connector_breaks=0
+expansion_overflows=0
 numbered_sections>=2
 score>=90
 ```

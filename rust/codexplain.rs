@@ -175,6 +175,7 @@ struct FlowDiagram {
 struct FlowLayout {
     spec: FrameSpec,
     content_width: usize,
+    max_width: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -654,6 +655,7 @@ impl FlowLayout {
         Self {
             spec,
             content_width,
+            max_width: diagram.max_width,
         }
     }
 
@@ -2836,6 +2838,14 @@ fn architecture_panels(profile: &Profile, summary: &str, width: usize) -> String
     render_responsive_panels(&table_panel, &flow_panel, width, 3)
 }
 
+fn render_expansion_diagram(labels: &[&str], frame: Frame, theme: Theme, width: usize) -> String {
+    let stages = labels
+        .iter()
+        .map(|label| FlowStep::new(*label))
+        .collect::<Vec<_>>();
+    render_flow_diagram(&FlowDiagram::new(stages, width), frame, theme)
+}
+
 fn render_flow_diagram(diagram: &FlowDiagram, frame: Frame, theme: Theme) -> String {
     if diagram.steps.is_empty() {
         return String::new();
@@ -2927,10 +2937,15 @@ fn flow_branch_block(
     let mut lines = flow_sequence_connector(layout, theme);
     let spine = layout.spine_indent();
     let branch_count = branches.len();
+    let branch_width = layout
+        .max_width
+        .saturating_sub(visible_width(&spine) + 4)
+        .min(layout.content_width)
+        .max(8);
 
     for (index, branch) in branches.iter().enumerate() {
         let connector = branch_connector(frame, index + 1 == branch_count);
-        for (line_index, line) in wrap_text(branch, layout.content_width).iter().enumerate() {
+        for (line_index, line) in wrap_text(branch, branch_width).iter().enumerate() {
             let prefix = if line_index == 0 {
                 connector.clone()
             } else {
@@ -3027,7 +3042,7 @@ fn render_indexed_list(list: &IndexedList, frame: Frame, theme: Theme) -> String
                 .join("\n")
         })
         .collect::<Vec<_>>()
-        .join("\n")
+        .join("\n\n")
 }
 
 fn progress_percent(response: &str) -> usize {
@@ -5257,8 +5272,8 @@ Default answer style:
 - Select renderers dynamically: TLDR prose, progress, tables, flow diagrams, pros/cons, formula boxes, status badges, checklists, risk panels, confidence meters, decision matrices, ETA strips, callouts, and next-action footers.
 - When Codexplain is ON in Codex CLI, highlight important terms with sparse semantic ANSI colors. Emojis may be used only as light explanatory supplements, not as the color system.
 - Treat UX blocks like tool choices: combine the smallest useful set from prompt, response, profile, and optional planner hints.
-- Split explanations by semantic units with active line breaks. If the answer says "two paths", "두 가지", "과정", or "단계", render them as 1. 2. 3. numbered sections instead of one dense paragraph.
-- Architecture explanations should prefer boxed components and flow boxes before prose. Use a table only when it adds a compact role/decision summary.
+- Split explanations by semantic units with active line breaks. If the answer says "two paths", "두 가지", "과정", or "단계", render them as 1. 2. 3. numbered sections instead of one dense paragraph, and leave a blank line between numbered items.
+- Architecture, flow, and expansion diagrams should prefer Codexplain renderer-owned boxes before prose. Use a table only when it adds a compact role/decision summary.
 - Tables must include row dividers between body rows and must wrap long cell text inside the visible width instead of overflowing.
 - Do not hand-draw long Unicode tables from raw model text. If a cell may exceed the terminal width, use Codexplain's width-safe renderer output, a Markdown table, or short per-item boxes so every cell is filled and padded by visible width.
 - Process answers should use short numbered sections, with one idea per paragraph and blank lines between sections.
@@ -5272,6 +5287,7 @@ Strict-output safety:
 Terminal UX:
 - Use connected box-drawing characters such as ┌ ┬ ┐ │ ├ ┼ ┤ └ ┴ ┘.
 - Do not use broken pseudo-borders made from repeated hyphens, equals signs, or Korean long vowel marks.
+- Do not hand-draw architecture, flow, or expansion diagrams when labels may wrap. Use Codexplain flow/diagram output so box width, connectors, arrows, and branch labels are layout-owned.
 - Do not hand-draw long raw box tables when cell text may wrap. Prefer Codexplain width-safe tables, Markdown tables, or short boxes with wrapped rows; every row must be layout-owned, padded, and separated, not manually guessed.
 - For long tool transcripts such as Explored/Ran/Read, summarize the macro phase first instead of listing every micro event.
 - Use blank lines between semantic sections so the user can scan without reading a wall of text.
@@ -5421,9 +5437,10 @@ Default answer style:
 - Use TLDR, Unicode tables, flow diagrams, pros/cons, formula boxes, progress UI, and next actions when they improve scanning.
 - Prefer Markdown-safe chat highlights in chat hosts; use ANSI terminal colors in terminal hosts; fall back to plain text when exact formatting matters.
 - Avoid hand-drawn long raw box tables that can overflow narrow terminals; prefer width-safe renderer output or Markdown tables. If Unicode boxes are used, every body row must be wrapped, padded, and separated by the renderer contract.
+- Avoid hand-drawn architecture, flow, or expansion diagrams when labels may wrap; prefer renderer-owned boxes so connectors, arrows, and branch labels remain aligned.
 - Collapse verbose Explored/Ran/Read transcripts into macro progress phases before details.
-- Split "two paths", "두 가지", "과정", and "단계" explanations into numbered sections with active blank lines.
-- Architecture explanations should use boxed components and flow boxes before prose; tables should show row dividers and wrap long cells.
+- Split "two paths", "두 가지", "과정", and "단계" explanations into numbered sections with active blank lines between items.
+- Architecture explanations should use boxed components and flow boxes before prose; tables should show row dividers and wrap long cells; flow diagrams should keep arrows and branches inside the requested width.
 - Process answers should use short numbered sections, with one idea per paragraph and blank lines between sections.
 - Keep technical facts, commands, file paths, risks, and test evidence intact.
 <!-- CODEXPLAIN:END -->"#;
@@ -5966,7 +5983,11 @@ struct QualityReport {
     overflow_lines: usize,
     row_dividers: usize,
     architecture_boxes: usize,
+    architecture_panel_overflows: usize,
     flow_arrows: usize,
+    flow_box_overflows: usize,
+    flow_connector_breaks: usize,
+    expansion_overflows: usize,
     numbered_sections: usize,
     score: u8,
 }
@@ -5976,7 +5997,11 @@ impl QualityReport {
         self.overflow_lines == 0
             && self.row_dividers >= 3
             && self.architecture_boxes >= 6
+            && self.architecture_panel_overflows == 0
             && self.flow_arrows >= 4
+            && self.flow_box_overflows == 0
+            && self.flow_connector_breaks == 0
+            && self.expansion_overflows == 0
             && self.numbered_sections >= 2
             && self.score >= 90
     }
@@ -6028,7 +6053,42 @@ fn quality_report(width: usize) -> QualityReport {
         &profile,
         width,
     );
-    let combined = format!("{architecture}\n{long_table}\n{numbered}");
+    let flow_contract = render_flow_diagram(
+        &FlowDiagram::new(
+            [
+                FlowStep::new(
+                    "Very long architecture gateway label that must wrap inside its own flow box",
+                ),
+                FlowStep::with_branches(
+                    "Decision Router",
+                    [
+                        "strict artifacts are passed through without rewriting".to_string(),
+                        "explanations are shaped with Unicode diagrams and quality gates"
+                            .to_string(),
+                    ],
+                ),
+                FlowStep::new("Terminal Renderer"),
+            ],
+            width,
+        ),
+        profile.frame,
+        profile.theme,
+    );
+    let expansion_contract = render_expansion_diagram(
+        &[
+            "Request",
+            "Policy",
+            "Profile",
+            "Selector",
+            "Renderer",
+            "Quality Gate",
+        ],
+        profile.frame,
+        profile.theme,
+        width,
+    );
+    let combined =
+        format!("{architecture}\n{long_table}\n{numbered}\n{flow_contract}\n{expansion_contract}");
     let overflow_lines = combined
         .lines()
         .filter(|line| visible_width(line) > width)
@@ -6038,7 +6098,23 @@ fn quality_report(width: usize) -> QualityReport {
         .filter(|line| line.starts_with('├') && line.ends_with('┤'))
         .count();
     let architecture_boxes = architecture.matches('┌').count();
+    let architecture_panel_overflows = architecture
+        .lines()
+        .filter(|line| visible_width(line) > width)
+        .count();
     let flow_arrows = architecture.matches('▼').count();
+    let flow_box_overflows = flow_contract
+        .lines()
+        .filter(|line| visible_width(line) > width)
+        .count();
+    let flow_connector_breaks = flow_contract
+        .lines()
+        .filter(|line| line.contains("----") || line.contains("====") || line.contains("ㅡㅡ"))
+        .count();
+    let expansion_overflows = expansion_contract
+        .lines()
+        .filter(|line| visible_width(line) > width)
+        .count();
     let numbered_sections = ["1. │", "2. │", "01. │", "02. │", "a. │", "b. │"]
         .iter()
         .filter(|needle| numbered.contains(**needle))
@@ -6051,9 +6127,13 @@ fn quality_report(width: usize) -> QualityReport {
     if architecture_boxes < 6 {
         score -= ((6 - architecture_boxes) as i32) * 8;
     }
+    score -= (architecture_panel_overflows as i32) * 20;
     if flow_arrows < 4 {
         score -= ((4 - flow_arrows) as i32) * 8;
     }
+    score -= (flow_box_overflows as i32) * 20;
+    score -= (flow_connector_breaks as i32) * 20;
+    score -= (expansion_overflows as i32) * 20;
     if numbered_sections < 2 {
         score -= ((2 - numbered_sections) as i32) * 10;
     }
@@ -6063,7 +6143,11 @@ fn quality_report(width: usize) -> QualityReport {
         overflow_lines,
         row_dividers,
         architecture_boxes,
+        architecture_panel_overflows,
         flow_arrows,
+        flow_box_overflows,
+        flow_connector_breaks,
+        expansion_overflows,
         numbered_sections,
         score: score.clamp(0, 100) as u8,
     }
@@ -6075,7 +6159,14 @@ fn print_quality_report(report: &QualityReport) {
     println!("overflow_lines={}", report.overflow_lines);
     println!("row_dividers={}", report.row_dividers);
     println!("architecture_boxes={}", report.architecture_boxes);
+    println!(
+        "architecture_panel_overflows={}",
+        report.architecture_panel_overflows
+    );
     println!("flow_arrows={}", report.flow_arrows);
+    println!("flow_box_overflows={}", report.flow_box_overflows);
+    println!("flow_connector_breaks={}", report.flow_connector_breaks);
+    println!("expansion_overflows={}", report.expansion_overflows);
     println!("numbered_sections={}", report.numbered_sections);
     println!("score={}", report.score);
     println!("result={}", if report.passed() { "pass" } else { "fail" });
@@ -6273,7 +6364,7 @@ Scopes: --project/--local writes only this repository's managed Codexplain files
 Color toggle: `codexplain color on` forces ANSI text color for Codexplain-shaped exec/review output and best-effort Codex TUI color env; `codexplain color off` restores plain output.
 TUI assistant color: `codexplain tui-color on` enables project-local full assistant-message color when a patched Codex binary exists under .codexplain/state/codex-upstream/codex-rs/target/release/codex or target/debug/codex; `off` disables only that hook.
 Settings UI: `codexplain settings-ui` opens a dependency-free Rust terminal UI for theme, frame, depth, abstraction, UX density, and color mode; `codexplain install-app` writes lightweight macOS/Linux/Windows launchers under .codexplain/app.
-Quality gate: `codexplain quality-check --width 88` fails if generated tables overflow, body row dividers disappear, architecture boxes are too sparse, flow arrows are missing, or two-path explanations are not numbered.
+Quality gate: `codexplain quality-check --width 88` fails if generated output overflows, table body row dividers disappear, architecture boxes overflow or are too sparse, flow arrows/connectors break, expansion diagrams overflow, or two-path explanations are not numbered.
 Build cleanup: `codexplain build-clean --patched-codex` removes only the ignored project-local patched Codex Cargo target directory.
 Index styles: decimal, zero-padded, alpha-lower, alpha-upper, roman-lower, roman-upper"
 }
@@ -6736,10 +6827,31 @@ mod tests {
             output,
             [
                 "1. │ 첫 번째 설명",
+                "",
                 "2. │ 두 번째 설명",
+                "",
                 "3. │ 세 번째 설명",
             ]
             .join("\n")
+        );
+    }
+
+    #[test]
+    fn indexed_list_adds_blank_lines_between_semantic_items() {
+        let output = indexed(
+            &[
+                "첫 번째 원인과 결과".to_string(),
+                "두 번째 대안과 한계".to_string(),
+            ],
+            Frame::Unicode,
+            Theme::None,
+            60,
+            IndexStyle::Decimal,
+        );
+
+        assert!(
+            output.contains("첫 번째 원인과 결과\n\n2. │ 두 번째 대안과 한계"),
+            "{output}"
         );
     }
 
@@ -7454,9 +7566,53 @@ after
         assert_eq!(report.overflow_lines, 0, "{report:?}");
         assert!(report.row_dividers >= 3, "{report:?}");
         assert!(report.architecture_boxes >= 6, "{report:?}");
+        assert_eq!(report.architecture_panel_overflows, 0, "{report:?}");
         assert!(report.flow_arrows >= 4, "{report:?}");
+        assert_eq!(report.flow_box_overflows, 0, "{report:?}");
+        assert_eq!(report.flow_connector_breaks, 0, "{report:?}");
+        assert_eq!(report.expansion_overflows, 0, "{report:?}");
         assert!(report.numbered_sections >= 2, "{report:?}");
         assert!(report.passed(), "{report:?}");
+    }
+
+    #[test]
+    fn flow_and_expansion_diagrams_keep_wrapped_labels_inside_width() {
+        let diagram = FlowDiagram::new(
+            [
+                FlowStep::new("Very long architecture gateway label that must wrap inside a box"),
+                FlowStep::with_branches(
+                    "Decision Router",
+                    [
+                        "strict artifacts are passed through without rewriting".to_string(),
+                        "explanations are shaped with Unicode diagrams".to_string(),
+                    ],
+                ),
+                FlowStep::new("Terminal Renderer"),
+            ],
+            46,
+        );
+        let flow = render_flow_diagram(&diagram, Frame::Unicode, Theme::None);
+        let expansion = render_expansion_diagram(
+            &[
+                "Request",
+                "Policy",
+                "Profile",
+                "Selector",
+                "Renderer",
+                "Quality Gate",
+            ],
+            Frame::Unicode,
+            Theme::None,
+            46,
+        );
+
+        assert_visible_lines_fit(&flow, 46);
+        assert_visible_lines_fit(&expansion, 46);
+        assert!(flow.contains('▼'), "{flow}");
+        assert!(flow.contains("├─▶"), "{flow}");
+        assert!(flow.contains("└─▶"), "{flow}");
+        assert!(!flow.contains("----"), "{flow}");
+        assert!(!expansion.contains("===="), "{expansion}");
     }
 
     #[test]
