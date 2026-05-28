@@ -7167,10 +7167,6 @@ fn print_statusbar_state_at(root: &Path) {
     println!("actions=codexplain statusbar on|off|set");
 }
 
-fn statusbar_state_rows(profile: &Profile) -> Vec<Vec<String>> {
-    statusbar_state_rows_at(profile, &project_path("."))
-}
-
 fn statusbar_state_rows_at(profile: &Profile, root: &Path) -> Vec<Vec<String>> {
     vec![
         vec![
@@ -7208,10 +7204,6 @@ fn statusbar_state_rows_at(profile: &Profile, root: &Path) -> Vec<Vec<String>> {
             "profile".to_string(),
         ],
     ]
-}
-
-fn project_local_adapter_present() -> bool {
-    project_local_adapter_present_at(&project_path("."))
 }
 
 fn project_local_adapter_present_at(root: &Path) -> bool {
@@ -7268,10 +7260,6 @@ fn apply_expression_mode(profile: &mut Profile, value: &str) -> io::Result<()> {
         }
     }
     Ok(())
-}
-
-fn apply_statusbar_color_output(value: &str) -> io::Result<()> {
-    apply_statusbar_color_output_at(&project_path("."), value)
 }
 
 fn apply_statusbar_color_output_at(root: &Path, value: &str) -> io::Result<()> {
@@ -8311,7 +8299,11 @@ after
         assert_eq!(profile.abstraction_level, "concrete");
         assert_eq!(profile.theme, Theme::Forest);
 
-        let rows = statusbar_state_rows(&profile);
+        let root = env::temp_dir().join(format!(
+            "codexplain-statusbar-row-test-{}",
+            std::process::id()
+        ));
+        let rows = statusbar_state_rows_at(&profile, &root);
         let controls: Vec<&str> = rows.iter().map(|row| row[0].as_str()).collect();
         assert_eq!(
             controls,
