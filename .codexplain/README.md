@@ -47,6 +47,12 @@ codexplain settings-ui
 codexplain install-app
 ```
 
+Validate project-local OMX/harness compatibility without mutating settings:
+
+```bash
+codexplain compat-check
+```
+
 `codex exec` and `codex review` can be post-processed with Codexplain ANSI text color. Interactive Codex TUI is passed through to the real Codex process with color env (`CLICOLOR_FORCE`, `FORCE_COLOR`, `COLORTERM`). Assistant-message recoloring inside ratatui requires the project-local patched Codex renderer.
 
 Project-local interactive TUI assistant color can be toggled without touching global Codex settings:

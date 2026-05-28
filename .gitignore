@@ -10,5 +10,8 @@ coverage/
 .claudex/state/
 .ouroboros/
 .ouroboros_eval_artifact.md
+harness/
+oh-my-codex/
+omx/
 dist/
 target/

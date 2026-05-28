@@ -5981,6 +5981,12 @@ codexplain color off
 codexplain color status
 ```
 
+Validate project-local OMX/harness compatibility without mutating settings:
+
+```bash
+codexplain compat-check
+```
+
 `codex exec` and `codex review` can be post-processed with Codexplain ANSI text color. Interactive Codex TUI is passed through to the real Codex process with color env (`CLICOLOR_FORCE`, `FORCE_COLOR`, `COLORTERM`). Assistant-message recoloring inside ratatui requires the project-local patched Codex renderer.
 
 Project-local interactive TUI assistant color can be toggled without touching global Codex settings:
@@ -6165,12 +6171,16 @@ fn install_codex_project(args: &[String]) -> io::Result<()> {
     Ok(())
 }
 
-fn print_session_activation_hint() {
+fn session_activation_hint() -> String {
     let activate = project_path(".codexplain/activate");
-    println!(
+    format!(
         "Codexplain session activation:\n1. current shell only\n2. run: source {}\n3. verify: which codex",
         activate.display()
-    );
+    )
+}
+
+fn print_session_activation_hint() {
+    println!("{}", session_activation_hint());
 }
 
 fn install_local_codex_project() -> io::Result<()> {
@@ -6278,6 +6288,113 @@ fn uninstall_global_codex_guidance() -> io::Result<()> {
         agents_path.display()
     );
     Ok(())
+}
+
+fn managed_project_files() -> &'static [&'static str] {
+    &[
+        "AGENTS.md managed CODEXPLAIN block",
+        ".codexplain/bin/codex",
+        ".codexplain/activate",
+        ".codexplain/post-response",
+        ".codexplain/README.md",
+        ".codexplain/config.json",
+    ]
+}
+
+fn exports_or_forwards_local_shape(script: &str) -> bool {
+    script.lines().map(str::trim).any(|line| {
+        line == "export CODEXPLAIN_LOCAL_SHAPE=1"
+            || line.starts_with("export CODEXPLAIN_LOCAL_SHAPE=1 ")
+            || line.starts_with("CODEXPLAIN_LOCAL_SHAPE=1 ")
+    })
+}
+
+fn compat_check() {
+    let root = project_path(".");
+    let gitignore = fs::read_to_string(root.join(".gitignore")).unwrap_or_default();
+    let strict_json = r#"{"ok":true,"mode":"strict"}"#;
+    let profile = Profile {
+        theme: Theme::None,
+        ..Profile::default()
+    };
+    let strict_preserved = shape("valid JSON만 출력", strict_json, &profile, 88) == strict_json;
+    let quality = quality_report(88);
+    let ignored_state = gitignore.contains(".codexplain/state/");
+    let ignored_harness = gitignore.contains("harness/")
+        && gitignore.contains("oh-my-codex/")
+        && gitignore.contains("omx/");
+    let local_assets = managed_project_files().join(", ");
+    let session_hint = session_activation_hint();
+    let global_block_is_managed = GLOBAL_CODEX_GUIDANCE.contains("CODEXPLAIN:START")
+        && GLOBAL_CODEX_GUIDANCE.contains("CODEXPLAIN:END");
+    let local_block_is_managed =
+        CODEX_GUIDANCE.contains("CODEXPLAIN:START") && CODEX_GUIDANCE.contains("CODEXPLAIN:END");
+    let shim_project_dir_forwarded = CODEX_SHIM_SH
+        .contains(r#"ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"#)
+        && CODEX_SHIM_SH.contains(r#"export CODEXPLAIN_PROJECT_DIR="$ROOT""#);
+    let activate_project_dir_exported = ACTIVATE_SH.contains(
+        r#"CODEXPLAIN_PROJECT_DIR=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE:-$0}")/.." && pwd)"#,
+    ) && ACTIVATE_SH.contains("export CODEXPLAIN_PROJECT_DIR");
+    let shim_local_shape_forwarded = exports_or_forwards_local_shape(CODEX_SHIM_SH);
+    let shim_project_local = shim_project_dir_forwarded
+        && activate_project_dir_exported
+        && shim_local_shape_forwarded
+        && CODEX_SHIM_SH.contains("codex --local-shape");
+    let session_is_non_mutating = session_hint.contains("source ")
+        && !session_hint.contains("Installed")
+        && !session_hint.contains("Uninstalled");
+
+    println!("contract=codexplain.compat-check.v1");
+    println!("scope=project-local-first");
+    println!("managed_project_files={local_assets}");
+    println!(
+        "project_dir_forwarded={}",
+        pass_fail(shim_project_dir_forwarded && activate_project_dir_exported)
+    );
+    println!(
+        "local_shape_forwarded={}",
+        pass_fail(shim_local_shape_forwarded)
+    );
+    println!("project_local_shim={}", pass_fail(shim_project_local));
+    println!(
+        "session_hint_non_mutating={}",
+        pass_fail(session_is_non_mutating)
+    );
+    println!(
+        "global_block_managed_only={}",
+        pass_fail(global_block_is_managed)
+    );
+    println!(
+        "local_block_managed_only={}",
+        pass_fail(local_block_is_managed)
+    );
+    println!("strict_json_preserved={}", pass_fail(strict_preserved));
+    println!("width_safe_quality={}", pass_fail(quality.passed()));
+    println!("gitignore_state={}", pass_fail(ignored_state));
+    println!("gitignore_harness={}", pass_fail(ignored_harness));
+    println!(
+        "result={}",
+        pass_fail(
+            shim_project_local
+                && shim_project_dir_forwarded
+                && activate_project_dir_exported
+                && session_is_non_mutating
+                && global_block_is_managed
+                && local_block_is_managed
+                && strict_preserved
+                && quality.passed()
+                && ignored_state
+                && ignored_harness
+        )
+    );
+}
+
+fn pass_fail(value: bool) -> &'static str {
+    if value {
+        "pass"
+    } else {
+        "fail"
+    }
 }
 
 fn remove_guidance_file_block(path: &Path) -> io::Result<()> {
@@ -7021,6 +7138,7 @@ fn usage() -> &'static str {
   codexplain profile --detail-scale <0-100>|--ux-density <0-100>|--risk-sensitivity <0-100>
   codexplain settings-ui
   codexplain install-app
+  codexplain compat-check
   codexplain quality-check [--width <n>]
   codexplain demo
   codexplain build-size
@@ -7047,6 +7165,7 @@ Color toggle: `codexplain color on` forces ANSI text color for Codexplain-shaped
 TUI assistant color: `codexplain tui-color on` enables project-local full assistant-message color when a patched Codex binary exists under .codexplain/state/codex-upstream/codex-rs/target/release/codex or target/debug/codex; `off` disables only that hook.
 TUI adapter: `codexplain tui-adapter status` reports project-local shim path, mode, active binary/fallback, patched binary status, rollback, and cleanup instructions.
 Settings UI: `codexplain settings-ui` opens a dependency-free Rust terminal UI for theme, frame, depth, abstraction, UX density, and color mode; `codexplain install-app` writes lightweight macOS/Linux/Windows launchers under .codexplain/app.
+Compatibility gate: `codexplain compat-check` validates project-local OMX/harness safety, managed on/off scopes, strict artifact preservation, ignored harness state, and width-safe renderer contracts.
 Quality gate: `codexplain quality-check --width 88` fails if generated output overflows, table body row dividers disappear, architecture boxes overflow or are too sparse, flow arrows/connectors break, expansion diagrams overflow, or two-path explanations are not numbered.
 Build cleanup: `codexplain build-clean --patched-codex` removes only the ignored project-local patched Codex Cargo target directory.
 Index styles: decimal, zero-padded, alpha-lower, alpha-upper, roman-lower, roman-upper"
@@ -7205,6 +7324,7 @@ fn main() {
                 std::process::exit(1);
             }
         }
+        "compat-check" => compat_check(),
         "quality-check" => {
             let width = arg_value(&args, "--width")
                 .and_then(|value| value.parse().ok())
@@ -7855,15 +7975,59 @@ after
     #[test]
     fn codex_shim_assets_are_project_local_and_reversible() {
         assert!(CODEX_SHIM_SH.contains("CODEXPLAIN_PROJECT_DIR"));
-        assert!(CODEX_SHIM_SH.contains("CODEXPLAIN_LOCAL_SHAPE=1"));
+        assert!(
+            CODEX_SHIM_SH.contains(r#"ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"#)
+        );
+        assert!(CODEX_SHIM_SH.contains(r#"export CODEXPLAIN_PROJECT_DIR="$ROOT""#));
+        assert!(exports_or_forwards_local_shape(CODEX_SHIM_SH));
         assert!(CODEX_SHIM_SH.contains("codex --local-shape"));
         assert!(CODEX_SHIM_SH.contains("FORCE_COLOR=3"));
         assert!(CODEX_SHIM_SH.contains("NO_COLOR=1"));
+        assert!(ACTIVATE_SH.contains(
+            r#"CODEXPLAIN_PROJECT_DIR=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE:-$0}")/.." && pwd)"#
+        ));
+        assert!(ACTIVATE_SH.contains("export CODEXPLAIN_PROJECT_DIR"));
         assert!(ACTIVATE_SH.contains(".codexplain/bin:$PATH"));
         assert!(ACTIVATE_SH.contains("CODEXPLAIN_COLOR_OUTPUT=ansi"));
         assert!(LOCAL_README.contains("source .codexplain/activate"));
         assert!(LOCAL_README.contains("codexplain color on"));
         assert!(LOCAL_README.contains("codexplain style add"));
+    }
+
+    #[test]
+    fn compat_matrix_documents_harness_safe_scopes_without_committed_state() {
+        assert!(usage().contains("codexplain compat-check"));
+        assert!(LOCAL_README.contains("codexplain compat-check"));
+        assert!(managed_project_files().contains(&".codexplain/bin/codex"));
+        assert!(managed_project_files().contains(&".codexplain/activate"));
+        assert!(managed_project_files().contains(&".codexplain/post-response"));
+        assert!(!managed_project_files()
+            .iter()
+            .any(|path| path.contains("state")));
+        assert!(!managed_project_files()
+            .iter()
+            .any(|path| path.contains("harness")));
+        assert!(!managed_project_files()
+            .iter()
+            .any(|path| path.contains("oh-my-codex")));
+        assert!(CODEX_SHIM_SH.contains(r#"export CODEXPLAIN_PROJECT_DIR="$ROOT""#));
+        assert!(exports_or_forwards_local_shape(CODEX_SHIM_SH));
+        assert!(session_activation_hint().contains("source ./.codexplain/activate"));
+        assert!(!session_activation_hint().contains("Installed"));
+        assert!(GLOBAL_CODEX_GUIDANCE.contains("CODEXPLAIN:START"));
+        assert!(GLOBAL_CODEX_GUIDANCE.contains("CODEXPLAIN:END"));
+    }
+
+    #[test]
+    fn compat_gate_preserves_strict_artifacts_and_renderer_quality() {
+        let profile = Profile {
+            theme: Theme::None,
+            ..Profile::default()
+        };
+        let json = r#"{"ok":true,"mode":"strict"}"#;
+
+        assert_eq!(shape("valid JSON만 출력", json, &profile, 88), json);
+        assert!(quality_report(88).passed());
     }
 
     #[test]

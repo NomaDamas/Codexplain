@@ -109,6 +109,17 @@ Install lightweight launchers for macOS, Linux, and Windows under
 codexplain install-app
 ```
 
+Run the project-local compatibility gate before release or harness work:
+
+```bash
+codexplain compat-check
+```
+
+The compatibility gate is intentionally read-only. It verifies that OMX-style
+harness state is ignored, local/session/global activation scopes are managed
+and reversible, strict artifacts remain unchanged, and the width-safe renderer
+contracts still pass.
+
 Control explanation depth with 3-stage levels:
 
 ```bash
@@ -578,6 +589,7 @@ cargo fmt --check
 cargo test
 cargo build --release
 ./bin/codexplain build-size
+./bin/codexplain compat-check
 ./bin/codexplain storage-check --min-free-gb 5
 ./bin/codexplain quality-check --width 88
 ```
