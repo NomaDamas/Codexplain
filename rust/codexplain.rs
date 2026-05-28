@@ -4294,7 +4294,9 @@ fn dispatch_explanation(
         let mut sections = Vec::new();
         if wants_architecture {
             sections.push(architecture_panels(profile, summary, width));
-        } else if requested.contains(&RendererKind::Table) {
+        } else if requested.contains(&RendererKind::Table)
+            && !specialized_table_renderer_requested(&requested)
+        {
             sections.push(table(
                 &["구분", "내용"],
                 &structured_summary_rows(response, summary, profile),
@@ -4446,6 +4448,18 @@ fn dispatch_explanation(
             color(profile.theme, "accent", summary)
         ),
     }
+}
+
+fn specialized_table_renderer_requested(requested: &[RendererKind]) -> bool {
+    requested.iter().any(|renderer| {
+        matches!(
+            renderer,
+            RendererKind::ProsCons
+                | RendererKind::CauseEffect
+                | RendererKind::Progress
+                | RendererKind::IndexedList
+        )
+    })
 }
 
 fn renderer_signal_present(prompt: &str, renderer: RendererKind) -> bool {
@@ -10291,6 +10305,26 @@ evidence: shared fields rendered|width-safe table output";
         assert!(output.contains("Rust"), "{output}");
         assert!(output.contains("핵심식 : 설명 품질 = f"), "{output}");
         assert_visible_lines_fit(&output, 132);
+    }
+
+    #[test]
+    fn pros_cons_table_prompt_does_not_add_brittle_generic_summary_table() {
+        let profile = Profile {
+            theme: Theme::None,
+            ..Profile::default()
+        };
+        let output = shape(
+            "JS와 Rust 선택 이유를 pros and cons 표와 수식으로 보여줘",
+            "JS는 빠른 실험과 provider 연동, JSON 문자열 처리, CLI UX 반복에 유리하다. Rust는 단일 바이너리, 낮은 메모리, 빠른 시작 속도, 타입 안정성, 터미널 렌더링에 유리하다.",
+            &profile,
+            88,
+        );
+
+        assert!(output.contains("JS / Node"), "{output}");
+        assert!(output.contains("수식 박스"), "{output}");
+        assert!(!output.contains("│ 낮 "), "{output}");
+        assert!(!output.contains("│ 구분"), "{output}");
+        assert_visible_lines_fit(&output, 88);
     }
 
     #[test]
