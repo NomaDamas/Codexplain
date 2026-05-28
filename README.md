@@ -183,6 +183,22 @@ codexplain tui-color off
 codexplain tui-color status
 ```
 
+Use the adapter-specific status surface when you need rollback and routing
+details:
+
+```bash
+codexplain tui-adapter status
+codexplain tui-adapter on
+codexplain tui-adapter full
+codexplain tui-adapter off
+```
+
+`tui-adapter on` is an alias for the existing `full` enable behavior. It exits
+successfully even when no patched Codex binary is available. In that case it
+enables project-local config, keeps exec/review shaping available, and reports
+that interactive TUI assistant-message recoloring requires a project-local
+patched Codex binary.
+
 For Codex CLI chat output, explicitly use `--chat-color` when you want real
 terminal text color. It keeps ANSI styling instead of substituting emoji chips,
 while still preserving strict JSON, diffs, code, and logs unchanged:

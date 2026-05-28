@@ -5102,6 +5102,78 @@ fn tui_color_command(args: &[String]) -> io::Result<()> {
     Ok(())
 }
 
+fn tui_adapter_command(args: &[String]) -> io::Result<()> {
+    let action = args.get(1).map(String::as_str).unwrap_or("status");
+    match parse_tui_adapter_action(action)? {
+        TuiAdapterAction::EnableFull => {
+            write_color_config("ansi", "ansi", "full")?;
+            println!(
+                "{}",
+                tui_adapter_status_report("full", patched_codex_status())
+            );
+        }
+        TuiAdapterAction::Disable => {
+            write_color_config("ansi", "ansi", "off")?;
+            println!(
+                "{}",
+                tui_adapter_status_report("off", patched_codex_status())
+            );
+        }
+        TuiAdapterAction::Status => {
+            println!(
+                "{}",
+                tui_adapter_status_report(&configured_tui_color_mode(), patched_codex_status())
+            );
+        }
+    }
+    Ok(())
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TuiAdapterAction {
+    EnableFull,
+    Disable,
+    Status,
+}
+
+fn parse_tui_adapter_action(action: &str) -> io::Result<TuiAdapterAction> {
+    match action {
+        "on" | "enable" | "full" => Ok(TuiAdapterAction::EnableFull),
+        "off" | "disable" => Ok(TuiAdapterAction::Disable),
+        "status" | "--show" | "show" => Ok(TuiAdapterAction::Status),
+        other => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("unknown tui-adapter action: {other}"),
+        )),
+    }
+}
+
+fn tui_adapter_status_report(mode: &str, patched_status: String) -> String {
+    let shim = project_path(".codexplain/bin/codex");
+    let active_target = if patched_status == "not-built" || mode == "off" {
+        "fallback: stock Codex binary via PATH"
+    } else {
+        "project-local patched Codex binary"
+    };
+    format!(
+        concat!(
+            "Codexplain TUI adapter\n",
+            "- scope: project-local only\n",
+            "- mode: {}\n",
+            "- shimPath: {}\n",
+            "- activeBinary: {}\n",
+            "- patchedCodex: {}\n",
+            "- fallback: exec/review shaping remains available; interactive TUI assistant-message recoloring requires a project-local patched Codex binary\n",
+            "- rollback: codexplain tui-adapter off, or codexplain off --local to remove managed project files and blocks\n",
+            "- cleanup: codexplain build-clean --patched-codex removes only the project-local patched Codex target cache"
+        ),
+        mode,
+        shim.display(),
+        active_target,
+        patched_status
+    )
+}
+
 fn patched_codex_status() -> String {
     local_patched_codex_binary()
         .filter(|path| is_executable_file(path))
@@ -5919,6 +5991,20 @@ codexplain tui-color full
 codexplain tui-color off
 codexplain tui-color status
 ```
+
+Adapter status and rollback details are available through:
+
+```bash
+codexplain tui-adapter status
+codexplain tui-adapter on
+codexplain tui-adapter full
+codexplain tui-adapter off
+```
+
+`tui-adapter on` is an alias for the existing `full` enable behavior. It does not clone or build upstream Codex. If no patched binary is present, it exits
+successfully and reports the fallback: exec/review shaping still works, while
+interactive TUI assistant-message recoloring needs a project-local patched Codex
+binary.
 
 The shim routes to `.codexplain/state/codex-upstream/codex-rs/target/release/codex` or `.codexplain/state/codex-upstream/codex-rs/target/debug/codex` when that binary exists and `tuiAssistantColor` is enabled.
 
@@ -6926,6 +7012,7 @@ fn usage() -> &'static str {
   codexplain off|uninstall-codex [--project|--local] [--global] [--session] [--remove-profile]
   codexplain color on|off|status
   codexplain tui-color on|full|off|status
+  codexplain tui-adapter on|full|off|status
   codexplain style add <name> --trigger <text> --renderers <tldr,table,flow,pros-cons,formula,cause-effect,indexed,progress> --description <text>
   codexplain style list|show <name>|remove <name>
   codexplain feedback|rlhf --rating <1-5> --comment <text>
@@ -6958,6 +7045,7 @@ Color outputs: terminal, ansi, markdown, html, plain. Use --chat-color as an ali
 Scopes: --project/--local writes only this repository's managed Codexplain files; --global writes only managed guidance under CODEX_HOME; --session prints the current-shell activation command because a child process cannot mutate its parent shell.
 Color toggle: `codexplain color on` forces ANSI text color for Codexplain-shaped exec/review output and best-effort Codex TUI color env; `codexplain color off` restores plain output.
 TUI assistant color: `codexplain tui-color on` enables project-local full assistant-message color when a patched Codex binary exists under .codexplain/state/codex-upstream/codex-rs/target/release/codex or target/debug/codex; `off` disables only that hook.
+TUI adapter: `codexplain tui-adapter status` reports project-local shim path, mode, active binary/fallback, patched binary status, rollback, and cleanup instructions.
 Settings UI: `codexplain settings-ui` opens a dependency-free Rust terminal UI for theme, frame, depth, abstraction, UX density, and color mode; `codexplain install-app` writes lightweight macOS/Linux/Windows launchers under .codexplain/app.
 Quality gate: `codexplain quality-check --width 88` fails if generated output overflows, table body row dividers disappear, architecture boxes overflow or are too sparse, flow arrows/connectors break, expansion diagrams overflow, or two-path explanations are not numbered.
 Build cleanup: `codexplain build-clean --patched-codex` removes only the ignored project-local patched Codex Cargo target directory.
@@ -7006,6 +7094,12 @@ fn main() {
         "tui-color" => {
             if let Err(error) = tui_color_command(&args) {
                 eprintln!("failed to update Codexplain TUI color: {error}");
+                std::process::exit(1);
+            }
+        }
+        "tui-adapter" => {
+            if let Err(error) = tui_adapter_command(&args) {
+                eprintln!("failed to update Codexplain TUI adapter: {error}");
                 std::process::exit(1);
             }
         }
@@ -7787,6 +7881,50 @@ after
         );
         assert!(
             local_config_json("ansi", "ansi", "full").contains("\"tuiAssistantColor\": \"full\"")
+        );
+    }
+
+    #[test]
+    fn tui_adapter_status_report_explains_reversible_project_local_fallback() {
+        let output = tui_adapter_status_report("full", "not-built".to_string());
+
+        assert!(output.contains("Codexplain TUI adapter"), "{output}");
+        assert!(output.contains("scope: project-local only"), "{output}");
+        assert!(output.contains("mode: full"), "{output}");
+        assert!(output.contains(".codexplain/bin/codex"), "{output}");
+        assert!(
+            output.contains("fallback: stock Codex binary via PATH"),
+            "{output}"
+        );
+        assert!(output.contains("patchedCodex: not-built"), "{output}");
+        assert!(
+            output.contains("exec/review shaping remains available"),
+            "{output}"
+        );
+        assert!(output.contains("codexplain tui-adapter off"), "{output}");
+        assert!(output.contains("codexplain off --local"), "{output}");
+        assert!(output.contains("build-clean --patched-codex"), "{output}");
+    }
+
+    #[test]
+    fn tui_adapter_docs_and_help_are_discoverable_without_global_changes() {
+        assert!(usage().contains("codexplain tui-adapter on|full|off|status"));
+        assert!(LOCAL_README.contains("codexplain tui-adapter on"));
+        assert!(LOCAL_README.contains("codexplain tui-adapter status"));
+        assert!(LOCAL_README.contains("does not clone or build upstream Codex"));
+        assert!(LOCAL_README.contains("project-local patched Codex"));
+        assert!(LOCAL_README.contains("binary"));
+    }
+
+    #[test]
+    fn tui_adapter_on_aliases_existing_enable_behavior() {
+        assert_eq!(
+            parse_tui_adapter_action("on").unwrap(),
+            parse_tui_adapter_action("enable").unwrap()
+        );
+        assert_eq!(
+            parse_tui_adapter_action("on").unwrap(),
+            TuiAdapterAction::EnableFull
         );
     }
 

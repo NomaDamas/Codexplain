@@ -58,6 +58,20 @@ codexplain tui-color off
 codexplain tui-color status
 ```
 
+Adapter status and rollback details are available through:
+
+```bash
+codexplain tui-adapter status
+codexplain tui-adapter on
+codexplain tui-adapter full
+codexplain tui-adapter off
+```
+
+`tui-adapter on` is an alias for the existing `full` enable behavior. It does not clone or build upstream Codex. If no patched binary is present, it exits
+successfully and reports the fallback: exec/review shaping still works, while
+interactive TUI assistant-message recoloring needs a project-local patched Codex
+binary.
+
 The local adapter defaults `tuiAssistantColor` to `full`, so activating Codexplain and opening a new Codex TUI session shows assistant-message color immediately. The shim routes to `.codexplain/state/codex-upstream/codex-rs/target/release/codex` or `.codexplain/state/codex-upstream/codex-rs/target/debug/codex` when that binary exists and `tuiAssistantColor` is enabled.
 
 Use this adapter when a host can pipe a completed answer into a post-response command:
