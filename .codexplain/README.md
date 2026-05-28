@@ -88,8 +88,13 @@ Architecture, flow, and expansion diagrams are renderer-owned too. If labels
 may wrap, use Codexplain flow/diagram output so box width, arrows, connectors,
 and branch labels are measured instead of hand-drawn.
 
-Numbered index lists leave a blank line between semantic items so numbered
-explanations stay readable instead of collapsing into a dense block.
+Numbered index lists stay compact. If one numbered item needs multiple details,
+use bullet-style sublines instead of blank lines inside the item.
+
+Notion-style static blocks are available as supplemental UX components. Prompts
+with hints such as `notion`, `toggle`, `quote`, `divider`, `노션`, `토글`,
+`인용`, or `구분선` can add toggle-style summaries, quote bars, dividers,
+callouts, and checklists without replacing the primary renderer.
 
 Renderer quality can be checked locally:
 

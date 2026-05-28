@@ -275,6 +275,9 @@ struct CustomStyle {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum UxComponent {
     StatusBadge,
+    Toggle,
+    Quote,
+    Divider,
     Checklist,
     RiskPanel,
     ConfidenceMeter,
@@ -1037,6 +1040,9 @@ fn parse_ux_component(value: &str) -> Option<UxComponent> {
         .replace('_', "-");
     match text.as_str() {
         "badge" | "status" | "status-badge" | "state-badge" => Some(UxComponent::StatusBadge),
+        "toggle" | "notion-toggle" | "fold" | "foldout" => Some(UxComponent::Toggle),
+        "quote" | "blockquote" | "notion-quote" => Some(UxComponent::Quote),
+        "divider" | "separator" | "section-line" => Some(UxComponent::Divider),
         "check" | "checks" | "checklist" | "todo" => Some(UxComponent::Checklist),
         "risk" | "risks" | "risk-panel" | "warning" => Some(UxComponent::RiskPanel),
         "confidence" | "confidence-meter" | "certainty" => Some(UxComponent::ConfidenceMeter),
@@ -1190,6 +1196,26 @@ fn requested_ux_components(prompt: &str, response: &str, profile: &Profile) -> V
     {
         add_component_score(&mut scores, UxComponent::AttentionCallout, explicit_score);
     }
+    if full_kit
+        || text.contains("notion")
+        || prompt.contains("노션")
+        || text.contains("toggle")
+        || prompt.contains("토글")
+        || prompt.contains("접기")
+    {
+        add_component_score(&mut scores, UxComponent::Toggle, explicit_score);
+    }
+    if full_kit || text.contains("quote") || prompt.contains("인용") || prompt.contains("핵심 문장")
+    {
+        add_component_score(&mut scores, UxComponent::Quote, explicit_score);
+    }
+    if full_kit
+        || text.contains("divider")
+        || prompt.contains("구분선")
+        || prompt.contains("분리선")
+    {
+        add_component_score(&mut scores, UxComponent::Divider, explicit_score);
+    }
 
     let lower = response.to_ascii_lowercase();
     if lower.contains("fail") || lower.contains("error") || response.contains("실패") {
@@ -1266,7 +1292,7 @@ impl IndexedListLayout {
             .max()
             .unwrap_or(2)
             .max(2);
-        let separator_width = 3;
+        let separator_width = 1;
         let content_width = list
             .max_width
             .saturating_sub(marker_width + separator_width)
@@ -1277,10 +1303,6 @@ impl IndexedListLayout {
             marker_width,
             content_width,
         }
-    }
-
-    fn gutter(&self, theme: Theme) -> String {
-        color(theme, "border", &self.spec.border.vertical.to_string())
     }
 
     fn marker(&self, marker: &str, theme: Theme) -> String {
@@ -3022,8 +3044,6 @@ fn render_indexed_list(list: &IndexedList, frame: Frame, theme: Theme) -> String
             let marker = list.style.marker(index, item_count);
             let marker = layout.marker(&marker, theme);
             let continuation = layout.continuation();
-            let gutter = layout.gutter(theme);
-
             wrap_text(item, layout.content_width)
                 .into_iter()
                 .enumerate()
@@ -3034,7 +3054,7 @@ fn render_indexed_list(list: &IndexedList, frame: Frame, theme: Theme) -> String
                         continuation.clone()
                     };
                     format!(
-                        "{marker} {gutter} {}",
+                        "{marker} {}",
                         color(theme, role_for(&line, "accent"), &line)
                     )
                 })
@@ -3042,7 +3062,7 @@ fn render_indexed_list(list: &IndexedList, frame: Frame, theme: Theme) -> String
                 .join("\n")
         })
         .collect::<Vec<_>>()
-        .join("\n\n")
+        .join("\n")
 }
 
 fn progress_percent(response: &str) -> usize {
@@ -3401,6 +3421,43 @@ fn attention_callout(profile: &Profile, response: &str, width: usize) -> String 
     )
 }
 
+fn notion_toggle(profile: &Profile, summary: &str, width: usize) -> String {
+    let rows = vec![vec![
+        "▸ 핵심 접기".to_string(),
+        compact(summary, 2),
+        "펼침".to_string(),
+    ]];
+    table(
+        &["Toggle", "요약", "용도"],
+        &rows,
+        profile.frame,
+        profile.theme,
+        true,
+        width,
+    )
+}
+
+fn notion_quote(profile: &Profile, summary: &str, width: usize) -> String {
+    let quote = compact(summary, 1);
+    let prefix_width = 2;
+    let available = width.saturating_sub(prefix_width).max(1);
+    wrap_text(&quote, available)
+        .into_iter()
+        .map(|line| {
+            format!(
+                "{} {}",
+                color(profile.theme, "border", "│"),
+                color(profile.theme, "accent", &line)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn notion_divider(profile: &Profile, width: usize) -> String {
+    color(profile.theme, "border", &"─".repeat(width.clamp(1, 120)))
+}
+
 fn ux_component_output(
     component: UxComponent,
     profile: &Profile,
@@ -3410,6 +3467,9 @@ fn ux_component_output(
 ) -> String {
     match component {
         UxComponent::StatusBadge => status_badge(profile, response),
+        UxComponent::Toggle => notion_toggle(profile, summary, width),
+        UxComponent::Quote => notion_quote(profile, summary, width),
+        UxComponent::Divider => notion_divider(profile, width),
         UxComponent::Checklist => checklist(profile, summary, width),
         UxComponent::RiskPanel => risk_panel(profile, response, width),
         UxComponent::ConfidenceMeter => confidence_meter(profile, response, width),
@@ -5269,14 +5329,14 @@ Default answer style:
 - Use semantic ANSI colors for labels, risks, success states, artifact names, commands, paths, and next actions when the terminal supports color.
 - Use ANSI terminal color by default when Codexplain config asks for `defaultColorOutput: ansi`; for Codex CLI chat output, prefer real ANSI text color over emoji chips or raw HTML spans.
 - Respect explanationDepth light/standard/deep, architectureDepth overview/system/internals, and abstractionLevel concrete/architecture/strategy.
-- Select renderers dynamically: TLDR prose, progress, tables, flow diagrams, pros/cons, formula boxes, status badges, checklists, risk panels, confidence meters, decision matrices, ETA strips, callouts, and next-action footers.
+- Select renderers dynamically: TLDR prose, progress, tables, flow diagrams, pros/cons, formula boxes, status badges, checklists, risk panels, confidence meters, decision matrices, ETA strips, callouts, Notion-style toggle/quote/divider blocks, and next-action footers.
 - When Codexplain is ON in Codex CLI, highlight important terms with sparse semantic ANSI colors. Emojis may be used only as light explanatory supplements, not as the color system.
 - Treat UX blocks like tool choices: combine the smallest useful set from prompt, response, profile, and optional planner hints.
-- Split explanations by semantic units with active line breaks. If the answer says "two paths", "두 가지", "과정", or "단계", render them as 1. 2. 3. numbered sections instead of one dense paragraph, and leave a blank line between numbered items.
+- Split explanations by semantic units with active line breaks. If the answer says "two paths", "두 가지", "과정", or "단계", render them as compact 1. 2. 3. numbered sections. Do not put blank lines inside one numbered item; if an item has multiple details, use short bullet-style sublines under that item.
 - Architecture, flow, and expansion diagrams should prefer Codexplain renderer-owned boxes before prose. Use a table only when it adds a compact role/decision summary.
 - Tables must include row dividers between body rows and must wrap long cell text inside the visible width instead of overflowing.
 - Do not hand-draw long Unicode tables from raw model text. If a cell may exceed the terminal width, use Codexplain's width-safe renderer output, a Markdown table, or short per-item boxes so every cell is filled and padded by visible width.
-- Process answers should use short numbered sections, with one idea per paragraph and blank lines between sections.
+- Process answers should use short numbered sections, with one idea per item and bullet-style sublines for multiple details.
 - Keep commands, paths, risks, test evidence, and exact technical facts intact.
 - Do not continue an Ouroboros evolve/ralph lineage if drift is detected. Restart with an explicit project-local Seed.
 
@@ -5434,14 +5494,14 @@ Apply Codexplain's explanation UX globally unless a repository provides stricter
 Default answer style:
 - Preserve exact JSON, code, diffs, patches, logs, test output, and commit messages.
 - For explanatory answers, prefer Korean when the user writes Korean.
-- Use TLDR, Unicode tables, flow diagrams, pros/cons, formula boxes, progress UI, and next actions when they improve scanning.
+- Use TLDR, Unicode tables, flow diagrams, pros/cons, formula boxes, progress UI, Notion-style toggle/quote/divider blocks, and next actions when they improve scanning.
 - Prefer Markdown-safe chat highlights in chat hosts; use ANSI terminal colors in terminal hosts; fall back to plain text when exact formatting matters.
 - Avoid hand-drawn long raw box tables that can overflow narrow terminals; prefer width-safe renderer output or Markdown tables. If Unicode boxes are used, every body row must be wrapped, padded, and separated by the renderer contract.
 - Avoid hand-drawn architecture, flow, or expansion diagrams when labels may wrap; prefer renderer-owned boxes so connectors, arrows, and branch labels remain aligned.
 - Collapse verbose Explored/Ran/Read transcripts into macro progress phases before details.
-- Split "two paths", "두 가지", "과정", and "단계" explanations into numbered sections with active blank lines between items.
+- Split "two paths", "두 가지", "과정", and "단계" explanations into compact numbered sections without blank lines inside an item.
 - Architecture explanations should use boxed components and flow boxes before prose; tables should show row dividers and wrap long cells; flow diagrams should keep arrows and branches inside the requested width.
-- Process answers should use short numbered sections, with one idea per paragraph and blank lines between sections.
+- Process answers should use short numbered sections, with one idea per item and bullet-style sublines for multiple details.
 - Keep technical facts, commands, file paths, risks, and test evidence intact.
 <!-- CODEXPLAIN:END -->"#;
 
@@ -6115,7 +6175,7 @@ fn quality_report(width: usize) -> QualityReport {
         .lines()
         .filter(|line| visible_width(line) > width)
         .count();
-    let numbered_sections = ["1. │", "2. │", "01. │", "02. │", "a. │", "b. │"]
+    let numbered_sections = ["1. ", "2. ", "01. ", "02. ", "a. ", "b. "]
         .iter()
         .filter(|needle| numbered.contains(**needle))
         .count();
@@ -6805,8 +6865,8 @@ mod tests {
             },
             80,
         );
-        assert!(output.contains("1. │"));
-        assert!(output.contains("2. │"));
+        assert!(output.contains("1. 첫째입니다"));
+        assert!(output.contains("2. 둘째입니다"));
     }
 
     #[test]
@@ -6825,19 +6885,12 @@ mod tests {
 
         assert_eq!(
             output,
-            [
-                "1. │ 첫 번째 설명",
-                "",
-                "2. │ 두 번째 설명",
-                "",
-                "3. │ 세 번째 설명",
-            ]
-            .join("\n")
+            ["1. 첫 번째 설명", "2. 두 번째 설명", "3. 세 번째 설명",].join("\n")
         );
     }
 
     #[test]
-    fn indexed_list_adds_blank_lines_between_semantic_items() {
+    fn indexed_list_keeps_numbered_items_compact_and_uses_wrapped_continuations() {
         let output = indexed(
             &[
                 "첫 번째 원인과 결과".to_string(),
@@ -6850,9 +6903,75 @@ mod tests {
         );
 
         assert!(
-            output.contains("첫 번째 원인과 결과\n\n2. │ 두 번째 대안과 한계"),
+            output.contains("첫 번째 원인과 결과\n2. 두 번째 대안과 한계"),
             "{output}"
         );
+        assert!(!output.contains("\n\n2. "), "{output}");
+    }
+
+    #[test]
+    fn notion_style_components_parse_and_select_from_english_and_korean_hints() {
+        assert_eq!(parse_ux_component("toggle"), Some(UxComponent::Toggle));
+        assert_eq!(parse_ux_component("quote"), Some(UxComponent::Quote));
+        assert_eq!(parse_ux_component("divider"), Some(UxComponent::Divider));
+
+        let profile = Profile {
+            ux_density: 50,
+            ..Profile::default()
+        };
+        let components = requested_ux_components(
+            "노션처럼 토글, 인용, 구분선으로 설명해줘",
+            "핵심은 renderer-owned block입니다.",
+            &profile,
+        );
+
+        assert!(components.contains(&UxComponent::Toggle), "{components:?}");
+        assert!(components.contains(&UxComponent::Quote), "{components:?}");
+        assert!(components.contains(&UxComponent::Divider), "{components:?}");
+    }
+
+    #[test]
+    fn notion_style_blocks_render_width_safe_static_terminal_output() {
+        let profile = Profile {
+            theme: Theme::None,
+            ..Profile::default()
+        };
+        let summary = "Codexplain은 Notion식 블록을 정적 터미널 출력으로 바꿔 긴 설명을 접힌 요약, 인용, 구분선으로 나눕니다.";
+
+        let toggle = notion_toggle(&profile, summary, 54);
+        let quote = notion_quote(&profile, summary, 54);
+        let divider = notion_divider(&profile, 12);
+        let narrow_quote = notion_quote(&profile, "abcdefghijklmnopqrstuvwxyz", 12);
+
+        assert!(toggle.contains("▸ 핵심 접기"), "{toggle}");
+        assert!(quote.lines().all(|line| line.starts_with("│ ")), "{quote}");
+        assert_eq!(visible_width(&divider), 12);
+        assert_visible_lines_fit(&toggle, 54);
+        assert_visible_lines_fit(&quote, 54);
+        assert_visible_lines_fit(&divider, 12);
+        assert_visible_lines_fit(&narrow_quote, 12);
+    }
+
+    #[test]
+    fn rich_ux_prompt_can_compose_notion_blocks_without_replacing_main_renderer() {
+        let profile = Profile {
+            theme: Theme::None,
+            ux_density: 80,
+            ..Profile::default()
+        };
+        let output = shape(
+            "아키텍처를 표와 흐름도로 설명하고 notion UX도 모두 넣어줘",
+            "Codexplain은 Rust renderer와 project-local adapter로 설명 UX를 개선합니다.",
+            &profile,
+            88,
+        );
+
+        assert!(output.contains("Input Gateway"), "{output}");
+        assert!(output.contains("Prompt Input"), "{output}");
+        assert!(output.contains("▸ 핵심 접기"), "{output}");
+        assert!(output.contains("│ Codexplain은 Rust renderer"), "{output}");
+        assert!(output.contains("────"), "{output}");
+        assert_visible_lines_fit(&output, 88);
     }
 
     #[test]
@@ -6867,8 +6986,8 @@ mod tests {
         let lines = output.lines().collect::<Vec<_>>();
 
         assert!(lines.len() > 1, "{output}");
-        assert!(lines[0].starts_with("1. │ "));
-        assert!(lines[1].starts_with("   │ "));
+        assert!(lines[0].starts_with("1. "));
+        assert!(lines[1].starts_with("   "));
         assert_visible_lines_fit(&output, 18);
     }
 
@@ -6905,17 +7024,17 @@ mod tests {
             IndexStyle::RomanLower,
         );
 
-        assert!(zero_padded.contains("01. │ item1"));
-        assert!(zero_padded.contains("12. │ item12"));
-        assert!(alpha.contains(" A. │ item1"));
-        assert!(alpha.contains(" Z. │ item26"));
-        assert!(alpha.contains("AA. │ item27"));
-        assert!(roman.contains("  i. │ one"));
-        assert!(roman.contains(" iv. │ four"));
+        assert!(zero_padded.contains("01. item1"));
+        assert!(zero_padded.contains("12. item12"));
+        assert!(alpha.contains(" A. item1"));
+        assert!(alpha.contains(" Z. item26"));
+        assert!(alpha.contains("AA. item27"));
+        assert!(roman.contains("  i. one"));
+        assert!(roman.contains(" iv. four"));
     }
 
     #[test]
-    fn indexed_list_uses_ascii_gutter_when_requested() {
+    fn indexed_list_uses_plain_numbering_even_with_ascii_frame() {
         let output = indexed(
             &["first".to_string(), "second".to_string()],
             Frame::Ascii,
@@ -6924,8 +7043,9 @@ mod tests {
             IndexStyle::Decimal,
         );
 
-        assert!(output.contains("1. | first"));
-        assert!(output.contains("2. | second"));
+        assert!(output.contains("1. first"));
+        assert!(output.contains("2. second"));
+        assert!(!output.contains('|'));
         assert!(!output.contains('│'));
     }
 
@@ -7292,7 +7412,7 @@ after
         for glyph in ['┌', '┬', '┐', '│', '├', '┼', '┤', '└', '┴', '┘'] {
             assert!(combined.contains(glyph), "missing connected glyph {glyph}");
         }
-        assert!(combined.contains("1. │"));
+        assert!(combined.contains("1. 첫 번째 설명"));
         assert!(!combined.contains("----"));
         assert!(!combined.contains("===="));
         assert!(!combined.contains("ㅡㅡㅡㅡ"));
@@ -8592,8 +8712,8 @@ after
             (
                 "1,2,3 번호 목록으로 설명",
                 RendererKind::IndexedList,
-                "1. │ 작업 완료",
-                "2. │ 검증 완료",
+                "1. 작업 완료",
+                "2. 검증 완료",
             ),
             (
                 "처리 흐름을 보여줘",
@@ -8644,8 +8764,8 @@ after
             80,
         );
 
-        assert!(output.contains("1. │ codexplain shape/post-response"));
-        assert!(output.contains("2. │ codexplain codex --local-shape"));
+        assert!(output.contains("1. codexplain shape/post-response"));
+        assert!(output.contains("2. codexplain codex --local-shape"));
         assert!(
             !output.contains("실행 흐름은 크게 두 가지입니다."),
             "intro sentence should not consume a numbered slot: {output}"
@@ -8947,7 +9067,7 @@ after
         let cases = [
             (ExplanationIntent::Comparison, "JS / Node"),
             (ExplanationIntent::DecisionRule, "핵심식 : 설명 품질 = f"),
-            (ExplanationIntent::OrderedSteps, "1. │ 첫째입니다"),
+            (ExplanationIntent::OrderedSteps, "1. 첫째입니다"),
             (ExplanationIntent::CauseEffectReport, "원인"),
             (ExplanationIntent::ProcessFlow, "▼"),
             (ExplanationIntent::StructuredSummary, "┌"),

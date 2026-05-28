@@ -257,8 +257,11 @@ The result should be:
 - Dynamic renderer selection: TLDR prose, progress reports, table, flow,
   pros/cons panels, cause-effect reports, numbered index lists, formula boxes,
   and richer status UX components when they help scanning.
-- Numbered index lists keep a blank line between semantic items so multi-step
-  explanations do not collapse into a dense block.
+- Notion-style static blocks: toggle-style summaries, quote bars, dividers,
+  callouts, and checklists can be composed as supplemental UX blocks without
+  replacing the primary renderer.
+- Numbered index lists stay compact; when one numbered item needs multiple
+  details, use bullet-style sublines instead of blank lines inside the item.
 - Compositional renderer selection: when a prompt asks for architecture,
   tradeoffs, and formulas together, Codexplain can combine table/flow context,
   pros/cons comparison, and formula boxes instead of choosing only the first
