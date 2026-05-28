@@ -102,6 +102,18 @@ Open the dependency-free Rust settings UI:
 codexplain settings-ui
 ```
 
+Use the status-bar control surface directly:
+
+```bash
+codexplain statusbar status
+codexplain statusbar on
+codexplain statusbar set --expression-mode concept --architecture-depth internals --theme forest
+codexplain statusbar off
+```
+
+`statusbar on/off` calls the same project-local install/uninstall path as the
+CLI. It does not touch unrelated global Codex settings.
+
 Install lightweight launchers for macOS, Linux, and Windows under
 `.codexplain/app`:
 

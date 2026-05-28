@@ -4844,8 +4844,16 @@ fn styles_dir() -> PathBuf {
 }
 
 fn load_profile() -> Profile {
+    load_profile_from_path(&profile_path())
+}
+
+fn load_profile_at(root: &Path) -> Profile {
+    load_profile_from_path(&root.join(".codexplain/ux-profile.json"))
+}
+
+fn load_profile_from_path(path: &Path) -> Profile {
     let mut profile = Profile::default();
-    if let Ok(raw) = fs::read_to_string(profile_path()) {
+    if let Ok(raw) = fs::read_to_string(path) {
         profile.theme = Theme::parse(extract_json_string(&raw, "theme").as_deref());
         profile.frame = Frame::parse(extract_json_string(&raw, "frame").as_deref());
         profile.index_style = IndexStyle::parse(extract_json_string(&raw, "indexStyle").as_deref());
@@ -4978,9 +4986,14 @@ fn load_profile_for_args(args: &[String]) -> Profile {
 }
 
 fn save_profile(profile: &Profile) -> io::Result<()> {
-    fs::create_dir_all(project_path(".codexplain"))?;
+    save_profile_at(&project_path("."), profile)
+}
+
+fn save_profile_at(root: &Path, profile: &Profile) -> io::Result<()> {
+    let codexplain_dir = root.join(".codexplain");
+    fs::create_dir_all(&codexplain_dir)?;
     fs::write(
-        profile_path(),
+        codexplain_dir.join("ux-profile.json"),
         format!(
             concat!(
                 "{{\n",
@@ -5182,9 +5195,19 @@ fn patched_codex_status() -> String {
 }
 
 fn write_color_config(default_output: &str, chat_output: &str, tui_output: &str) -> io::Result<()> {
-    fs::create_dir_all(project_path(".codexplain"))?;
+    write_color_config_at(&project_path("."), default_output, chat_output, tui_output)
+}
+
+fn write_color_config_at(
+    root: &Path,
+    default_output: &str,
+    chat_output: &str,
+    tui_output: &str,
+) -> io::Result<()> {
+    let codexplain_dir = root.join(".codexplain");
+    fs::create_dir_all(&codexplain_dir)?;
     fs::write(
-        config_path(),
+        codexplain_dir.join("config.json"),
         local_config_json(default_output, chat_output, tui_output),
     )
 }
@@ -5981,6 +6004,17 @@ codexplain color off
 codexplain color status
 ```
 
+Open the project-local status control surface or install local app launchers:
+
+```bash
+codexplain statusbar status
+codexplain install-app
+```
+
+`codexplain statusbar on|off|set` controls power, theme, color output,
+expression mode, and the three explanation depth levels without touching
+unrelated global Codex settings.
+
 Validate project-local OMX/harness compatibility without mutating settings:
 
 ```bash
@@ -6185,6 +6219,10 @@ fn print_session_activation_hint() {
 
 fn install_local_codex_project() -> io::Result<()> {
     let root = project_path(".");
+    install_local_codex_project_at(&root)
+}
+
+fn install_local_codex_project_at(root: &Path) -> io::Result<()> {
     let codexplain_dir = root.join(".codexplain");
     let codexplain_bin_dir = codexplain_dir.join("bin");
     fs::create_dir_all(&codexplain_dir)?;
@@ -6262,6 +6300,10 @@ fn uninstall_codex_project(args: &[String]) -> io::Result<()> {
 
 fn uninstall_local_codex_project(remove_profile: bool) -> io::Result<()> {
     let root = project_path(".");
+    uninstall_local_codex_project_at(&root, remove_profile)
+}
+
+fn uninstall_local_codex_project_at(root: &Path, remove_profile: bool) -> io::Result<()> {
     let agents_path = root.join("AGENTS.md");
     remove_guidance_file_block(&agents_path)?;
 
@@ -7059,6 +7101,191 @@ fn settings_ui() -> io::Result<()> {
     Ok(())
 }
 
+fn statusbar_control(args: &[String]) -> io::Result<()> {
+    let action = args.get(1).map(String::as_str).unwrap_or("status");
+    match action {
+        "status" | "--show" | "show" => {
+            print_statusbar_state();
+        }
+        "on" | "enable" => {
+            let root = trusted_statusbar_project_root();
+            install_local_codex_project_at(&root)?;
+            write_color_config_at(&root, "ansi", "ansi", "full")?;
+            println!("statusbar=on");
+            print_statusbar_state_at(&root);
+        }
+        "off" | "disable" | "restore" => {
+            let root = trusted_statusbar_project_root();
+            uninstall_local_codex_project_at(&root, false)?;
+            println!("statusbar=off");
+            print_statusbar_state_at(&root);
+        }
+        "set" | "profile" => {
+            let root = trusted_statusbar_project_root();
+            let mut profile = load_profile_at(&root);
+            apply_statusbar_profile_args(args, &mut profile)?;
+            save_profile_at(&root, &profile)?;
+            if let Some(color) = arg_value(args, "--color-output") {
+                apply_statusbar_color_output_at(&root, color)?;
+            }
+            println!("statusbar=updated");
+            print_statusbar_state_at(&root);
+        }
+        other => {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("unknown statusbar action: {other}"),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn trusted_statusbar_project_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+}
+
+fn print_statusbar_state() {
+    let root = project_path(".");
+    print_statusbar_state_at(&root);
+}
+
+fn print_statusbar_state_at(root: &Path) {
+    let profile = load_profile_at(root);
+    let rows = statusbar_state_rows_at(&profile, root);
+    println!(
+        "{}",
+        table(
+            &["Control", "Value", "Scope"],
+            &rows,
+            profile.frame,
+            profile.theme,
+            true,
+            88,
+        )
+    );
+    println!("actions=codexplain statusbar on|off|set");
+}
+
+fn statusbar_state_rows(profile: &Profile) -> Vec<Vec<String>> {
+    statusbar_state_rows_at(profile, &project_path("."))
+}
+
+fn statusbar_state_rows_at(profile: &Profile, root: &Path) -> Vec<Vec<String>> {
+    vec![
+        vec![
+            "Power".to_string(),
+            if project_local_adapter_present_at(root) {
+                "on".to_string()
+            } else {
+                "off".to_string()
+            },
+            "project-local".to_string(),
+        ],
+        vec![
+            "Explanation".to_string(),
+            profile.explanation_depth.clone(),
+            "light/standard/deep".to_string(),
+        ],
+        vec![
+            "Architecture".to_string(),
+            profile.architecture_depth.clone(),
+            "overview/system/internals".to_string(),
+        ],
+        vec![
+            "Abstraction".to_string(),
+            profile.abstraction_level.clone(),
+            "concrete/architecture/strategy".to_string(),
+        ],
+        vec![
+            "Expression".to_string(),
+            expression_mode(profile).to_string(),
+            "code/concept/metaphor".to_string(),
+        ],
+        vec![
+            "Theme".to_string(),
+            profile.theme.name().to_string(),
+            "profile".to_string(),
+        ],
+    ]
+}
+
+fn project_local_adapter_present() -> bool {
+    project_local_adapter_present_at(&project_path("."))
+}
+
+fn project_local_adapter_present_at(root: &Path) -> bool {
+    root.join(".codexplain/bin/codex").exists() && root.join(".codexplain/activate").exists()
+}
+
+fn expression_mode(profile: &Profile) -> &'static str {
+    match profile.style.as_str() {
+        "metaphorical" | "metaphor" | "비유" => "metaphor",
+        "conceptual" | "concept" | "개념" => "concept",
+        _ => "code",
+    }
+}
+
+fn apply_statusbar_profile_args(args: &[String], profile: &mut Profile) -> io::Result<()> {
+    if let Some(theme) = arg_value(args, "--theme") {
+        profile.theme = Theme::parse(Some(theme));
+    }
+    if let Some(value) = arg_value(args, "--explanation-depth") {
+        profile.explanation_depth = normalize_explanation_depth(value, &profile.explanation_depth);
+    }
+    if let Some(value) = arg_value(args, "--architecture-depth") {
+        profile.architecture_depth =
+            normalize_architecture_depth(value, &profile.architecture_depth);
+    }
+    if let Some(value) = arg_value(args, "--abstraction-level") {
+        profile.abstraction_level = normalize_abstraction_level(value, &profile.abstraction_level);
+    }
+    if let Some(value) = arg_value(args, "--expression-mode") {
+        apply_expression_mode(profile, value)?;
+    }
+    Ok(())
+}
+
+fn apply_expression_mode(profile: &mut Profile, value: &str) -> io::Result<()> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "code" | "code-based" | "technical" | "코드" | "기술" => {
+            profile.style = "technical".to_string();
+            profile.abstraction_level = "concrete".to_string();
+        }
+        "concept" | "conceptual" | "개념" => {
+            profile.style = "conceptual".to_string();
+            profile.abstraction_level = "architecture".to_string();
+        }
+        "metaphor" | "metaphorical" | "비유" => {
+            profile.style = "metaphorical".to_string();
+            profile.abstraction_level = "strategy".to_string();
+        }
+        other => {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("unknown expression mode: {other}"),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn apply_statusbar_color_output(value: &str) -> io::Result<()> {
+    apply_statusbar_color_output_at(&project_path("."), value)
+}
+
+fn apply_statusbar_color_output_at(root: &Path, value: &str) -> io::Result<()> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "ansi" | "terminal" | "color" => write_color_config_at(root, "ansi", "ansi", "full"),
+        "plain" | "none" | "off" => write_color_config_at(root, "plain", "plain", "off"),
+        "html" | "html-chat" | "chat" => write_color_config_at(root, "html", "html", "full"),
+        other => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("unknown color output: {other}"),
+        )),
+    }
+}
+
 fn prompt_choice(label: &str, current: &str, options: &[&str]) -> io::Result<Option<String>> {
     print!("{label} [{current}] options={} > ", options.join("/"));
     io::stdout().flush()?;
@@ -7082,6 +7309,7 @@ fn install_app_launchers() -> io::Result<()> {
     let root = env::current_dir()?;
     let bin = root.join("bin/codexplain");
     let mac = app_dir.join("Codexplain Settings.command");
+    let mac_statusbar = app_dir.join("Codexplain Status Bar.command");
     let linux = app_dir.join("codexplain-settings.desktop");
     let windows = app_dir.join("codexplain-settings.cmd");
 
@@ -7094,6 +7322,15 @@ fn install_app_launchers() -> io::Result<()> {
         ),
     )?;
     set_executable(&mac)?;
+    fs::write(
+        &mac_statusbar,
+        format!(
+            "#!/usr/bin/env sh\ncd '{}'\nexec '{}' statusbar status\n",
+            shell_single_quote(&root.display().to_string()),
+            shell_single_quote(&bin.display().to_string())
+        ),
+    )?;
+    set_executable(&mac_statusbar)?;
     fs::write(
         &linux,
         format!(
@@ -7111,6 +7348,7 @@ fn install_app_launchers() -> io::Result<()> {
     )?;
     println!("installed={}", app_dir.display());
     println!("mac={}", mac.display());
+    println!("mac_statusbar={}", mac_statusbar.display());
     println!("linux={}", linux.display());
     println!("windows={}", windows.display());
     Ok(())
@@ -7136,6 +7374,7 @@ fn usage() -> &'static str {
   codexplain profile --show|--theme <name>|--frame <unicode|ascii|fallback|auto>|--index-style <style>|--detail <level>
   codexplain profile --explanation-depth <light|standard|deep>|--architecture-depth <overview|system|internals>|--abstraction-level <concrete|architecture|strategy>
   codexplain profile --detail-scale <0-100>|--ux-density <0-100>|--risk-sensitivity <0-100>
+  codexplain statusbar status|on|off|set [--explanation-depth <level>] [--architecture-depth <level>] [--abstraction-level <level>] [--expression-mode <code|concept|metaphor>] [--theme <name>] [--color-output <ansi|plain|html-chat>]
   codexplain settings-ui
   codexplain install-app
   codexplain compat-check
@@ -7164,6 +7403,7 @@ Scopes: --project/--local writes only this repository's managed Codexplain files
 Color toggle: `codexplain color on` forces ANSI text color for Codexplain-shaped exec/review output and best-effort Codex TUI color env; `codexplain color off` restores plain output.
 TUI assistant color: `codexplain tui-color on` enables project-local full assistant-message color when a patched Codex binary exists under .codexplain/state/codex-upstream/codex-rs/target/release/codex or target/debug/codex; `off` disables only that hook.
 TUI adapter: `codexplain tui-adapter status` reports project-local shim path, mode, active binary/fallback, patched binary status, rollback, and cleanup instructions.
+Status bar control: `codexplain statusbar` is the Rust control surface used by local app launchers. It toggles only project-local Codexplain files, updates profile/config controls, and leaves unrelated global Codex settings untouched.
 Settings UI: `codexplain settings-ui` opens a dependency-free Rust terminal UI for theme, frame, depth, abstraction, UX density, and color mode; `codexplain install-app` writes lightweight macOS/Linux/Windows launchers under .codexplain/app.
 Compatibility gate: `codexplain compat-check` validates project-local OMX/harness safety, managed on/off scopes, strict artifact preservation, ignored harness state, and width-safe renderer contracts.
 Quality gate: `codexplain quality-check --width 88` fails if generated output overflows, table body row dividers disappear, architecture boxes overflow or are too sparse, flow arrows/connectors break, expansion diagrams overflow, or two-path explanations are not numbered.
@@ -7311,6 +7551,12 @@ fn main() {
                 std::process::exit(1);
             }
             print_profile(&profile);
+        }
+        "statusbar" => {
+            if let Err(error) = statusbar_control(&args) {
+                eprintln!("failed to run Codexplain statusbar control: {error}");
+                std::process::exit(1);
+            }
         }
         "settings-ui" => {
             if let Err(error) = settings_ui() {
@@ -8028,6 +8274,95 @@ after
 
         assert_eq!(shape("valid JSON만 출력", json, &profile, 88), json);
         assert!(quality_report(88).passed());
+    }
+
+    #[test]
+    fn statusbar_control_surface_exposes_project_local_depth_and_expression_controls() {
+        assert!(usage().contains("codexplain statusbar status|on|off|set"));
+        assert!(usage().contains("--expression-mode <code|concept|metaphor>"));
+        assert!(LOCAL_README.contains("codexplain statusbar status"));
+        assert!(LOCAL_README.contains("project-local status control surface"));
+
+        let mut profile = Profile::default();
+        apply_expression_mode(&mut profile, "metaphor").unwrap();
+        assert_eq!(profile.style, "metaphorical");
+        assert_eq!(profile.abstraction_level, "strategy");
+        assert_eq!(expression_mode(&profile), "metaphor");
+
+        apply_statusbar_profile_args(
+            &[
+                "statusbar".to_string(),
+                "set".to_string(),
+                "--explanation-depth".to_string(),
+                "light".to_string(),
+                "--architecture-depth".to_string(),
+                "internals".to_string(),
+                "--abstraction-level".to_string(),
+                "concrete".to_string(),
+                "--theme".to_string(),
+                "forest".to_string(),
+            ],
+            &mut profile,
+        )
+        .unwrap();
+
+        assert_eq!(profile.explanation_depth, "light");
+        assert_eq!(profile.architecture_depth, "internals");
+        assert_eq!(profile.abstraction_level, "concrete");
+        assert_eq!(profile.theme, Theme::Forest);
+
+        let rows = statusbar_state_rows(&profile);
+        let controls: Vec<&str> = rows.iter().map(|row| row[0].as_str()).collect();
+        assert_eq!(
+            controls,
+            vec![
+                "Power",
+                "Explanation",
+                "Architecture",
+                "Abstraction",
+                "Expression",
+                "Theme"
+            ]
+        );
+        assert!(rows
+            .iter()
+            .any(|row| row[0] == "Explanation" && row[1] == "light"));
+        assert!(rows
+            .iter()
+            .any(|row| row[0] == "Architecture" && row[1] == "internals"));
+        assert!(rows
+            .iter()
+            .any(|row| row[0] == "Abstraction" && row[1] == "concrete"));
+        assert!(rows
+            .iter()
+            .any(|row| row[0] == "Expression" && row[1] == "metaphor"));
+        assert!(rows
+            .iter()
+            .any(|row| row[0] == "Theme" && row[1] == "forest"));
+    }
+
+    #[test]
+    fn statusbar_write_controls_resolve_to_trusted_manifest_root() {
+        let root = trusted_statusbar_project_root();
+        assert_eq!(root, PathBuf::from(env!("CARGO_MANIFEST_DIR")));
+        assert!(
+            root.is_absolute(),
+            "statusbar trusted root must be absolute"
+        );
+        assert!(root.join("Cargo.toml").exists());
+        assert!(root.join("rust/codexplain.rs").exists());
+
+        let rows = statusbar_state_rows_at(&Profile::default(), &root);
+        assert!(rows
+            .iter()
+            .any(|row| row[0] == "Power" && row[2] == "project-local"));
+    }
+
+    #[test]
+    fn install_app_launchers_include_mac_statusbar_entry_without_second_renderer() {
+        assert!(usage().contains("Settings UI"));
+        assert!(usage().contains("Status bar control"));
+        assert!(LOCAL_README.contains("codexplain install-app"));
     }
 
     #[test]

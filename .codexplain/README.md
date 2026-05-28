@@ -43,9 +43,14 @@ codexplain color status
 Open the Rust-only settings UI or install local app launchers:
 
 ```bash
+codexplain statusbar status
 codexplain settings-ui
 codexplain install-app
 ```
+
+`codexplain statusbar on|off|set` is the project-local control surface for
+power, theme, color output, expression mode, and the three explanation depth
+levels.
 
 Validate project-local OMX/harness compatibility without mutating settings:
 
