@@ -32,6 +32,33 @@ recolor only assistant-message spans.
    reliable path for semantic multi-color assistant text because the renderer
    still has message structure before converting it into terminal cells.
 
+## Tracking split
+
+Issue #4 is the tracking/specification issue. It records the upstream/fork hook
+contract and validation checklist without cloning or patching upstream Codex.
+
+Issue #3 is the project-local adapter issue. It owns reversible shim behavior,
+patched-binary detection, and on/off routing in this repository.
+
+Future upstream or fork implementation should use
+[`upstream-codex-tui-style-hook.md`](upstream-codex-tui-style-hook.md) as the
+contract. The implementation can rename proposed Rust types, but it must keep
+the binding invariants.
+
+## Patched-binary detection
+
+Codexplain treats interactive TUI assistant color as available only when
+project-local routing can find an executable patched Codex binary in one of
+these locations:
+
+- `.codexplain/patched-codex/bin/codex`
+- `.codexplain/state/codex-upstream/codex-rs/target/release/codex`
+- `.codexplain/state/codex-upstream/codex-rs/target/debug/codex`
+
+If no patched binary exists, `codexplain tui-color status` must report that
+ordinary `exec`/`review` shaping can still work but interactive assistant-message
+recoloring requires the hook/fork path.
+
 ## Reversibility contract
 
 - `codexplain on --local` writes only project-managed files and blocks.
@@ -55,3 +82,17 @@ recolor only assistant-message spans.
   `codexplain build-clean --patched-codex`.
 - If semantic assistant color cannot be implemented externally, the issue must
   explicitly move the remaining work to a Codex TUI renderer hook/fork.
+
+## Upstream/fork validation checklist
+
+- Hook placement is before Ratatui `Line` or `Span` conversion.
+- Adapter input contains semantic roles, not ANSI strings scraped from terminal
+  frames.
+- `AdapterMode::Off` or equivalent restores default Codex styling.
+- Strict artifacts bypass coloring and remain exact.
+- No global Codex configuration is modified by project-local enable/disable.
+- Patched build cache remains removable with `codexplain build-clean
+  --patched-codex`.
+- Local regression remains green: `cargo fmt --check`, `cargo test`,
+  `cargo build --release`, `codexplain quality-check --width 88`, and
+  `codexplain storage-check --min-free-gb 5`.

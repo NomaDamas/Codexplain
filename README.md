@@ -210,6 +210,10 @@ cannot recolor those in-place widgets. Codexplain's `tui-color` hook solves this
 only when the project-local shim can route to a patched Codex binary under
 `.codexplain/state/codex-upstream/codex-rs/target/release/codex` or
 `.codexplain/state/codex-upstream/codex-rs/target/debug/codex`.
+The upstream/fork contract is tracked in
+[`docs/upstream-codex-tui-style-hook.md`](docs/upstream-codex-tui-style-hook.md),
+with adapter routing and validation notes in
+[`docs/codex-tui-adapter-roadmap.md`](docs/codex-tui-adapter-roadmap.md).
 
 Give feedback after an answer:
 
