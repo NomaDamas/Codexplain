@@ -270,6 +270,9 @@ The result should be:
 - Cause-effect questions as 원인/결과/대응 reports instead of unstructured prose.
 - Progress reports with a short status label above the bar, then a compact
   checkpoint table for current state, percentage, and next action.
+- Workflow progress blocks for development, harness, and user-defined workflows
+  with a shared schema: type, phase, percent, completed/current/next steps,
+  evidence, and trigger source.
 - Macro progress reports that collapse verbose `Explored` / `Ran` / `Read`
   transcripts into phase-level UX such as 탐색, 검색, 실행, 설정, 결론.
 - Tool-calling-like UX composition: status badges, checklists, risk panels,
@@ -306,6 +309,8 @@ Available visual components:
 
 - Status badge: shows running, blocked, done, or review-needed state.
 - Progress report: status text above a bar, followed by checkpoint details.
+- Workflow progress: shows development, harness, or custom workflow phase,
+  percent, completed/current/next steps, evidence, and trigger source.
 - Macro progress: turns micro tool-call transcripts into overall work phases.
 - Checklist: separates completed, current, and remaining work.
 - Risk panel: calls out hidden assumptions, failures, drift, or blockers.

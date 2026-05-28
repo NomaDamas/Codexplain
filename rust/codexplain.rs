@@ -275,6 +275,7 @@ struct CustomStyle {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum UxComponent {
     StatusBadge,
+    WorkflowProgress,
     Toggle,
     Quote,
     Divider,
@@ -902,6 +903,13 @@ const PROMPT_SIGNAL_MAP: &[PromptSignal] = &[
             "progress|progress bar|진행상황|진행 상황|진척|몇 퍼센트|percent|상태 보고|작업 상태|작업 로그|탐색 로그|transcript|전체적인|매크로|macro|프로세스",
     },
     PromptSignal {
+        renderer: RendererKind::Progress,
+        intent: ExplanationIntent::ProgressReport,
+        kind: PromptSignalKind::Keyword,
+        pattern:
+            "workflow|workflow progress|harness|progress block|개발 워크플로우|워크플로우|하네스|사용자 정의 워크플로우",
+    },
+    PromptSignal {
         renderer: RendererKind::TldrProse,
         intent: ExplanationIntent::StatusSummary,
         kind: PromptSignalKind::Keyword,
@@ -1040,6 +1048,9 @@ fn parse_ux_component(value: &str) -> Option<UxComponent> {
         .replace('_', "-");
     match text.as_str() {
         "badge" | "status" | "status-badge" | "state-badge" => Some(UxComponent::StatusBadge),
+        "workflow" | "workflow-progress" | "harness-progress" | "dev-progress" => {
+            Some(UxComponent::WorkflowProgress)
+        }
         "toggle" | "notion-toggle" | "fold" | "foldout" => Some(UxComponent::Toggle),
         "quote" | "blockquote" | "notion-quote" => Some(UxComponent::Quote),
         "divider" | "separator" | "section-line" => Some(UxComponent::Divider),
@@ -1140,6 +1151,17 @@ fn requested_ux_components(prompt: &str, response: &str, profile: &Profile) -> V
         add_component_score(&mut scores, UxComponent::StatusBadge, explicit_score);
     }
     if full_kit
+        || text.contains("workflow")
+        || text.contains("harness")
+        || text.contains("progress block")
+        || prompt.contains("워크플로우")
+        || prompt.contains("하네스")
+        || prompt.contains("개발")
+        || prompt.contains("사용자 정의 워크플로우")
+    {
+        add_component_score(&mut scores, UxComponent::WorkflowProgress, explicit_score);
+    }
+    if full_kit
         || text.contains("checklist")
         || prompt.contains("체크리스트")
         || prompt.contains("완료 항목")
@@ -1228,6 +1250,7 @@ fn requested_ux_components(prompt: &str, response: &str, profile: &Profile) -> V
     if renderer_signal_present(prompt, RendererKind::Progress) {
         let progress_score = 45 + (profile.ux_density as i32 / 2);
         add_component_score(&mut scores, UxComponent::StatusBadge, progress_score);
+        add_component_score(&mut scores, UxComponent::WorkflowProgress, progress_score);
         add_component_score(&mut scores, UxComponent::Checklist, progress_score);
         add_component_score(&mut scores, UxComponent::NextAction, progress_score);
     }
@@ -3186,7 +3209,93 @@ fn macro_progress_rows(response: &str) -> Option<Vec<Vec<String>>> {
     Some(rows)
 }
 
-fn progress_report(profile: &Profile, response: &str, summary: &str, width: usize) -> String {
+fn shared_workflow_fields_present(fields: &SharedWorkflowProgressFields) -> bool {
+    fields.workflow_type.is_some()
+        || fields.phase_label.is_some()
+        || fields.progress_percent.is_some()
+        || fields.completed_step.is_some()
+        || fields.current_step.is_some()
+        || fields.next_step.is_some()
+        || fields.next_action.is_some()
+        || !fields.evidence.is_empty()
+        || fields.trigger_source.is_some()
+}
+
+fn workflow_progress_context(prompt: &str, response: &str) -> bool {
+    let fields = shared_workflow_progress_fields(prompt, response);
+    if shared_workflow_fields_present(&fields) {
+        return true;
+    }
+
+    let text = format!("{prompt} {response}").to_ascii_lowercase();
+    text.contains("workflow")
+        || text.contains("harness")
+        || text.contains("progress block")
+        || prompt.contains("워크플로우")
+        || prompt.contains("하네스")
+        || prompt.contains("사용자 정의 워크플로우")
+}
+
+fn workflow_progress_rows(model: &WorkflowProgressBlock) -> Vec<Vec<String>> {
+    let evidence = if model.evidence.is_empty() {
+        "증거 없음".to_string()
+    } else {
+        model.evidence.join("; ")
+    };
+    vec![
+        vec!["유형".to_string(), model.workflow_type.clone()],
+        vec!["단계".to_string(), model.phase_label.clone()],
+        vec![
+            "진척".to_string(),
+            format!("매크로 {}%", model.progress_percent),
+        ],
+        vec!["막대".to_string(), model.progress_bar.clone()],
+        vec!["완료".to_string(), model.completed_step.clone()],
+        vec!["현재".to_string(), model.current_step.clone()],
+        vec!["다음".to_string(), model.next_step.clone()],
+        vec!["행동".to_string(), model.next_action.clone()],
+        vec!["근거".to_string(), evidence],
+        vec!["트리거".to_string(), model.trigger_source.clone()],
+    ]
+}
+
+fn progress_report(
+    profile: &Profile,
+    prompt: &str,
+    response: &str,
+    summary: &str,
+    width: usize,
+) -> String {
+    if workflow_progress_context(prompt, response) {
+        let bar_width = width.saturating_sub(18).min(34).max(12);
+        let model = workflow_progress_model_with_bar(
+            prompt,
+            response,
+            summary,
+            bar_width,
+            profile.frame,
+            profile.theme,
+        );
+        let status = progress_label(model.progress_percent);
+        let headline = format!(
+            "{}{}",
+            color(profile.theme, "heading", "진행상황: "),
+            color(profile.theme, role_for(status, "accent"), status)
+        );
+        return format!(
+            "{headline}\n{}\n\n{}",
+            model.progress_bar,
+            table(
+                &["항목", "값"],
+                &workflow_progress_rows(&model),
+                profile.frame,
+                profile.theme,
+                true,
+                width,
+            )
+        );
+    }
+
     let percent = progress_percent(response);
     let status = progress_label(percent);
     let bar_width = width.saturating_sub(18).min(36).max(12);
@@ -3458,15 +3567,433 @@ fn notion_divider(profile: &Profile, width: usize) -> String {
     color(profile.theme, "border", &"─".repeat(width.clamp(1, 120)))
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct WorkflowProgressBlock {
+    workflow_type: String,
+    phase_label: String,
+    progress_percent: usize,
+    progress_bar: String,
+    completed_step: String,
+    current_step: String,
+    next_step: String,
+    next_action: String,
+    evidence: Vec<String>,
+    trigger_source: String,
+    strict_artifact_bypass: bool,
+}
+
+#[cfg(test)]
+const DEFAULT_WORKFLOW_PROGRESS_BAR_WIDTH: usize = 24;
+const WORKFLOW_PROGRESS_HINT_ENVS: &[&str] = &[
+    "CODEXPLAIN_WORKFLOW_PROGRESS",
+    "CODEXPLAIN_WORKFLOW_PROGRESS_HINTS",
+    "CLAUDEX_WORKFLOW_PROGRESS",
+];
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct SharedWorkflowProgressFields {
+    workflow_type: Option<String>,
+    phase_label: Option<String>,
+    progress_percent: Option<usize>,
+    completed_step: Option<String>,
+    current_step: Option<String>,
+    next_step: Option<String>,
+    next_action: Option<String>,
+    evidence: Vec<String>,
+    trigger_source: Option<String>,
+}
+
+impl SharedWorkflowProgressFields {
+    fn merge_missing(&mut self, other: Self) {
+        self.workflow_type = self.workflow_type.take().or(other.workflow_type);
+        self.phase_label = self.phase_label.take().or(other.phase_label);
+        self.progress_percent = self.progress_percent.or(other.progress_percent);
+        self.completed_step = self.completed_step.take().or(other.completed_step);
+        self.current_step = self.current_step.take().or(other.current_step);
+        self.next_step = self.next_step.take().or(other.next_step);
+        self.next_action = self.next_action.take().or(other.next_action);
+        if self.evidence.is_empty() {
+            self.evidence = other.evidence;
+        }
+        self.trigger_source = self.trigger_source.take().or(other.trigger_source);
+    }
+}
+
+fn explicit_percent(text: &str) -> Option<usize> {
+    for token in text.split_whitespace() {
+        let cleaned = token.trim_matches(|ch: char| !ch.is_ascii_digit() && ch != '%' && ch != '/');
+        if let Some(value) = cleaned.strip_suffix('%') {
+            if let Ok(percent) = value.parse::<usize>() {
+                return Some(percent.min(100));
+            }
+        }
+        if let Some((done, total)) = cleaned.split_once('/') {
+            if let (Ok(done), Ok(total)) = (done.parse::<usize>(), total.parse::<usize>()) {
+                if total > 0 {
+                    return Some(((done * 100) / total).min(100));
+                }
+            }
+        }
+    }
+    None
+}
+
+fn workflow_field_key(key: &str) -> String {
+    key.trim()
+        .trim_matches(|ch: char| !ch.is_ascii_alphanumeric() && ch != '_' && ch != '-')
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric() || *ch == '_' || *ch == '-')
+        .map(|ch| ch.to_ascii_lowercase())
+        .collect::<String>()
+        .replace(['-', '_'], "")
+}
+
+fn workflow_field_value(value: &str) -> String {
+    value
+        .trim()
+        .trim_matches(|ch: char| {
+            matches!(
+                ch,
+                '"' | '\'' | '`' | '[' | ']' | '{' | '}' | ',' | ';' | ' '
+            )
+        })
+        .trim()
+        .to_string()
+}
+
+fn workflow_field_segments(text: &str) -> Vec<&str> {
+    text.lines()
+        .flat_map(|line| line.split([',', ';']))
+        .collect()
+}
+
+fn parse_progress_percent_value(value: &str) -> Option<usize> {
+    value
+        .trim()
+        .trim_end_matches('%')
+        .parse::<usize>()
+        .ok()
+        .map(|percent| percent.min(100))
+        .or_else(|| explicit_percent(value))
+}
+
+fn normalize_workflow_type(value: &str) -> String {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "dev" | "development" | "implementation" | "개발" => "development".to_string(),
+        "harness" | "test-harness" | "testharness" | "하네스" => "harness".to_string(),
+        "custom" | "user-defined" | "userdefined" | "사용자정의" => "custom".to_string(),
+        _ => value.trim().to_string(),
+    }
+}
+
+fn parse_shared_workflow_progress_fields(text: &str) -> SharedWorkflowProgressFields {
+    let mut fields = SharedWorkflowProgressFields::default();
+    for segment in workflow_field_segments(text) {
+        let Some((raw_key, raw_value)) =
+            segment.split_once(':').or_else(|| segment.split_once('='))
+        else {
+            continue;
+        };
+        let key = workflow_field_key(raw_key);
+        let value = workflow_field_value(raw_value);
+        if value.is_empty() {
+            continue;
+        }
+        match key.as_str() {
+            "workflowtype" | "workflow" | "type" => {
+                fields
+                    .workflow_type
+                    .get_or_insert_with(|| normalize_workflow_type(&value));
+            }
+            "phaselabel" | "currentphase" | "phase" => {
+                fields.phase_label.get_or_insert(value);
+            }
+            "progresspercent" | "percent" | "progress" => {
+                if fields.progress_percent.is_none() {
+                    fields.progress_percent = parse_progress_percent_value(&value);
+                }
+            }
+            "completedstep" | "completed" | "done" => {
+                fields.completed_step.get_or_insert(value);
+            }
+            "currentstep" | "current" | "active" => {
+                fields.current_step.get_or_insert(value);
+            }
+            "nextstep" | "next" => {
+                fields.next_step.get_or_insert(value);
+            }
+            "nextaction" | "action" => {
+                fields.next_action.get_or_insert(value);
+            }
+            "evidence" | "proof" | "validationevidence" => {
+                fields.evidence.extend(
+                    value
+                        .split('|')
+                        .map(str::trim)
+                        .filter(|item| !item.is_empty())
+                        .map(ToString::to_string),
+                );
+            }
+            "triggersource" | "trigger" | "source" => {
+                fields.trigger_source.get_or_insert(value);
+            }
+            _ => {}
+        }
+    }
+    fields
+}
+
+fn planner_workflow_progress_fields() -> SharedWorkflowProgressFields {
+    let mut fields = SharedWorkflowProgressFields::default();
+    for key in WORKFLOW_PROGRESS_HINT_ENVS {
+        if let Ok(value) = env::var(key) {
+            fields.merge_missing(parse_shared_workflow_progress_fields(&value));
+        }
+    }
+    fields
+}
+
+fn shared_workflow_progress_fields(prompt: &str, response: &str) -> SharedWorkflowProgressFields {
+    let mut fields = parse_shared_workflow_progress_fields(prompt);
+    fields.merge_missing(planner_workflow_progress_fields());
+    fields.merge_missing(parse_shared_workflow_progress_fields(response));
+    fields
+}
+
+fn workflow_type(prompt: &str, response: &str) -> String {
+    let text = format!("{prompt} {response}").to_ascii_lowercase();
+    if text.contains("harness") || prompt.contains("하네스") {
+        "harness".to_string()
+    } else if text.contains("custom") || prompt.contains("사용자 정의") {
+        "custom".to_string()
+    } else {
+        "development".to_string()
+    }
+}
+
+fn workflow_phase(prompt: &str, response: &str) -> String {
+    let text = format!("{prompt} {response}").to_ascii_lowercase();
+    if text.contains("release") || response.contains("릴리즈") || response.contains("배포") {
+        "release/report".to_string()
+    } else if text.contains("test")
+        || text.contains("validat")
+        || response.contains("검증")
+        || response.contains("테스트")
+        || response.contains("통과")
+    {
+        "validation".to_string()
+    } else if text.contains("implement")
+        || text.contains("code")
+        || response.contains("구현")
+        || response.contains("수정")
+        || response.contains("개발")
+    {
+        "implementation".to_string()
+    } else {
+        "planning".to_string()
+    }
+}
+
+fn phase_default_percent(phase: &str) -> usize {
+    match phase {
+        "planning" => 25,
+        "implementation" => 50,
+        "validation" => 75,
+        "release/report" => 90,
+        _ => 50,
+    }
+}
+
+fn workflow_percent(
+    prompt: &str,
+    response: &str,
+    phase: &str,
+    shared: &SharedWorkflowProgressFields,
+) -> usize {
+    shared
+        .progress_percent
+        .or_else(|| explicit_percent(prompt))
+        .or_else(|| {
+            WORKFLOW_PROGRESS_HINT_ENVS
+                .iter()
+                .filter_map(|key| env::var(key).ok())
+                .find_map(|value| explicit_percent(&value))
+        })
+        .or_else(|| explicit_percent(response))
+        .unwrap_or_else(|| phase_default_percent(phase))
+}
+
+fn workflow_evidence(response: &str, summary: &str) -> Vec<String> {
+    let lower = response.to_ascii_lowercase();
+    let evidence = if looks_like_codex_activity_transcript(response) {
+        "macro transcript evidence: phase-level activity signal".to_string()
+    } else if lower.contains("cargo test")
+        || response.contains("테스트")
+        || response.contains("통과")
+    {
+        "validation evidence: test/pass signal".to_string()
+    } else if lower.contains("quality-check")
+        || lower.contains("build")
+        || response.contains("검증")
+    {
+        "validation evidence: build/quality signal".to_string()
+    } else if lower.contains("harness") || response.contains("하네스") {
+        "harness evidence: workflow runner signal".to_string()
+    } else if lower.contains("file") || lower.contains("renderer") || response.contains("구현") {
+        "implementation evidence: changed file or renderer signal".to_string()
+    } else {
+        compact(summary, 1)
+    };
+    vec![evidence]
+}
+
+fn workflow_trigger(prompt: &str) -> String {
+    let lower = prompt.to_ascii_lowercase();
+    if lower.contains("workflow") || prompt.contains("워크플로우") {
+        "explicit workflow prompt".to_string()
+    } else if lower.contains("harness") || prompt.contains("하네스") {
+        "explicit harness prompt".to_string()
+    } else if lower.contains("progress") || prompt.contains("진행") {
+        "progress signal".to_string()
+    } else {
+        "inferred workflow signal".to_string()
+    }
+}
+
+fn workflow_progress_model_with_bar(
+    prompt: &str,
+    response: &str,
+    summary: &str,
+    bar_width: usize,
+    frame: Frame,
+    theme: Theme,
+) -> WorkflowProgressBlock {
+    let shared = shared_workflow_progress_fields(prompt, response);
+    let phase = shared
+        .phase_label
+        .clone()
+        .unwrap_or_else(|| workflow_phase(prompt, response));
+    let percent = workflow_percent(prompt, response, &phase, &shared);
+    let status = progress_label(percent);
+    let default_completed_step = if percent >= 75 {
+        "요구사항 고정과 구현 확인".to_string()
+    } else {
+        "목표/범위 확인".to_string()
+    };
+    let default_next_step = if percent >= 90 {
+        "릴리즈/보고와 회귀 확인".to_string()
+    } else if percent >= 75 {
+        "품질 게이트와 회귀 테스트".to_string()
+    } else {
+        "구현 후 검증 증거 확보".to_string()
+    };
+    WorkflowProgressBlock {
+        workflow_type: shared
+            .workflow_type
+            .clone()
+            .unwrap_or_else(|| workflow_type(prompt, response)),
+        phase_label: phase,
+        progress_percent: percent,
+        progress_bar: render_progress_bar(percent, bar_width, frame, theme),
+        completed_step: shared.completed_step.unwrap_or(default_completed_step),
+        current_step: shared
+            .current_step
+            .unwrap_or_else(|| format!("{status} 단계에서 증거를 수집 중")),
+        next_step: shared
+            .next_step
+            .unwrap_or_else(|| default_next_step.clone()),
+        next_action: shared.next_action.unwrap_or(default_next_step),
+        evidence: if shared.evidence.is_empty() {
+            workflow_evidence(response, summary)
+        } else {
+            shared.evidence
+        },
+        trigger_source: shared
+            .trigger_source
+            .unwrap_or_else(|| workflow_trigger(prompt)),
+        strict_artifact_bypass: should_back_off(prompt, response),
+    }
+}
+
+#[cfg(test)]
+fn workflow_progress_model(prompt: &str, response: &str, summary: &str) -> WorkflowProgressBlock {
+    workflow_progress_model_with_bar(
+        prompt,
+        response,
+        summary,
+        DEFAULT_WORKFLOW_PROGRESS_BAR_WIDTH,
+        Frame::Unicode,
+        Theme::None,
+    )
+}
+
+fn workflow_progress_block(
+    profile: &Profile,
+    prompt: &str,
+    response: &str,
+    summary: &str,
+    width: usize,
+) -> String {
+    let bar_width = width.saturating_sub(18).min(34).max(12);
+    let model = workflow_progress_model_with_bar(
+        prompt,
+        response,
+        summary,
+        bar_width,
+        profile.frame,
+        profile.theme,
+    );
+    let headline = format!(
+        "{} {}",
+        color(profile.theme, "heading", "Workflow"),
+        model.progress_bar
+    );
+    let evidence = if model.evidence.is_empty() {
+        "증거 없음".to_string()
+    } else {
+        model.evidence.join("; ")
+    };
+    let rows = vec![
+        vec!["유형".to_string(), model.workflow_type],
+        vec!["단계".to_string(), model.phase_label],
+        vec![
+            "진척".to_string(),
+            format!("매크로 {}%", model.progress_percent),
+        ],
+        vec!["막대".to_string(), model.progress_bar],
+        vec!["완료".to_string(), model.completed_step],
+        vec!["현재".to_string(), model.current_step],
+        vec!["다음".to_string(), model.next_step],
+        vec!["행동".to_string(), model.next_action],
+        vec!["근거".to_string(), evidence],
+        vec!["트리거".to_string(), model.trigger_source],
+    ];
+    format!(
+        "{headline}\n{}",
+        table(
+            &["항목", "값"],
+            &rows,
+            profile.frame,
+            profile.theme,
+            true,
+            width,
+        )
+    )
+}
+
 fn ux_component_output(
     component: UxComponent,
     profile: &Profile,
+    prompt: &str,
     response: &str,
     summary: &str,
     width: usize,
 ) -> String {
     match component {
         UxComponent::StatusBadge => status_badge(profile, response),
+        UxComponent::WorkflowProgress => {
+            workflow_progress_block(profile, prompt, response, summary, width)
+        }
         UxComponent::Toggle => notion_toggle(profile, summary, width),
         UxComponent::Quote => notion_quote(profile, summary, width),
         UxComponent::Divider => notion_divider(profile, width),
@@ -3483,6 +4010,7 @@ fn ux_component_output(
 
 fn ux_component_sections(
     profile: &Profile,
+    prompt: &str,
     response: &str,
     summary: &str,
     width: usize,
@@ -3491,7 +4019,7 @@ fn ux_component_sections(
     components
         .iter()
         .copied()
-        .map(|component| ux_component_output(component, profile, response, summary, width))
+        .map(|component| ux_component_output(component, profile, prompt, response, summary, width))
         .collect()
 }
 
@@ -3790,7 +4318,7 @@ fn dispatch_explanation(
             sections.push(cause_effect_report(profile, response, summary, width));
         }
         if requested.contains(&RendererKind::Progress) {
-            sections.push(progress_report(profile, response, summary, width));
+            sections.push(progress_report(profile, prompt, response, summary, width));
         }
         if requested.contains(&RendererKind::IndexedList) {
             let items = indexed_items(prompt, response, summary);
@@ -3804,6 +4332,7 @@ fn dispatch_explanation(
         }
         sections.extend(ux_component_sections(
             profile,
+            prompt,
             response,
             summary,
             width,
@@ -3851,13 +4380,17 @@ fn dispatch_explanation(
         }
         sections.extend(ux_component_sections(
             profile,
+            prompt,
             response,
             summary,
             width,
             &ux_components,
         ));
         if requested.contains(&RendererKind::Progress) {
-            sections.insert(0, progress_report(profile, response, summary, width));
+            sections.insert(
+                0,
+                progress_report(profile, prompt, response, summary, width),
+            );
         }
         return sections.join("\n\n");
     }
@@ -3889,7 +4422,9 @@ fn dispatch_explanation(
         }
         ExplanationIntent::DecisionRule => formula(profile, summary),
         ExplanationIntent::ProcessFlow => codexplain_flow(profile.frame, profile.theme, width),
-        ExplanationIntent::ProgressReport => progress_report(profile, response, summary, width),
+        ExplanationIntent::ProgressReport => {
+            progress_report(profile, prompt, response, summary, width)
+        }
         ExplanationIntent::StructuredSummary => table(
             &["구분", "내용"],
             &structured_summary_rows(response, summary, profile),
@@ -8792,6 +9327,160 @@ after
         );
         assert!(output.contains("│ 진척      │ 진행 중 · 60%"), "{output}");
         assert!(output.contains("│ 다음 행동 │"), "{output}");
+    }
+
+    #[test]
+    fn workflow_progress_component_selects_dev_harness_and_custom_prompts() {
+        let profile = Profile {
+            theme: Theme::None,
+            ux_density: 50,
+            ..Profile::default()
+        };
+
+        let dev = requested_ux_components(
+            "개발 워크플로우 progress block으로 보여줘",
+            "구현을 진행 중입니다.",
+            &profile,
+        );
+        let harness = requested_ux_components(
+            "하네스 진행상황을 보여줘",
+            "harness validation is running",
+            &profile,
+        );
+        let custom = requested_ux_components(
+            "사용자 정의 워크플로우 상태 보고",
+            "planning stage",
+            &profile,
+        );
+
+        assert!(dev.contains(&UxComponent::WorkflowProgress), "{dev:?}");
+        assert!(
+            harness.contains(&UxComponent::WorkflowProgress),
+            "{harness:?}"
+        );
+        assert!(
+            custom.contains(&UxComponent::WorkflowProgress),
+            "{custom:?}"
+        );
+    }
+
+    #[test]
+    fn workflow_progress_renders_canonical_fields_and_width_safe_bar() {
+        let profile = Profile {
+            theme: Theme::None,
+            ..Profile::default()
+        };
+        let output = shape(
+            "하네스 workflow progress block으로 보고해줘",
+            "현재 3/4 단계입니다. cargo test 통과 후 harness validation이 남았습니다.",
+            &profile,
+            88,
+        );
+
+        assert!(output.contains("Workflow ["), "{output}");
+        assert!(output.contains(" 75%"), "{output}");
+        assert!(output.contains("│ 유형"), "{output}");
+        assert!(output.contains("│ 단계"), "{output}");
+        assert!(output.contains("│ 완료"), "{output}");
+        assert!(output.contains("│ 현재"), "{output}");
+        assert!(output.contains("│ 다음"), "{output}");
+        assert!(output.contains("│ 근거"), "{output}");
+        assert!(output.contains("harness"), "{output}");
+        assert!(output.contains("validation"), "{output}");
+        assert!(output.contains("validation evidence"), "{output}");
+        assert!(
+            output.contains("│ 트리거 │ explicit workflow prompt"),
+            "{output}"
+        );
+        assert_visible_lines_fit(&output, 88);
+    }
+
+    #[test]
+    fn workflow_progress_uses_phase_defaults_when_percent_is_absent() {
+        let block = workflow_progress_model(
+            "개발 워크플로우 보고",
+            "구현을 수정하고 renderer logic을 추가했습니다.",
+            "구현 진행",
+        );
+
+        assert_eq!(block.workflow_type, "development");
+        assert_eq!(block.phase_label, "implementation");
+        assert_eq!(block.progress_percent, 50);
+        assert!(block.progress_bar.contains("50%"), "{block:?}");
+        assert_eq!(block.completed_step, "목표/범위 확인");
+        assert!(block.current_step.contains("진행 중"), "{block:?}");
+        assert_eq!(block.next_step, "구현 후 검증 증거 확보");
+        assert!(block
+            .evidence
+            .iter()
+            .any(|item| item.contains("implementation evidence")));
+        assert_eq!(block.trigger_source, "explicit workflow prompt");
+        assert!(!block.strict_artifact_bypass);
+    }
+
+    #[test]
+    fn workflow_progress_reads_shared_fields_before_inference() {
+        let profile = Profile {
+            theme: Theme::None,
+            ..Profile::default()
+        };
+        let prompt = "\
+사용자 정의 워크플로우 progress block
+workflow_type: custom
+phase_label: review
+progress_percent: 42
+completed_step: schema wired
+current_step: rendering shared progress fields
+next_step: run regression suite
+next_action: cargo test --bin codexplain
+trigger_source: explicit prompt field";
+        let response = "\
+현재 3/4 단계입니다.
+evidence: shared fields rendered|width-safe table output";
+        let output = shape(prompt, response, &profile, 96);
+
+        assert!(output.contains("custom"), "{output}");
+        assert!(output.contains("review"), "{output}");
+        assert!(output.contains("매크로 42%"), "{output}");
+        assert!(output.contains("schema wired"), "{output}");
+        assert!(
+            output.contains("rendering shared progress fields"),
+            "{output}"
+        );
+        assert!(output.contains("run regression suite"), "{output}");
+        assert!(output.contains("cargo test --bin codexplain"), "{output}");
+        assert!(output.contains("shared fields rendered"), "{output}");
+        assert!(output.contains("width-safe table output"), "{output}");
+        assert!(output.contains("explicit prompt field"), "{output}");
+        assert_visible_lines_fit(&output, 96);
+    }
+
+    #[test]
+    fn shared_progress_field_parser_accepts_planner_hint_shape() {
+        let fields = parse_shared_workflow_progress_fields(
+            "workflow_type=harness; phase_label=validation; progress_percent=80; next_action=collect logs; evidence=tests pass|harness trace",
+        );
+
+        assert_eq!(fields.workflow_type.as_deref(), Some("harness"));
+        assert_eq!(fields.phase_label.as_deref(), Some("validation"));
+        assert_eq!(fields.progress_percent, Some(80));
+        assert_eq!(fields.next_action.as_deref(), Some("collect logs"));
+        assert_eq!(
+            fields.evidence,
+            vec!["tests pass".to_string(), "harness trace".to_string()]
+        );
+    }
+
+    #[test]
+    fn workflow_progress_preserves_strict_artifacts_by_backing_off() {
+        let profile = Profile {
+            theme: Theme::None,
+            ..Profile::default()
+        };
+        let json = r#"{"phase":"validation","percent":75}"#;
+        let output = shape("valid JSON만 출력", json, &profile, 88);
+
+        assert_eq!(output, json);
     }
 
     #[test]

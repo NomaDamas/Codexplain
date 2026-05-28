@@ -78,6 +78,9 @@ abstractionLevel concrete/architecture/strategy
 
 UX selection combines explicit rules, score thresholds, and optional planner hints through `CODEXPLAIN_UX_PLAN` or `CODEXPLAIN_UX_PLANNER_COMMAND`.
 Cause-effect prompts such as `원인-결과`, `인과`, `cause-effect`, or `왜 ... 그래서` render as 원인/결과/대응 reports.
+Workflow prompts such as `workflow`, `progress block`, `개발 워크플로우`,
+`하네스`, or `사용자 정의 워크플로우` add a shared progress block with type,
+phase, percent, completed/current/next steps, evidence, and trigger source.
 
 Tables are renderer-owned. If text may be long, use the Codexplain renderer,
 Markdown tables, or short boxes instead of hand-drawing raw Unicode tables. The
