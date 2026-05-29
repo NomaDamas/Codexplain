@@ -2765,6 +2765,70 @@ fn render_table_model(table: &Table, frame: Frame, theme: Theme) -> String {
     lines.join("\n")
 }
 
+fn wide_divider_table(
+    headers: &[&str; 2],
+    rows: &[Vec<String>],
+    theme: Theme,
+    width: usize,
+) -> String {
+    let width = width.max(32);
+    let left_widest = rows
+        .iter()
+        .filter_map(|row| row.first())
+        .map(|value| visible_width(value))
+        .chain(headers.iter().take(1).map(|value| visible_width(value)))
+        .max()
+        .unwrap_or(8);
+    let left_width = left_widest
+        .max(8)
+        .min(40)
+        .min(width.saturating_mul(45) / 100)
+        .max(8);
+    let right_width = width.saturating_sub(left_width + 3).max(12);
+    let heavy = format!(" {}  {}", "━".repeat(left_width), "━".repeat(right_width));
+    let thin = format!(" {}  {}", "─".repeat(left_width), "─".repeat(right_width));
+    let mut lines = Vec::new();
+    lines.push(format!(
+        " {}  {}",
+        color(theme, "heading", &pad(headers[0], left_width)),
+        color(theme, "heading", &pad(headers[1], right_width))
+    ));
+    lines.push(color(theme, "border", &heavy));
+
+    for (index, row) in rows.iter().enumerate() {
+        let left = row.first().map(String::as_str).unwrap_or("");
+        let right = row.get(1).map(String::as_str).unwrap_or("");
+        let left_lines = wrap_text(left, left_width);
+        let right_lines = wrap_text(right, right_width);
+        let row_height = left_lines.len().max(right_lines.len()).max(1);
+        for line_index in 0..row_height {
+            let left_line = left_lines.get(line_index).map(String::as_str).unwrap_or("");
+            let right_line = right_lines
+                .get(line_index)
+                .map(String::as_str)
+                .unwrap_or("");
+            lines.push(format!(
+                " {}  {}",
+                color(
+                    theme,
+                    role_for(left_line, "heading"),
+                    &pad(left_line, left_width)
+                ),
+                color(
+                    theme,
+                    role_for(right_line, "accent"),
+                    &pad(right_line, right_width)
+                )
+            ));
+        }
+        if index + 1 < rows.len() {
+            lines.push(color(theme, "border", &thin));
+        }
+    }
+    lines.join("\n")
+}
+
+#[allow(dead_code)]
 fn render_responsive_panels(left: &str, right: &str, width: usize, gap: usize) -> String {
     let left_lines: Vec<&str> = left.lines().collect();
     let right_lines: Vec<&str> = right.lines().collect();
@@ -2874,22 +2938,82 @@ fn codexplain_flow(frame: Frame, theme: Theme, max_width: usize) -> String {
 }
 
 fn architecture_panels(profile: &Profile, summary: &str, width: usize) -> String {
-    let stacked_width = width.max(50);
-    let panel_width = if width >= 112 {
-        ((width - 3) / 2).max(40)
+    let flow_panel = codexplain_flow(profile.frame, profile.theme, width);
+    let rows = architecture_showcase_rows(summary, profile);
+    let showcase = wide_divider_table(&["영역", "역할"], &rows, profile.theme, width.max(50));
+    format!(
+        "{}\n\n{}",
+        architecture_tldr(profile, summary, width),
+        format!("{flow_panel}\n\n{showcase}")
+    )
+}
+
+fn architecture_tldr(profile: &Profile, summary: &str, width: usize) -> String {
+    let label = color(profile.theme, "heading", "• TLDR");
+    let body = if summary.trim().is_empty() {
+        "Codexplain은 Codex의 추론 계층이 아니라 설명 표현 계층을 프로젝트 로컬에서 제어합니다."
+            .to_string()
     } else {
-        stacked_width
+        format!(
+            "Codexplain은 Codex 응답 위에 설명 UX 레이어를 얹습니다. {}",
+            compact(summary, 1)
+        )
     };
-    let table_panel = table(
-        &["계층", "역할"],
-        &layer_rows(summary, profile),
-        profile.frame,
-        profile.theme,
-        true,
-        panel_width,
-    );
-    let flow_panel = codexplain_flow(profile.frame, profile.theme, panel_width);
-    render_responsive_panels(&table_panel, &flow_panel, width, 3)
+    let content_width = width.saturating_sub(2).max(24);
+    let body_lines = wrap_text(&body, content_width)
+        .into_iter()
+        .map(|line| {
+            format!(
+                "  {}",
+                color(profile.theme, role_for(&line, "accent"), &line)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!("{label}\n{body_lines}")
+}
+
+fn architecture_showcase_rows(summary: &str, profile: &Profile) -> Vec<Vec<String>> {
+    let mut rows = vec![
+        vec![
+            "개념".to_string(),
+            "Codex의 생각을 바꾸는 것이 아니라 답변의 표현층을 구조화합니다.".to_string(),
+        ],
+        vec![
+            "보호".to_string(),
+            "JSON, code, diff, log, test output은 strict policy가 원문 그대로 보존합니다."
+                .to_string(),
+        ],
+        vec![
+            "선택".to_string(),
+            "prompt 신호와 profile을 보고 TLDR, 흐름도, 표, pros/cons, progress를 조합합니다."
+                .to_string(),
+        ],
+        vec![
+            "표현".to_string(),
+            "Terminal renderer가 Unicode/ASCII layout, ANSI highlight, wrapping을 담당합니다."
+                .to_string(),
+        ],
+        vec![
+            "연결".to_string(),
+            "project-local shim과 TUI adapter가 켜기/끄기 가능한 연결 계층을 제공합니다."
+                .to_string(),
+        ],
+    ];
+    if profile.abstraction_level == "concrete" || profile.architecture_depth == "internals" {
+        rows.extend(architecture_layer_rows(profile));
+    }
+    if profile.explanation_depth != "light" {
+        rows.push(vec![
+            "Levels".to_string(),
+            "Level Controls: explanation-depth, architecture-depth, abstraction-level을 light/standard/deep 계열 3단계로 조절합니다."
+                .to_string(),
+        ]);
+    }
+    if !summary.trim().is_empty() {
+        rows.insert(0, vec!["요약".to_string(), compact(summary, 1)]);
+    }
+    rows
 }
 
 fn render_expansion_diagram(labels: &[&str], frame: Frame, theme: Theme, width: usize) -> String {
@@ -6191,6 +6315,7 @@ Default answer style:
 - Split explanations by semantic units with active line breaks. If the answer says "two paths", "두 가지", "과정", or "단계", render them as compact 1. 2. 3. numbered sections. Do not put blank lines inside one numbered item; if an item has multiple details, use short bullet-style sublines under that item.
 - Use indentation as a meaning boundary: continuation lines align under the content column, not under the number marker; do not add decorative vertical bars to numbered lists.
 - Architecture, flow, and expansion diagrams should prefer Codexplain renderer-owned boxes before prose. Use a table only when it adds a compact role/decision summary.
+- Architecture/project explanations should create a visible "wow point": TLDR first, conceptual flow second, then a wide-divider table using ━ for the header rule and ─ between rows when it improves scanning.
 - Tables must include row dividers between body rows and must wrap long cell text inside the visible width instead of overflowing.
 - Do not hand-draw long Unicode tables from raw model text. If a cell may exceed the terminal width, use Codexplain's width-safe renderer output, a Markdown table, or short per-item boxes so every cell is filled and padded by visible width.
 - Process answers should use short numbered sections, with one idea per item and bullet-style sublines for multiple details.
@@ -8186,7 +8311,8 @@ mod tests {
             88,
         );
 
-        assert!(output.contains("Input Gateway"), "{output}");
+        assert!(output.contains("• TLDR"), "{output}");
+        assert!(output.contains("━━━━━━━━"), "{output}");
         assert!(output.contains("Prompt Input"), "{output}");
         assert!(output.contains("▸ 핵심 접기"), "{output}");
         assert!(output.contains("│ Codexplain은 Rust renderer"), "{output}");
@@ -8696,7 +8822,7 @@ after
         assert!(!output.contains("<span"), "{output}");
         assert!(!output.contains("\x1b["), "{output}");
         assert!(output.contains("**[KEY]** CODEXPLAIN"), "{output}");
-        assert!(output.contains("**[KEY]** Renderer"), "{output}");
+        assert!(output.contains("**[KEY]** 응답"), "{output}");
         assert!(
             output.contains("**[REF]** `JSON/code/diff/log/test`"),
             "{output}"
@@ -9254,6 +9380,32 @@ after
             layout.padded_cell("\x1b[32mA\x1b[0m", 3),
             " \x1b[32mA\x1b[0m   "
         );
+    }
+
+    #[test]
+    fn wide_divider_table_renders_showcase_style_without_box_overflow() {
+        let output = wide_divider_table(
+            &["영역", "역할"],
+            &[
+                vec![
+                    "rust/codexplain.rs:307".to_string(),
+                    "프로필, 렌더러, 설치/해제, compat-check까지 포함한 Rust core".to_string(),
+                ],
+                vec![
+                    "patches/codex-tui-assistant-color.patch".to_string(),
+                    "Codex TUI assistant-message color hook용 패치".to_string(),
+                ],
+            ],
+            Theme::None,
+            88,
+        );
+
+        assert!(output.contains("영역"), "{output}");
+        assert!(output.contains("역할"), "{output}");
+        assert!(output.contains("━━━━━━━━"), "{output}");
+        assert!(output.contains("────────"), "{output}");
+        assert!(!output.contains('│'), "{output}");
+        assert_visible_lines_fit(&output, 88);
     }
 
     #[test]
@@ -10589,7 +10741,8 @@ evidence: shared fields rendered|width-safe table output";
             132,
         );
 
-        assert!(output.contains("│ 계층"), "{output}");
+        assert!(output.contains("영역"), "{output}");
+        assert!(output.contains("━━━━━━━━"), "{output}");
         assert!(output.contains("│ Prompt Input"), "{output}");
         assert!(output.contains("JS / Node"), "{output}");
         assert!(output.contains("Rust"), "{output}");
@@ -10630,11 +10783,12 @@ evidence: shared fields rendered|width-safe table output";
             60,
         );
 
-        assert!(output.contains("│ 계층"), "{output}");
+        assert!(output.contains("영역"), "{output}");
+        assert!(output.contains("━━━━━━━━"), "{output}");
         assert!(output.contains("│ Prompt Input"), "{output}");
-        let table_pos = output.find("│ 계층").unwrap();
+        let table_pos = output.find("영역").unwrap();
         let flow_pos = output.find("│ Prompt Input").unwrap();
-        assert!(flow_pos > table_pos, "{output}");
+        assert!(table_pos > flow_pos, "{output}");
         assert_visible_lines_fit(&output, 60);
     }
 

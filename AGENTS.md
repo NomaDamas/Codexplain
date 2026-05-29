@@ -18,6 +18,7 @@ Default answer style:
 - Split explanations by semantic units with active line breaks. If the answer says "two paths", "두 가지", "과정", or "단계", render them as compact 1. 2. 3. numbered sections. Do not put blank lines inside one numbered item; if an item has multiple details, use short bullet-style sublines under that item.
 - Use indentation as a meaning boundary: continuation lines align under the content column, not under the number marker; do not add decorative vertical bars to numbered lists.
 - Architecture, flow, and expansion diagrams should prefer Codexplain renderer-owned boxes before prose. Use a table only when it adds a compact role/decision summary.
+- Architecture/project explanations should create a visible "wow point": TLDR first, conceptual flow second, then a wide-divider table using ━ for the header rule and ─ between rows when it improves scanning.
 - Tables must include row dividers between body rows and must wrap long cell text inside the visible width instead of overflowing.
 - Do not hand-draw long Unicode tables from raw model text. If a cell may exceed the terminal width, use Codexplain's width-safe renderer output, a Markdown table, or short per-item boxes so every cell is filled and padded by visible width.
 - Process answers should use short numbered sections, with one idea per item and bullet-style sublines for multiple details.
