@@ -11,6 +11,7 @@ preference tuning.
 
 - [⚡ One-Line Setup](#-one-line-setup)
 - [🚀 One-Line Use](#-one-line-use)
+- [👀 Before / After](#-before--after)
 - [✨ What It Improves](#-what-it-improves)
 - [🧩 Adaptive UX Components](#-adaptive-ux-components)
 - [🧠 Model-Agnostic Goal](#-model-agnostic-goal)
@@ -260,6 +261,54 @@ The upstream/fork contract is tracked in
 [`docs/upstream-codex-tui-style-hook.md`](docs/upstream-codex-tui-style-hook.md),
 with adapter routing and validation notes in
 [`docs/codex-tui-adapter-roadmap.md`](docs/codex-tui-adapter-roadmap.md).
+
+## 👀 Before / After
+
+Before Codexplain, architecture answers often arrive as dense prose. The facts
+may be correct, but the structure is hard to scan:
+
+```text
+Codexplain is a local adapter for Codex. It preserves JSON and code, reads
+profile settings, chooses renderers, and formats the output. It can be enabled
+per project with a shim and can optionally use a patched TUI adapter.
+```
+
+After Codexplain, the same idea is rendered as a visual explanation contract:
+
+```text
+• TLDR
+  Codexplain is a project-local expression layer for Codex answers.
+  It keeps strict artifacts unchanged and upgrades explanatory text.
+
+┌──────────────────────┐
+│ Prompt Input         │
+└───────────┬──────────┘
+────────────▼───────────
+┌───────────┴──────────┐
+│ Strict Policy        │
+└───────────┬──────────┘
+────────────▼───────────
+┌───────────┴──────────┐
+│ Renderer Selector    │
+└───────────┬──────────┘
+────────────▼───────────
+┌───────────┴──────────┐
+│ Terminal Output      │
+└──────────────────────┘
+
+ 영역                                역할
+ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ 보호                                JSON, code, diff, log, test output은 원문 보존
+ ──────────────────────────────────  ─────────────────────────────────────────────────────
+ 선택                                TLDR, flow, table, pros/cons, progress를 동적 조합
+ ──────────────────────────────────  ─────────────────────────────────────────────────────
+ 표현                                Unicode layout, ANSI highlight, visible-width wrapping
+ ──────────────────────────────────  ─────────────────────────────────────────────────────
+ 연결                                project-local shim과 reversible TUI adapter
+```
+
+The point is not decoration. Codexplain turns long answers into a readable
+layout: first the takeaway, then the architecture, then the evidence table.
 
 Give feedback after an answer:
 
