@@ -2926,21 +2926,32 @@ fn render_flow_diagram(diagram: &FlowDiagram, frame: Frame, theme: Theme) -> Str
 }
 
 fn flow_sequence_connector(layout: &FlowLayout, theme: Theme) -> Vec<String> {
-    let spine = layout.spine_indent();
-    vec![
-        format!(
-            "{spine}{}",
-            color(theme, "border", &layout.spec.border.vertical.to_string())
+    vec![flow_connector_rail(layout, theme)]
+}
+
+fn flow_connector_rail(layout: &FlowLayout, theme: Theme) -> String {
+    let width = layout.content_width + layout.spec.padding.total() + 2;
+    let arrow = layout.spec.separators.arrow_down;
+    let center = width / 2;
+    format!(
+        "{}{}{}",
+        color(
+            theme,
+            "border",
+            &layout.spec.border.horizontal.to_string().repeat(center)
         ),
-        format!(
-            "{spine}{}",
-            color(
-                theme,
-                "heading",
-                &layout.spec.separators.arrow_down.to_string()
-            )
-        ),
-    ]
+        color(theme, "heading", &arrow.to_string()),
+        color(
+            theme,
+            "border",
+            &layout
+                .spec
+                .border
+                .horizontal
+                .to_string()
+                .repeat(width.saturating_sub(center + 1))
+        )
+    )
 }
 
 fn flow_step_box(
@@ -6178,6 +6189,7 @@ Default answer style:
 - When Codexplain is ON in Codex CLI, highlight important terms with sparse semantic ANSI colors. Emojis may be used only as light explanatory supplements, not as the color system; keep them to short status/callout/next-action cues and avoid more than one cue per semantic section.
 - Treat UX blocks like tool choices: combine the smallest useful set from prompt, response, profile, and optional planner hints.
 - Split explanations by semantic units with active line breaks. If the answer says "two paths", "두 가지", "과정", or "단계", render them as compact 1. 2. 3. numbered sections. Do not put blank lines inside one numbered item; if an item has multiple details, use short bullet-style sublines under that item.
+- Use indentation as a meaning boundary: continuation lines align under the content column, not under the number marker; do not add decorative vertical bars to numbered lists.
 - Architecture, flow, and expansion diagrams should prefer Codexplain renderer-owned boxes before prose. Use a table only when it adds a compact role/decision summary.
 - Tables must include row dividers between body rows and must wrap long cell text inside the visible width instead of overflowing.
 - Do not hand-draw long Unicode tables from raw model text. If a cell may exceed the terminal width, use Codexplain's width-safe renderer output, a Markdown table, or short per-item boxes so every cell is filled and padded by visible width.
@@ -6193,6 +6205,7 @@ Terminal UX:
 - Use connected box-drawing characters such as ┌ ┬ ┐ │ ├ ┼ ┤ └ ┴ ┘.
 - Do not use broken pseudo-borders made from repeated hyphens, equals signs, or Korean long vowel marks.
 - Do not hand-draw architecture, flow, or expansion diagrams when labels may wrap. Use Codexplain flow/diagram output so box width, connectors, arrows, and branch labels are layout-owned.
+- Flow connectors must not rely on leading spaces alone. Prefer renderer-owned full-width connector rails so arrows stay aligned in Codex CLI, terminal scrollback, and chat transcripts.
 - Do not hand-draw long raw box tables when cell text may wrap. Prefer Codexplain width-safe tables, Markdown tables, or short boxes with wrapped rows; every row must be layout-owned, padded, and separated, not manually guessed.
 - For long tool transcripts such as Explored/Ran/Read, summarize the macro phase first instead of listing every micro event.
 - Use blank lines between semantic sections so the user can scan without reading a wall of text.
@@ -8850,13 +8863,11 @@ after
                 "┌───────────┐",
                 "│ 입력      │",
                 "└─────┬─────┘",
-                "      │",
-                "      ▼",
+                "──────▼──────",
                 "┌─────┴─────┐",
                 "│ 정책 검사 │",
                 "└─────┬─────┘",
-                "      │",
-                "      ▼",
+                "──────▼──────",
                 "┌─────┴─────┐",
                 "│ 출력      │",
                 "└───────────┘",
@@ -8885,17 +8896,14 @@ after
                 "┌───────────┐",
                 "│ Input     │",
                 "└─────┬─────┘",
-                "      │",
-                "      ▼",
+                "──────▼──────",
                 "┌─────┴─────┐",
                 "│ Policy    │",
                 "└─────┬─────┘",
-                "      │",
-                "      ▼",
+                "──────▼──────",
                 "      ├─▶ JSON safe",
                 "      └─▶ Explain",
-                "      │",
-                "      ▼",
+                "──────▼──────",
                 "┌─────┴─────┐",
                 "│ Render    │",
                 "└───────────┘",
@@ -8905,6 +8913,33 @@ after
         assert_visible_lines_fit(&output, 60);
         assert!(output.contains("JSON safe"));
         assert!(output.contains("Explain"));
+    }
+
+    #[test]
+    fn architecture_flow_boxes_wrap_long_labels_and_use_full_width_connectors() {
+        let diagram = FlowDiagram::new(
+            [
+                FlowStep::new("User / Codex Prompt"),
+                FlowStep::new("Real Codex Runner\nstdout/stderr/exit 보존"),
+                FlowStep::new("Renderer Selector\ntable/flow/risk/progress 선택"),
+                FlowStep::new("Terminal Renderer\nANSI + Unicode + wrapping"),
+            ],
+            25,
+        );
+        let output = render_flow_diagram(&diagram, Frame::Unicode, Theme::None);
+
+        assert_visible_lines_fit(&output, 25);
+        assert!(output.contains("│ stdout/stderr/exit    │"), "{output}");
+        assert!(output.contains("보존"), "{output}");
+        assert!(output.contains("│ table/flow/risk/progr │"), "{output}");
+        assert!(output.contains("│ ess 선택              │"), "{output}");
+        assert!(
+            output
+                .lines()
+                .any(|line| line == "────────────▼────────────"),
+            "{output}"
+        );
+        assert!(!output.lines().any(|line| line.trim() == "▼"), "{output}");
     }
 
     #[test]
