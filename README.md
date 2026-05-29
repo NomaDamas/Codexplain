@@ -69,7 +69,9 @@ After local setup, Codex receives project-local `AGENTS.md` guidance. Release us
 `codexplain on --local` is project-scoped. It writes only Codexplain-managed
 project files such as `.codexplain/bin/codex`, `.codexplain/activate`,
 `.codexplain/post-response`, `.codexplain/config.json`, and the managed
-`CODEXPLAIN:START` block in `AGENTS.md`.
+`CODEXPLAIN:START` block in `AGENTS.md`. If the project-local upstream Codex
+clone exists and no patched Codex binary is present, `on --local` also builds
+the patched TUI binary once. If the binary already exists, it skips the build.
 
 `codexplain off --local` removes only those managed files and blocks. It does
 not remove user-authored Codex settings, unrelated `AGENTS.md` content, or
@@ -195,9 +197,10 @@ currently open terminal session.
 
 Turn the project-local interactive Codex TUI assistant-message color hook on or
 off. `codexplain install-codex --local` and `npm run on` default this to `full`
-so newly opened Codex TUI sessions show color immediately. This does not modify
-global Codex settings. It only routes through a project-local patched Codex
-binary when one exists:
+so newly opened Codex TUI sessions show color immediately after
+`source .codexplain/activate`. This does not modify global Codex settings.
+It only routes through a project-local patched Codex binary. `on --local`
+builds that binary only when it is missing:
 
 ```bash
 codexplain tui-color on
@@ -214,13 +217,17 @@ codexplain tui-adapter status
 codexplain tui-adapter on
 codexplain tui-adapter full
 codexplain tui-adapter off
+codexplain tui-adapter apply
+codexplain tui-adapter build
 ```
 
 `tui-adapter on` is an alias for the existing `full` enable behavior. It exits
 successfully even when no patched Codex binary is available. In that case it
 enables project-local config, keeps exec/review shaping available, and reports
 that interactive TUI assistant-message recoloring requires a project-local
-patched Codex binary.
+patched Codex binary. `tui-adapter build` applies the tracked
+`patches/codex-tui-assistant-color.patch` and builds only the ignored
+project-local patched Codex binary.
 
 For Codex CLI chat output, explicitly use `--chat-color` when you want real
 terminal text color. It keeps ANSI styling instead of substituting emoji chips,
@@ -292,6 +299,9 @@ The result should be:
 - Numbered `1.` `2.` sections for "two paths", "두 가지", "과정", and "단계"
   explanations instead of one dense paragraph.
 - Semantic color highlights for labels such as TLDR, 핵심, 장점, 단점, 위험.
+- Sparse emoji cues only for short status, warning, inspection, ETA, and
+  next-action labels; emojis supplement color and text labels, never replace
+  them.
 - Three-stage explanation depth: light, standard, deep.
 - Three-stage architecture depth: overview, system, internals.
 - Three-stage abstraction level: concrete, architecture, strategy.

@@ -518,7 +518,10 @@ impl FrameLine {
 
 impl TableCell {
     fn new(value: impl Into<String>) -> Self {
-        Self { text: value.into() }
+        let text = value.into();
+        Self {
+            text: normalize_table_cell_text(&text),
+        }
     }
 
     fn width(&self) -> usize {
@@ -528,6 +531,12 @@ impl TableCell {
     fn wrapped(&self, width: usize) -> Vec<String> {
         wrap_text(&self.text, width)
     }
+}
+
+fn normalize_table_cell_text(text: &str) -> String {
+    text.replace("<br />", "\n")
+        .replace("<br/>", "\n")
+        .replace("<br>", "\n")
 }
 
 impl TableRow {
@@ -3349,8 +3358,10 @@ fn status_badge(profile: &Profile, response: &str) -> String {
         "BLOCKED" => "danger",
         _ => "warning",
     };
+    let marker = ux_emoji_for_role(role);
     format!(
-        "{} {}",
+        "{} {} {}",
+        marker,
         color(profile.theme, role, &format!("[{label}]")),
         color(profile.theme, "accent", progress_label(percent))
     )
@@ -3426,7 +3437,11 @@ fn confidence_meter(profile: &Profile, response: &str, width: usize) -> String {
     let percent = confidence_percent(response);
     format!(
         "{}\n{}",
-        color(profile.theme, "heading", "확신도"),
+        color(
+            profile.theme,
+            "heading",
+            &format!("{} 확신도", ux_emoji_for_role("inspect"))
+        ),
         render_progress_bar(
             percent,
             width.saturating_sub(12).min(24).max(12),
@@ -3481,16 +3496,33 @@ fn decision_matrix(profile: &Profile, width: usize) -> String {
     )
 }
 
-fn next_action_footer(profile: &Profile) -> String {
-    format!(
-        "{} {}",
-        color(profile.theme, "heading", "다음 행동:"),
-        color(
-            profile.theme,
-            "accent",
-            "검증 결과, 위험, 남은 항목 중 하나만 선택해 바로 실행합니다."
-        )
-    )
+fn next_action_footer(profile: &Profile, width: usize) -> String {
+    let label = format!("{} 다음 행동:", ux_emoji_for_role("next"));
+    let body = "검증 결과, 위험, 남은 항목 중 하나만 선택해 바로 실행합니다.";
+    let label_width = visible_width(&label);
+    let body_width = width.saturating_sub(label_width + 1).max(12);
+    let body_lines = wrap_text(body, body_width);
+    let indent = " ".repeat(label_width + 1);
+    let mut output = String::new();
+
+    for (index, line) in body_lines.iter().enumerate() {
+        if index == 0 {
+            output.push_str(&format!(
+                "{} {}",
+                color(profile.theme, "heading", &label),
+                color(profile.theme, "accent", line)
+            ));
+        } else {
+            output.push('\n');
+            output.push_str(&format!(
+                "{}{}",
+                indent,
+                color(profile.theme, "accent", line)
+            ));
+        }
+    }
+
+    output
 }
 
 fn eta_strip(profile: &Profile, response: &str) -> String {
@@ -3504,7 +3536,11 @@ fn eta_strip(profile: &Profile, response: &str) -> String {
     };
     format!(
         "{} {} · {} {}%",
-        color(profile.theme, "heading", "ETA:"),
+        color(
+            profile.theme,
+            "heading",
+            &format!("{} ETA:", ux_emoji_for_role("time"))
+        ),
         color(profile.theme, "accent", eta),
         color(profile.theme, "heading", "진척"),
         percent
@@ -3522,12 +3558,26 @@ fn attention_callout(profile: &Profile, response: &str, width: usize) -> String 
         };
     table(
         &["주의", "내용"],
-        &[vec!["중요".to_string(), message.to_string()]],
+        &[vec![
+            format!("{} 중요", ux_emoji_for_role("warning")),
+            message.to_string(),
+        ]],
         profile.frame,
         profile.theme,
         true,
         width,
     )
+}
+
+fn ux_emoji_for_role(role: &str) -> &'static str {
+    match role {
+        "success" => "✅",
+        "danger" | "warning" => "⚠",
+        "next" => "➡",
+        "time" => "⏱",
+        "inspect" => "🔎",
+        _ => "•",
+    }
 }
 
 fn notion_toggle(profile: &Profile, summary: &str, width: usize) -> String {
@@ -4002,7 +4052,7 @@ fn ux_component_output(
         UxComponent::ConfidenceMeter => confidence_meter(profile, response, width),
         UxComponent::DiffSummary => diff_summary_card(profile, summary, width),
         UxComponent::DecisionMatrix => decision_matrix(profile, width),
-        UxComponent::NextAction => next_action_footer(profile),
+        UxComponent::NextAction => next_action_footer(profile, width),
         UxComponent::EtaStrip => eta_strip(profile, response),
         UxComponent::AttentionCallout => attention_callout(profile, response, width),
     }
@@ -5146,6 +5196,24 @@ fn tui_adapter_command(args: &[String]) -> io::Result<()> {
                 tui_adapter_status_report("off", patched_codex_status())
             );
         }
+        TuiAdapterAction::ApplyPatch => {
+            let outcome = apply_codex_tui_patch()?;
+            println!(
+                "Codexplain TUI adapter patch\n- scope: project-local only\n- patch: {}\n- result: {}\n- next: codexplain tui-adapter build",
+                codex_tui_patch_path().display(),
+                outcome
+            );
+        }
+        TuiAdapterAction::Build => {
+            let patch_outcome = apply_codex_tui_patch()?;
+            build_patched_codex_binary()?;
+            write_color_config("ansi", "ansi", "full")?;
+            println!(
+                "{}\n- patch: {}\n- build: cargo build -p codex-cli --bin codex\n- result: project-local patched Codex TUI ready",
+                tui_adapter_status_report("full", patched_codex_status()),
+                patch_outcome
+            );
+        }
         TuiAdapterAction::Status => {
             println!(
                 "{}",
@@ -5160,6 +5228,8 @@ fn tui_adapter_command(args: &[String]) -> io::Result<()> {
 enum TuiAdapterAction {
     EnableFull,
     Disable,
+    ApplyPatch,
+    Build,
     Status,
 }
 
@@ -5167,6 +5237,8 @@ fn parse_tui_adapter_action(action: &str) -> io::Result<TuiAdapterAction> {
     match action {
         "on" | "enable" | "full" => Ok(TuiAdapterAction::EnableFull),
         "off" | "disable" => Ok(TuiAdapterAction::Disable),
+        "apply" | "patch" => Ok(TuiAdapterAction::ApplyPatch),
+        "build" => Ok(TuiAdapterAction::Build),
         "status" | "--show" | "show" => Ok(TuiAdapterAction::Status),
         other => Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -5192,6 +5264,7 @@ fn tui_adapter_status_report(mode: &str, patched_status: String) -> String {
             "- patchedCodex: {}\n",
             "- fallback: exec/review shaping remains available; interactive TUI assistant-message recoloring requires a project-local patched Codex binary\n",
             "- rollback: codexplain tui-adapter off, or codexplain off --local to remove managed project files and blocks\n",
+            "- build: codexplain tui-adapter build applies patches/codex-tui-assistant-color.patch and builds only the project-local patched Codex binary\n",
             "- cleanup: codexplain build-clean --patched-codex removes only the project-local patched Codex target cache"
         ),
         mode,
@@ -5199,6 +5272,134 @@ fn tui_adapter_status_report(mode: &str, patched_status: String) -> String {
         active_target,
         patched_status
     )
+}
+
+fn codex_tui_patch_path() -> PathBuf {
+    project_path("patches/codex-tui-assistant-color.patch")
+}
+
+fn upstream_codex_root() -> PathBuf {
+    project_path(".codexplain/state/codex-upstream")
+}
+
+fn upstream_codex_rs_root() -> PathBuf {
+    upstream_codex_root().join("codex-rs")
+}
+
+fn codex_tui_patch_already_applied() -> bool {
+    let root = upstream_codex_rs_root();
+    let markdown = root.join("tui/src/markdown.rs");
+    let messages = root.join("tui/src/history_cell/messages.rs");
+    fs::read_to_string(markdown)
+        .map(|content| {
+            content.contains(
+                "codexplain_full_color_overrides_existing_prose_foreground_for_semantic_terms",
+            ) && content.contains("codexplain_semantic_terms")
+        })
+        .unwrap_or(false)
+        && fs::read_to_string(messages)
+            .map(|content| content.contains("codexplain_style_agent_lines"))
+            .unwrap_or(false)
+}
+
+fn apply_codex_tui_patch() -> io::Result<String> {
+    let upstream = upstream_codex_root();
+    let codex_rs = upstream_codex_rs_root();
+    let patch = codex_tui_patch_path();
+
+    if !codex_rs.join("Cargo.toml").exists() {
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            format!(
+                "missing project-local Codex upstream clone: {}",
+                codex_rs.display()
+            ),
+        ));
+    }
+    if !patch.exists() {
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("missing tracked patch file: {}", patch.display()),
+        ));
+    }
+    if codex_tui_patch_already_applied() {
+        return Ok("already-applied".to_string());
+    }
+
+    run_command_checked(
+        Command::new("git")
+            .arg("-C")
+            .arg(&upstream)
+            .arg("apply")
+            .arg("--check")
+            .arg(&patch),
+        "git apply --check patches/codex-tui-assistant-color.patch",
+    )?;
+    run_command_checked(
+        Command::new("git")
+            .arg("-C")
+            .arg(&upstream)
+            .arg("apply")
+            .arg(&patch),
+        "git apply patches/codex-tui-assistant-color.patch",
+    )?;
+    Ok("applied".to_string())
+}
+
+fn build_patched_codex_binary() -> io::Result<()> {
+    let codex_rs = upstream_codex_rs_root();
+    if !codex_rs.join("Cargo.toml").exists() {
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            format!(
+                "missing project-local Codex upstream clone: {}",
+                codex_rs.display()
+            ),
+        ));
+    }
+    run_command_checked(
+        Command::new("cargo")
+            .current_dir(&codex_rs)
+            .arg("build")
+            .arg("-p")
+            .arg("codex-cli")
+            .arg("--bin")
+            .arg("codex"),
+        "cargo build -p codex-cli --bin codex",
+    )
+}
+
+fn ensure_project_local_patched_codex_binary() -> io::Result<String> {
+    if local_patched_codex_binary()
+        .filter(|path| is_executable_file(path))
+        .is_some()
+    {
+        return Ok("already-built".to_string());
+    }
+
+    let codex_rs = upstream_codex_rs_root();
+    if !codex_rs.join("Cargo.toml").exists() {
+        return Ok(format!(
+            "skipped: missing project-local upstream clone at {}",
+            codex_rs.display()
+        ));
+    }
+
+    let patch_outcome = apply_codex_tui_patch()?;
+    build_patched_codex_binary()?;
+    Ok(format!("built ({patch_outcome})"))
+}
+
+fn run_command_checked(command: &mut Command, label: &str) -> io::Result<()> {
+    let output = command.output()?;
+    if output.status.success() {
+        return Ok(());
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    Err(io::Error::other(format!(
+        "{label} failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    )))
 }
 
 fn patched_codex_status() -> String {
@@ -5974,7 +6175,7 @@ Default answer style:
 - Use ANSI terminal color by default when Codexplain config asks for `defaultColorOutput: ansi`; for Codex CLI chat output, prefer real ANSI text color over emoji chips or raw HTML spans.
 - Respect explanationDepth light/standard/deep, architectureDepth overview/system/internals, and abstractionLevel concrete/architecture/strategy.
 - Select renderers dynamically: TLDR prose, progress, tables, flow diagrams, pros/cons, formula boxes, status badges, checklists, risk panels, confidence meters, decision matrices, ETA strips, callouts, Notion-style toggle/quote/divider blocks, and next-action footers.
-- When Codexplain is ON in Codex CLI, highlight important terms with sparse semantic ANSI colors. Emojis may be used only as light explanatory supplements, not as the color system.
+- When Codexplain is ON in Codex CLI, highlight important terms with sparse semantic ANSI colors. Emojis may be used only as light explanatory supplements, not as the color system; keep them to short status/callout/next-action cues and avoid more than one cue per semantic section.
 - Treat UX blocks like tool choices: combine the smallest useful set from prompt, response, profile, and optional planner hints.
 - Split explanations by semantic units with active line breaks. If the answer says "two paths", "두 가지", "과정", or "단계", render them as compact 1. 2. 3. numbered sections. Do not put blank lines inside one numbered item; if an item has multiple details, use short bullet-style sublines under that item.
 - Architecture, flow, and expansion diagrams should prefer Codexplain renderer-owned boxes before prose. Use a table only when it adds a compact role/decision summary.
@@ -6008,7 +6209,7 @@ source .codexplain/activate
 codex exec "이 프로젝트 아키텍처를 표와 흐름도로 설명해줘"
 ```
 
-The shim only prepends `.codexplain/bin` in the current shell. `codexplain uninstall-codex --local` removes the shim files and the managed AGENTS.md block.
+The shim only prepends `.codexplain/bin` in the current shell. `codexplain on --local` builds the project-local patched Codex TUI binary only when it is missing. `codexplain uninstall-codex --local` removes the shim files and the managed AGENTS.md block.
 
 Color can be toggled without uninstalling Codexplain:
 
@@ -6053,12 +6254,16 @@ codexplain tui-adapter status
 codexplain tui-adapter on
 codexplain tui-adapter full
 codexplain tui-adapter off
+codexplain tui-adapter apply
+codexplain tui-adapter build
 ```
 
-`tui-adapter on` is an alias for the existing `full` enable behavior. It does not clone or build upstream Codex. If no patched binary is present, it exits
-successfully and reports the fallback: exec/review shaping still works, while
-interactive TUI assistant-message recoloring needs a project-local patched Codex
-binary.
+`tui-adapter on` is an alias for the existing `full` enable behavior. If no
+patched binary is present, it exits successfully and reports the fallback:
+exec/review shaping still works, while interactive TUI assistant-message
+recoloring needs a project-local patched Codex binary. `tui-adapter build`
+applies `patches/codex-tui-assistant-color.patch` to the ignored project-local
+upstream clone and builds only the project-local patched Codex binary.
 
 The shim routes to `.codexplain/state/codex-upstream/codex-rs/target/release/codex` or `.codexplain/state/codex-upstream/codex-rs/target/debug/codex` when that binary exists and `tuiAssistantColor` is enabled.
 
@@ -6233,7 +6438,12 @@ fn print_session_activation_hint() {
 
 fn install_local_codex_project() -> io::Result<()> {
     let root = project_path(".");
-    install_local_codex_project_at(&root)
+    install_local_codex_project_at(&root)?;
+    println!(
+        "TUI adapter build: {}",
+        ensure_project_local_patched_codex_binary()?
+    );
+    Ok(())
 }
 
 fn install_local_codex_project_at(root: &Path) -> io::Result<()> {
@@ -7369,7 +7579,7 @@ fn usage() -> &'static str {
   codexplain off|uninstall-codex [--project|--local] [--global] [--session] [--remove-profile]
   codexplain color on|off|status
   codexplain tui-color on|full|off|status
-  codexplain tui-adapter on|full|off|status
+  codexplain tui-adapter on|full|off|status|apply|build
   codexplain style add <name> --trigger <text> --renderers <tldr,table,flow,pros-cons,formula,cause-effect,indexed,progress> --description <text>
   codexplain style list|show <name>|remove <name>
   codexplain feedback|rlhf --rating <1-5> --comment <text>
@@ -7404,7 +7614,7 @@ Color outputs: terminal, ansi, markdown, html, plain. Use --chat-color as an ali
 Scopes: --project/--local writes only this repository's managed Codexplain files; --global writes only managed guidance under CODEX_HOME; --session prints the current-shell activation command because a child process cannot mutate its parent shell.
 Color toggle: `codexplain color on` forces ANSI text color for Codexplain-shaped exec/review output and best-effort Codex TUI color env; `codexplain color off` restores plain output.
 TUI assistant color: `codexplain tui-color on` enables project-local full assistant-message color when a patched Codex binary exists under .codexplain/state/codex-upstream/codex-rs/target/release/codex or target/debug/codex; `off` disables only that hook.
-TUI adapter: `codexplain tui-adapter status` reports project-local shim path, mode, active binary/fallback, patched binary status, rollback, and cleanup instructions.
+TUI adapter: `codexplain tui-adapter status` reports project-local shim path, mode, active binary/fallback, patched binary status, rollback, and cleanup instructions. `codexplain tui-adapter build` applies the tracked Codex TUI color patch and builds only the project-local patched Codex binary.
 Status bar control: `codexplain statusbar` is the Rust control surface used by local app launchers. It toggles only project-local Codexplain files, updates profile/config controls, and leaves unrelated global Codex settings untouched.
 Settings UI: `codexplain settings-ui` opens a dependency-free Rust terminal UI for theme, frame, depth, abstraction, UX density, and color mode; `codexplain install-app` writes lightweight macOS/Linux/Windows launchers under .codexplain/app.
 Compatibility gate: `codexplain compat-check` validates project-local OMX/harness safety, managed on/off scopes, strict artifact preservation, ignored harness state, and width-safe renderer contracts.
@@ -7972,6 +8182,27 @@ mod tests {
     }
 
     #[test]
+    fn emoji_cues_are_sparse_supplements_not_the_color_system() {
+        let profile = Profile {
+            theme: Theme::None,
+            ux_density: 80,
+            ..Profile::default()
+        };
+
+        let badge = status_badge(&profile, "완료 100%");
+        let callout = attention_callout(&profile, "실패 원인을 확인해야 합니다.", 64);
+        let next = next_action_footer(&profile, 64);
+        let confidence = confidence_meter(&profile, "통과", 64);
+        let combined = format!("{badge}\n{callout}\n{next}\n{confidence}");
+
+        assert!(badge.starts_with("✅ [PASS]"), "{badge}");
+        assert!(callout.contains("⚠ 중요"), "{callout}");
+        assert!(next.contains("➡ 다음 행동:"), "{next}");
+        assert!(confidence.contains("🔎 확신도"), "{confidence}");
+        assert_visible_lines_fit(&combined, 64);
+    }
+
+    #[test]
     fn indexed_list_wraps_continuation_lines_under_content_column() {
         let output = indexed(
             &["Alpha beta gamma delta epsilon".to_string()],
@@ -8413,10 +8644,12 @@ after
 
     #[test]
     fn tui_adapter_docs_and_help_are_discoverable_without_global_changes() {
-        assert!(usage().contains("codexplain tui-adapter on|full|off|status"));
+        assert!(usage().contains("codexplain tui-adapter on|full|off|status|apply|build"));
         assert!(LOCAL_README.contains("codexplain tui-adapter on"));
         assert!(LOCAL_README.contains("codexplain tui-adapter status"));
-        assert!(LOCAL_README.contains("does not clone or build upstream Codex"));
+        assert!(LOCAL_README.contains("codexplain tui-adapter build"));
+        assert!(LOCAL_README
+            .contains("builds the project-local patched Codex TUI binary only when it is missing"));
         assert!(LOCAL_README.contains("project-local patched Codex"));
         assert!(LOCAL_README.contains("binary"));
     }
@@ -8795,6 +9028,28 @@ after
             ]
             .join("\n")
         );
+    }
+
+    #[test]
+    fn table_cells_normalize_html_breaks_before_wrapping() {
+        let output = table(
+            &["주제", "답"],
+            &[vec![
+                "GPU 쓰는 정당한 학습연산".to_string(),
+                "필요하면 강화합니다.<br>예: distillation, offline eval.<br />fake allocation은 제외합니다.<br/>eval로 검증합니다.".to_string(),
+            ]],
+            Frame::Unicode,
+            Theme::None,
+            true,
+            72,
+        );
+
+        assert!(!output.contains("<br"), "{output}");
+        assert!(output.contains("필요하면 강화합니다."), "{output}");
+        assert!(output.contains("예: distillation,"), "{output}");
+        assert!(output.contains("fake allocation은"), "{output}");
+        assert!(output.contains("eval로 검증합니다."), "{output}");
+        assert_visible_lines_fit(&output, 72);
     }
 
     #[test]
