@@ -196,6 +196,16 @@ codexplain on --session  # prints the source command for the current shell
 `source .codexplain/activate` command when you want the shim only for the
 currently open terminal session.
 
+When the project-local shim is active, `codex` startup checks GitHub releases
+best-effort. If a newer Codexplain release exists and this repository is on a
+clean branch, the shim runs `git pull --ff-only` and rebuilds the release
+binary before starting Codex. Network failures or dirty worktrees are skipped
+so Codex still opens. Disable this for one command with:
+
+```bash
+CODEXPLAIN_AUTO_UPDATE=off codex
+```
+
 Turn the project-local interactive Codex TUI assistant-message color hook on or
 off. `codexplain install-codex --local` and `npm run on` default this to `full`
 so newly opened Codex TUI sessions show color immediately after

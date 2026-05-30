@@ -38,6 +38,12 @@ codexplain compat-check
 
 `codex exec` and `codex review` can be post-processed with Codexplain ANSI text color. Interactive Codex TUI is passed through to the real Codex process with color env (`CLICOLOR_FORCE`, `FORCE_COLOR`, `COLORTERM`). Assistant-message recoloring inside ratatui requires the project-local patched Codex renderer.
 
+When this shim is active, `codex` startup performs a best-effort GitHub release
+check. If a newer Codexplain release exists and this repo is on a clean branch,
+the shim runs `git pull --ff-only` and rebuilds the release binary before
+starting Codex. It never blocks Codex startup on network failure. Disable it for
+one command with `CODEXPLAIN_AUTO_UPDATE=off codex`.
+
 Project-local interactive TUI assistant color can be toggled without touching global Codex settings:
 
 ```bash

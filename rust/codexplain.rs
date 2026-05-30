@@ -6376,6 +6376,12 @@ codexplain compat-check
 
 `codex exec` and `codex review` can be post-processed with Codexplain ANSI text color. Interactive Codex TUI is passed through to the real Codex process with color env (`CLICOLOR_FORCE`, `FORCE_COLOR`, `COLORTERM`). Assistant-message recoloring inside ratatui requires the project-local patched Codex renderer.
 
+When this shim is active, `codex` startup performs a best-effort GitHub release
+check. If a newer Codexplain release exists and this repo is on a clean branch,
+the shim runs `git pull --ff-only` and rebuilds the release binary before
+starting Codex. It never blocks Codex startup on network failure. Disable it for
+one command with `CODEXPLAIN_AUTO_UPDATE=off codex`.
+
 Project-local interactive TUI assistant color can be toggled without touching global Codex settings:
 
 ```bash
@@ -6473,6 +6479,28 @@ else
   export COLORTERM=truecolor
   unset NO_COLOR
 fi
+codexplain_auto_update() {
+  case "${CODEXPLAIN_AUTO_UPDATE:-1}" in
+    0|false|off|never) return 0 ;;
+  esac
+  command -v git >/dev/null 2>&1 || return 0
+  command -v cargo >/dev/null 2>&1 || return 0
+  [ -d "$ROOT/.git" ] || return 0
+  git -C "$ROOT" diff --quiet >/dev/null 2>&1 || return 0
+  git -C "$ROOT" diff --cached --quiet >/dev/null 2>&1 || return 0
+  branch=$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || printf HEAD)
+  [ "$branch" != "HEAD" ] || return 0
+  current=$(sed -n 's/^version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/v\1/p' "$ROOT/Cargo.toml" 2>/dev/null | head -n 1)
+  [ -n "$current" ] || return 0
+  latest=$(git ls-remote --tags --refs --sort=v:refname https://github.com/NomaDamas/Codexplain.git 'v*' 2>/dev/null | sed 's#.*refs/tags/##' | tail -n 1)
+  [ -n "$latest" ] || return 0
+  [ "$latest" != "$current" ] || return 0
+  if git -C "$ROOT" pull --ff-only >/dev/null 2>&1; then
+    (cd "$ROOT" && cargo build --release >/dev/null 2>&1) || return 0
+    printf 'Codexplain auto-updated: %s -> %s\n' "$current" "$latest" >&2
+  fi
+}
+codexplain_auto_update
 exec "$ROOT/bin/codexplain" codex --local-shape "$@"
 "#;
 
@@ -6938,12 +6966,7 @@ fn run_codex(args: &[String]) -> i32 {
             }
         }
     }
-    if codex_args.is_empty() {
-        codex_args.push("exec".to_string());
-        if !prompt.is_empty() {
-            codex_args.push(prompt.clone());
-        }
-    }
+    codex_args = prepare_codex_args(codex_args, &prompt);
     let codex_bin = resolve_real_codex_binary();
     if !should_capture_codex_output(&codex_args) {
         let mut command = Command::new(&codex_bin);
@@ -6997,6 +7020,14 @@ fn run_codex(args: &[String]) -> i32 {
         print!("{stdout}");
     }
     output.status.code().unwrap_or(1)
+}
+
+fn prepare_codex_args(mut codex_args: Vec<String>, prompt: &str) -> Vec<String> {
+    if codex_args.is_empty() && !prompt.is_empty() {
+        codex_args.push("exec".to_string());
+        codex_args.push(prompt.to_string());
+    }
+    codex_args
 }
 
 fn should_capture_codex_output(codex_args: &[String]) -> bool {
@@ -8599,6 +8630,10 @@ after
         assert!(CODEX_SHIM_SH.contains(r#"export CODEXPLAIN_PROJECT_DIR="$ROOT""#));
         assert!(exports_or_forwards_local_shape(CODEX_SHIM_SH));
         assert!(CODEX_SHIM_SH.contains("codex --local-shape"));
+        assert!(CODEX_SHIM_SH.contains("codexplain_auto_update"));
+        assert!(CODEX_SHIM_SH.contains("CODEXPLAIN_AUTO_UPDATE"));
+        assert!(CODEX_SHIM_SH.contains("pull --ff-only"));
+        assert!(CODEX_SHIM_SH.contains("cargo build --release"));
         assert!(CODEX_SHIM_SH.contains("FORCE_COLOR=3"));
         assert!(CODEX_SHIM_SH.contains("NO_COLOR=1"));
         assert!(ACTIVATE_SH.contains(
@@ -8743,6 +8778,11 @@ after
 
     #[test]
     fn codex_capture_policy_preserves_tui_passthrough() {
+        assert!(prepare_codex_args(Vec::new(), "").is_empty());
+        assert_eq!(
+            prepare_codex_args(Vec::new(), "이 프로젝트 설명"),
+            vec!["exec".to_string(), "이 프로젝트 설명".to_string()]
+        );
         assert!(should_capture_codex_output(&["exec".to_string()]));
         assert!(should_capture_codex_output(&["review".to_string()]));
         assert!(!should_capture_codex_output(&[]));
