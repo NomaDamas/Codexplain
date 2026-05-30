@@ -37,6 +37,8 @@ Codexplain does three things:
 
 - Preserves strict artifacts such as JSON, code blocks, diffs, patches, logs,
   test output, and commit messages exactly as Codex produced them.
+- Uses English by default for global open-source use, while mirroring the
+  user's language when the user asks in Korean or another language.
 - Shapes explanatory prose into predictable UX patterns such as TLDRs, numbered
   steps, width-safe tables, architecture panels, progress reports, risk panels,
   decision matrices, and next-action footers.
@@ -494,7 +496,8 @@ Readable terminal answer
 The result should be:
 
 - TLDR first when the output is explanatory.
-- Korean-first when the user writes Korean.
+- English by default for global open-source use.
+- Korean or another user language when the user writes in that language.
 - Short paragraphs instead of scattered process narration.
 - Unicode box tables and diagrams when they help scanning.
 - Row dividers in dense tables so long architecture lists are easier to track.

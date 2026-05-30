@@ -5,8 +5,11 @@ promotional version; this file keeps the fuller catalog.
 
 ## Renderer UX
 
+Codexplain is English-first for global open-source defaults. It mirrors the
+user's language when the user writes in Korean or another language.
+
 ```text
- Feature                         What It Does
+Feature                         What It Does
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
  TLDR                             Starts explanatory answers with the point
 ───────────────────────────────  ───────────────────────────────────────────

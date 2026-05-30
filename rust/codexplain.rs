@@ -6553,7 +6553,8 @@ Shape user-facing answers with a clear, readable, color-aware terminal/chat expe
 
 Default answer style:
 - Start with the outcome or current state, not implementation detail.
-- Use concise Korean first when the user writes Korean.
+- Use English by default for global open-source usage.
+- Mirror the user's language when the user writes in Korean or another non-English language.
 - Use connected Unicode boxes or tables when structure helps scanning.
 - Use semantic ANSI colors for labels, risks, success states, artifact names, commands, paths, and next actions when the terminal supports color.
 - Color policy is semantic-sparse: use color as a meaning signal, not decoration. Keep one dominant structure color, one key/accent color, and state colors only for success/warning/danger/reference terms.
@@ -6794,7 +6795,7 @@ Apply Codexplain's explanation UX globally unless a repository provides stricter
 
 Default answer style:
 - Preserve exact JSON, code, diffs, patches, logs, test output, and commit messages.
-- For explanatory answers, prefer Korean when the user writes Korean.
+- For explanatory answers, use English by default and mirror the user's language when the user writes in Korean or another non-English language.
 - Use TLDR, Unicode tables, flow diagrams, pros/cons, formula boxes, progress UI, Notion-style toggle/quote/divider blocks, and next actions when they improve scanning.
 - Prefer Markdown-safe chat highlights in chat hosts; use ANSI terminal colors in terminal hosts; fall back to plain text when exact formatting matters.
 - Avoid hand-drawn long raw box tables that can overflow narrow terminals; prefer width-safe renderer output or Markdown tables. If Unicode boxes are used, every body row must be wrapped, padded, and separated by the renderer contract.
@@ -8954,6 +8955,8 @@ after
         assert!(GLOBAL_CODEX_GUIDANCE.contains("CODEXPLAIN:END"));
         assert!(CODEX_GUIDANCE.contains("capability boundary"));
         assert!(GLOBAL_CODEX_GUIDANCE.contains("capability boundaries"));
+        assert!(CODEX_GUIDANCE.contains("Use English by default"));
+        assert!(GLOBAL_CODEX_GUIDANCE.contains("use English by default"));
     }
 
     #[test]
