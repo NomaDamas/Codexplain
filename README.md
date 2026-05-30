@@ -116,7 +116,7 @@ Before:
 
 ```text
 ┌────────┬────────────────────────┐
-│ 구분   │ 설명                   │
+│ Area   │ Description            │
 ├────────┼────────────────────────┤
 │ Policy │ JSON/code/diff/log/test output must remain exact but this long text spills outside the table
 │ Render │ Flow/table/progress/risk/color should be selected dynamically
@@ -126,14 +126,14 @@ Before:
 After:
 
 ```text
- 구분      설명
+ Area     Description
 ━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
  Policy   JSON/code/diff/log/test output stays exact before rendering.
 ────────  ─────────────────────────────────────────────────────────────
  Render   Flow, table, progress, risk, and color are chosen by prompt,
           profile, and safety rules.
 ────────  ─────────────────────────────────────────────────────────────
-Scope    Local on/off removes only Codexplain-managed state.
+ Scope    Local on/off removes only Codexplain-managed state.
 ```
 
 Codexplain also repairs non-strict hand-drawn Unicode tables that forgot body
@@ -152,19 +152,22 @@ needs attention.
 After:
 
 ```text
- 의미      색상 역할             적용 규칙
+ Meaning   Color role            Rule
 ━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- 성공      success               완료, 통과, 가능, 보존
+ Success   success               PASS, DONE, APPROVED, completed
 ────────  ────────────────────  ─────────────────────────────────────
- 주의      warning               필요, 진행, 우회, hook
+ Warning   warning               risk, warning, drift, regression
 ────────  ────────────────────  ─────────────────────────────────────
- 위험      danger                실패, 오류, 불가, 안 보임
+ Danger    danger                FAIL, blocked, unsafe, OOM, error
 ────────  ────────────────────  ─────────────────────────────────────
- 참조      command/path/artifact  commands, paths, JSON/code/diff/log/test
+ Reference command/path/artifact commands, paths, JSON/code/diff/log/test
 ```
 
-Color is intentionally semantic-sparse: it is a meaning signal, not decoration.
-Emoji cues are used sparingly for scanning, never as the color system.
+Color is intentionally semantic-sparse: it is a task-relevance signal, not
+decoration. Codexplain highlights outcomes, risks, strict artifacts, commands,
+and paths; it avoids coloring ordinary nouns such as "renderer" or
+"architecture" unless they are structural labels. Emoji cues are used sparingly
+for scanning, never as the color system.
 
 ## ⚡ One-Line Setup
 
@@ -231,7 +234,7 @@ available unless `codexplain color off` is also used.
 Run Codex through Codexplain and locally shape the captured output:
 
 ```bash
-codexplain-codex --local-shape --prompt "쉽고 자세하게 TLDR와 표/흐름도로 설명해줘" exec "이 프로젝트 아키텍처 설명해줘"
+codexplain-codex --local-shape --prompt "Explain this project architecture with a TLDR, table, and flow diagram" exec "Explain this project architecture"
 ```
 
 Set your preferred style:
@@ -333,7 +336,7 @@ If your shell sets `NO_COLOR=1` but you want Codexplain color anyway, force it
 for this project command:
 
 ```bash
-CODEXPLAIN_COLOR=always codexplain shape --theme grape --prompt "강조해서 설명" --response "완료 PASS"
+CODEXPLAIN_COLOR=always codexplain shape --theme grape --prompt "Highlight only meaningful signals" --response "DONE: quality-check PASS"
 ```
 
 Turn the Codexplain color layer on or off for this project:
@@ -352,13 +355,13 @@ Color is governed by a semantic-sparse policy:
 ━━━━━━━━━━━━━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
  border                Structure lines for tables, boxes, and flows
 ────────────────────  ───────────────────────────────────────────────
- heading               Key terms such as TLDR, renderer, architecture
+ heading               Structural labels such as TLDR or section headings
 ────────────────────  ───────────────────────────────────────────────
- success               완료, 통과, 가능, 보존
+ success               PASS, DONE, APPROVED, completed
 ────────────────────  ───────────────────────────────────────────────
- warning               필요, 진행, 우회, hook
+ warning               risk, warning, drift, regression, required
 ────────────────────  ───────────────────────────────────────────────
- danger                실패, 오류, 불가, 안 보임
+ danger                FAIL, blocked, unsafe, OOM, error
 ────────────────────  ───────────────────────────────────────────────
  command/path/artifact  Commands, paths, JSON/code/diff/log/test refs
 ```
@@ -368,11 +371,11 @@ shape:
 
 ```bash
 codexplain style add research-card \
-  --trigger "연구 카드" \
+  --trigger "research card" \
   --renderers "tldr,table,formula" \
   --tone "research" \
-  --description "배경, 근거, 한계, 다음 행동을 분리한다." \
-  --example "연구 카드로 이 설계를 설명해줘"
+  --description "Separate background, evidence, limitations, and next action." \
+  --example "Explain this design as a research card"
 
 codexplain style list
 codexplain style preview research-card
@@ -441,14 +444,14 @@ while still preserving strict JSON, diffs, code, and logs unchanged:
 
 ```bash
 codexplain shape --chat-color --theme sunset \
-  --prompt "채팅에서도 색 있게 설명해줘" \
-  --response "Codexplain은 Rust-only 설명 UX 렌더러입니다."
+  --prompt "Explain with sparse semantic color" \
+  --response "Codexplain is a Rust-only explanation UX renderer."
 ```
 
 For HTML-capable surfaces only, use the explicit HTML form:
 
 ```bash
-codexplain shape --color-output html --theme sunset --prompt "요약" --response "본문"
+codexplain shape --color-output html --theme sunset --prompt "Summarize" --response "Body text"
 ```
 
 Renderer-owned tables are the safe path. If a cell can become long, do not
@@ -470,7 +473,7 @@ with adapter routing and validation notes in
 Give feedback after an answer:
 
 ```bash
-codexplain rlhf --rating 5 --comment "이 정도 깊이와 쉬운 말이 좋다"
+codexplain rlhf --rating 5 --comment "This level of depth and plain language works well"
 ```
 
 ## ✨ What It Improves
@@ -503,9 +506,10 @@ The result should be:
 - Row dividers in dense tables so long architecture lists are easier to track.
 - Width-safe Codexplain-rendered tables instead of hand-drawn long raw tables
   when cell text may wrap.
-- Numbered `1.` `2.` sections for "two paths", "두 가지", "과정", and "단계"
+- Numbered `1.` `2.` sections for two paths, process, and step-by-step
   explanations instead of one dense paragraph.
-- Semantic color highlights for labels such as TLDR, 핵심, 장점, 단점, 위험.
+- Semantic color highlights for task-critical labels such as TLDR, PASS, FAIL,
+  risk, command, path, and strict artifacts.
 - Sparse emoji cues only for short status, warning, inspection, ETA, and
   next-action labels; emojis supplement color and text labels, never replace
   them.
@@ -527,14 +531,16 @@ The result should be:
   pros/cons comparison, and formula boxes instead of choosing only the first
   matching format.
 - Pros/cons and tradeoff questions as comparison panels instead of loose bullets.
-- Cause-effect questions as 원인/결과/대응 reports instead of unstructured prose.
+- Cause-effect questions as cause/result/response reports instead of
+  unstructured prose.
 - Progress reports with a short status label above the bar, then a compact
   checkpoint table for current state, percentage, and next action.
 - Workflow progress blocks for development, harness, and user-defined workflows
   with a shared schema: type, phase, percent, completed/current/next steps,
   evidence, and trigger source.
 - Macro progress reports that collapse verbose `Explored` / `Ran` / `Read`
-  transcripts into phase-level UX such as 탐색, 검색, 실행, 설정, 결론.
+  transcripts into phase-level UX such as discovery, search, execution,
+  configuration, and conclusion.
 - Tool-calling-like UX composition: status badges, checklists, risk panels,
   confidence meters, diff summary cards, decision matrices, ETA strips,
   attention callouts, and next-action footers are selected from prompt and
@@ -557,8 +563,8 @@ pros/cons, formula, confidence, and a decision matrix.
 
 Selector versions now available:
 
-- V1 rules: explicit prompt signals such as `progress`, `risk`, `수식`, or
-  `장단점` map to known renderers.
+- V1 rules: explicit prompt signals such as `progress`, `risk`, `formula`, or
+  `pros/cons` map to known renderers.
 - V2 scores: implicit UX signals are scored against `uxDensity` and
   `riskSensitivity`, while explanation depth itself uses the 3-stage controls.
 - V3 planner hints: set `CODEXPLAIN_UX_PLAN="risk-panel,next-action"` or
@@ -587,15 +593,15 @@ Example:
 codexplain shape \
   --ux-density 90 \
   --risk-sensitivity 80 \
-  --prompt "진행상황을 풍부한 UX로 보여줘: risk, confidence, next action" \
-  --response "현재 4/5 단계 진행 중입니다. 테스트는 통과했고 릴리즈 검증이 남았습니다."
+  --prompt "Show progress with rich UX: risk, confidence, next action" \
+  --response "Currently at step 4 of 5. Tests passed and release validation remains."
 ```
 
 Planner hint example:
 
 ```bash
 CODEXPLAIN_UX_PLAN="status-badge,risk-panel,next-action" \
-  codexplain shape --prompt "상태 보고" --response "실패: provider timeout"
+  codexplain shape --prompt "Status report" --response "FAILED: provider timeout"
 ```
 
 ## 📚 Deep Docs
@@ -663,13 +669,13 @@ text.
 
 ```bash
 codexplain demo
-codexplain guide --prompt "현재 상태를 쉽게 설명해줘"
-codexplain shape --prompt "흐름도로 설명해줘" --response "구현은 완료됐습니다."
-codexplain shape --prompt "Rust-only 전환을 pros and cons 표와 수식으로 설명해줘" --response "Rust는 단일 바이너리와 낮은 런타임 의존성에 유리합니다."
-codexplain shape --prompt "원인-결과 리포트로 설명해줘" --response "표 셀이 길어서 박스를 벗어납니다. 그래서 가독성이 떨어집니다."
-codexplain post-response --prompt "쉽게 설명해줘"
-codexplain feedback --rating 2 --comment "너무 어렵고 설명이 부족해"
-codexplain rlhf --rating 5 --comment "이 스타일이 좋아"
+codexplain guide --prompt "Explain the current state plainly"
+codexplain shape --prompt "Explain as a flow diagram" --response "Implementation is complete."
+codexplain shape --prompt "Explain the Rust-only transition with pros, cons, and a formula" --response "Rust helps with a single binary and low runtime dependency risk."
+codexplain shape --prompt "Explain as a cause-effect report" --response "The table cell is too long and spills outside the box, reducing readability."
+codexplain post-response --prompt "Explain plainly"
+codexplain feedback --rating 2 --comment "Too difficult and missing context"
+codexplain rlhf --rating 5 --comment "This style works well"
 codexplain build-size
 codexplain build-clean --target
 ```
@@ -714,7 +720,7 @@ answers hard to read:
 The contract fails if generated output exceeds the requested width, table body
 row dividers disappear, architecture explanations do not contain enough boxes,
 flow arrows are missing, flow boxes/connectors break, expansion diagrams
-overflow, or “two paths / 두 가지” explanations are not numbered.
+overflow, or two-path/process explanations are not numbered.
 
 ```text
 contract=codexplain.quality-check.v1
@@ -734,10 +740,15 @@ score>=90
 
 Codexplain's current explanation UX is mapped in
 [`docs/explanation-research.md`](docs/explanation-research.md). The current
-implementation already borrows from attention/salience, chain-of-thought style
-stepwise decomposition, RLHF-style preference feedback, constitutional
-critique/revision loops, personalized RLHF summaries, and ICLR 2026
-CoT-rubric work. Candidate additions are tracked there before implementation.
+implementation borrows from visual attention research, WCAG redundant-coding
+guidance, chain-of-thought style stepwise decomposition, RLHF-style preference
+feedback, constitutional critique/revision loops, personalized RLHF summaries,
+and ICLR 2026 CoT-rubric work.
+
+The highlight policy is intentionally sparse: color is reserved for
+task-critical outcomes, risks, strict artifacts, commands, and paths. Ordinary
+technical nouns are left plain unless they are structural labels. Candidate
+research additions are tracked in the research note before implementation.
 
 ## 💾 Storage Safety
 
