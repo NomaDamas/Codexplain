@@ -1,3 +1,5 @@
+<img width="2172" height="724" alt="ChatGPT Image May 31, 2026 at 12_53_00 AM" src="https://github.com/user-attachments/assets/61d7a39c-4201-42eb-b173-998a6d196875" />
+
 # Codexplain
 
 Codexplain is a project-local explanation UX layer for Codex.
