@@ -270,6 +270,8 @@ struct CustomStyle {
     trigger: String,
     renderers: Vec<RendererKind>,
     body: String,
+    tone: String,
+    example: String,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1749,8 +1751,13 @@ fn flush_highlight_token(theme: Theme, out: &mut String, token: &mut String, fal
     if token.is_empty() {
         return;
     }
-    let role = highlight_role(token).unwrap_or(fallback_role);
-    out.push_str(&color(theme, role, token));
+    if let Some(role) = highlight_role(token) {
+        out.push_str(&color(theme, role, token));
+    } else if fallback_role == "heading" || fallback_role == "border" {
+        out.push_str(&color(theme, fallback_role, token));
+    } else {
+        out.push_str(token);
+    }
     token.clear();
 }
 
@@ -1952,7 +1959,113 @@ fn shape_for_output(
 ) -> String {
     let strict = should_back_off(prompt, response);
     let rendered = shape(prompt, response, profile, width);
+    let rendered = if strict {
+        rendered
+    } else {
+        enforce_unicode_table_row_dividers(&rendered)
+    };
     apply_color_output(&rendered, mode, strict)
+}
+
+fn enforce_unicode_table_row_dividers(value: &str) -> String {
+    let lines = value.lines().map(str::to_string).collect::<Vec<_>>();
+    if lines.is_empty() {
+        return value.to_string();
+    }
+    let mut out = Vec::new();
+    let mut index = 0;
+    while index < lines.len() {
+        if is_unicode_table_top(&lines[index]) {
+            let (block, next_index) = take_unicode_table_block(&lines, index);
+            out.extend(normalize_unicode_table_block(block));
+            index = next_index;
+        } else {
+            out.push(lines[index].clone());
+            index += 1;
+        }
+    }
+    let mut joined = out.join("\n");
+    if value.ends_with('\n') {
+        joined.push('\n');
+    }
+    joined
+}
+
+fn take_unicode_table_block(lines: &[String], start: usize) -> (Vec<String>, usize) {
+    let mut block = Vec::new();
+    let mut index = start;
+    while index < lines.len() {
+        block.push(lines[index].clone());
+        if is_unicode_table_bottom(&lines[index]) {
+            return (block, index + 1);
+        }
+        index += 1;
+    }
+    (block, index)
+}
+
+fn normalize_unicode_table_block(block: Vec<String>) -> Vec<String> {
+    let Some(header_divider_index) = block.iter().position(|line| is_unicode_table_divider(line))
+    else {
+        return block;
+    };
+    let body_dividers = block
+        .iter()
+        .skip(header_divider_index + 1)
+        .filter(|line| is_unicode_table_divider(line))
+        .count();
+    if body_dividers > 0 {
+        return block;
+    }
+    let Some(bottom_index) = block.iter().rposition(|line| is_unicode_table_bottom(line)) else {
+        return block;
+    };
+    let body_row_count = block
+        .iter()
+        .take(bottom_index)
+        .skip(header_divider_index + 1)
+        .filter(|line| is_unicode_table_data_row(line))
+        .count();
+    if body_row_count < 2 {
+        return block;
+    }
+
+    let divider = block[header_divider_index].clone();
+    let mut normalized = Vec::new();
+    for (index, line) in block.iter().enumerate() {
+        normalized.push(line.clone());
+        if index > header_divider_index
+            && index + 1 < bottom_index
+            && is_unicode_table_data_row(line)
+            && block
+                .get(index + 1)
+                .map(|next| is_unicode_table_data_row(next))
+                .unwrap_or(false)
+        {
+            normalized.push(divider.clone());
+        }
+    }
+    normalized
+}
+
+fn is_unicode_table_top(line: &str) -> bool {
+    let stripped = strip_ansi(line).trim().to_string();
+    stripped.starts_with('┌') && stripped.ends_with('┐')
+}
+
+fn is_unicode_table_bottom(line: &str) -> bool {
+    let stripped = strip_ansi(line).trim().to_string();
+    stripped.starts_with('└') && stripped.ends_with('┘')
+}
+
+fn is_unicode_table_divider(line: &str) -> bool {
+    let stripped = strip_ansi(line).trim().to_string();
+    stripped.starts_with('├') && stripped.ends_with('┤')
+}
+
+fn is_unicode_table_data_row(line: &str) -> bool {
+    let stripped = strip_ansi(line).trim().to_string();
+    stripped.starts_with('│') && stripped.ends_with('│')
 }
 
 fn strip_ansi(value: &str) -> String {
@@ -3318,7 +3431,7 @@ fn macro_progress_rows(response: &str) -> Option<Vec<Vec<String>>> {
 
     let mut rows = vec![vec![
         "🧭 탐색".to_string(),
-        "레포 구조와 핵심 파일을 훑어 작업 지도를 만든 단계".to_string(),
+        "기능 경계와 책임 흐름을 훑어 작업 지도를 만든 단계".to_string(),
         format!("{explored}개 읽기/탐색 신호"),
     ]];
 
@@ -3332,7 +3445,7 @@ fn macro_progress_rows(response: &str) -> Option<Vec<Vec<String>>> {
 
     rows.push(vec![
         "⚙️ 실행".to_string(),
-        "명령을 실행해 실제 파일/설정/출력 상태를 확인한 단계".to_string(),
+        "명령을 실행해 실제 기능/설정/출력 상태를 확인한 단계".to_string(),
         format!("{commands}개 command 신호"),
     ]);
 
@@ -5272,6 +5385,9 @@ fn color_command(args: &[String]) -> io::Result<()> {
                     .unwrap_or_else(|| "not-built".to_string())
             );
         }
+        "rules" | "policy" => {
+            print_color_rules(args);
+        }
         other => {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -5280,6 +5396,55 @@ fn color_command(args: &[String]) -> io::Result<()> {
         }
     }
     Ok(())
+}
+
+fn print_color_rules(args: &[String]) {
+    let profile = load_profile_for_args(args);
+    let rows = vec![
+        vec![
+            "구조".to_string(),
+            "border".to_string(),
+            "표/박스/흐름도의 선만 색칠합니다.".to_string(),
+        ],
+        vec![
+            "핵심".to_string(),
+            "heading".to_string(),
+            "TLDR, 렌더러, 아키텍처 계층처럼 주의를 줄 대상입니다.".to_string(),
+        ],
+        vec![
+            "성공".to_string(),
+            "success".to_string(),
+            "완료, 통과, 가능, 보존 같은 긍정 상태입니다.".to_string(),
+        ],
+        vec![
+            "주의".to_string(),
+            "warning".to_string(),
+            "필요, 진행, 우회, hook처럼 확인이 필요한 상태입니다.".to_string(),
+        ],
+        vec![
+            "위험".to_string(),
+            "danger".to_string(),
+            "실패, 오류, 불가, 안 보임 같은 리스크 상태입니다.".to_string(),
+        ],
+        vec![
+            "참조".to_string(),
+            "command/path/artifact".to_string(),
+            "명령, 경로, JSON/code/diff/log/test 같은 정확한 참조입니다.".to_string(),
+        ],
+    ];
+    println!(
+        "{}",
+        table(
+            &["의미", "색상 역할", "적용 규칙"],
+            &rows,
+            profile.frame,
+            profile.theme,
+            true,
+            88,
+        )
+    );
+    println!("policy=semantic-sparse");
+    println!("rule=색은 의미가 있는 토큰에만 보조 신호로 적용하고, 본문 전체를 알록달록하게 칠하지 않습니다.");
 }
 
 fn tui_color_command(args: &[String]) -> io::Result<()> {
@@ -5570,6 +5735,7 @@ fn local_config_json(default_output: &str, chat_output: &str, tui_output: &str) 
             "  \"defaultColorOutput\": \"{}\",\n",
             "  \"chatHighlightOutput\": \"{}\",\n",
             "  \"tuiAssistantColor\": \"{}\",\n",
+            "  \"colorPolicy\": \"semantic-sparse\",\n",
             "  \"storageCheck\": {{\n",
             "    \"minFree\": {{\n",
             "      \"value\": 5,\n",
@@ -5760,9 +5926,22 @@ fn parse_custom_style(raw: &str) -> Option<CustomStyle> {
     let mut trigger = String::new();
     let mut renderers = Vec::new();
     let mut body = String::new();
+    let mut tone = String::new();
+    let mut example = String::new();
     let mut in_body = false;
+    let mut in_example = false;
     for line in raw.lines() {
+        if in_example {
+            example.push_str(line);
+            example.push('\n');
+            continue;
+        }
         if in_body {
+            if line.trim() == "example:" {
+                in_body = false;
+                in_example = true;
+                continue;
+            }
             body.push_str(line);
             body.push('\n');
             continue;
@@ -5773,8 +5952,12 @@ fn parse_custom_style(raw: &str) -> Option<CustomStyle> {
             trigger = value.trim().to_string();
         } else if let Some(value) = line.strip_prefix("renderers:") {
             renderers = parse_renderer_list(value);
+        } else if let Some(value) = line.strip_prefix("tone:") {
+            tone = value.trim().to_string();
         } else if line.trim() == "body:" {
             in_body = true;
+        } else if line.trim() == "example:" {
+            in_example = true;
         }
     }
     let name = sanitize_style_name(&name)?;
@@ -5789,6 +5972,12 @@ fn parse_custom_style(raw: &str) -> Option<CustomStyle> {
         trigger,
         renderers,
         body: body.trim().to_string(),
+        tone: if tone.trim().is_empty() {
+            "technical".to_string()
+        } else {
+            tone
+        },
+        example: example.trim().to_string(),
     })
 }
 
@@ -5822,18 +6011,22 @@ fn render_custom_style_section(styles: &[CustomStyle], profile: &Profile, width:
         .map(|style| {
             vec![
                 style.name.clone(),
-                style.trigger.clone(),
-                renderers_to_names(&style.renderers),
-                if style.body.is_empty() {
-                    "사용자 정의 형식 신호만 적용합니다.".to_string()
-                } else {
-                    style.body.clone()
-                },
+                format!(
+                    "trigger={} · renderers={} · tone={} · rule={}",
+                    style.trigger,
+                    renderers_to_names(&style.renderers),
+                    style.tone,
+                    if style.body.is_empty() {
+                        "사용자 정의 형식 신호만 적용합니다."
+                    } else {
+                        style.body.as_str()
+                    }
+                ),
             ]
         })
         .collect::<Vec<_>>();
     table(
-        &["사용자 스타일", "트리거", "렌더러", "설명 규칙"],
+        &["설명방식", "설정"],
         &rows,
         profile.frame,
         profile.theme,
@@ -5856,13 +6049,18 @@ fn write_custom_style(args: &[String]) -> io::Result<()> {
     let body = arg_value(args, "--description")
         .or_else(|| arg_value(args, "--template"))
         .unwrap_or("사용자가 추가한 설명 방식입니다.");
+    let tone = arg_value(args, "--tone").unwrap_or("technical");
+    let example = arg_value(args, "--example").unwrap_or("");
     fs::create_dir_all(styles_dir())?;
     let path = style_path(&name).expect("sanitized name should produce a path");
     fs::write(
         &path,
-        format!("name: {name}\ntrigger: {trigger}\nrenderers: {renderers}\nbody:\n{body}\n"),
+        format!(
+            "name: {name}\ntrigger: {trigger}\nrenderers: {renderers}\ntone: {tone}\nbody:\n{body}\nexample:\n{example}\n"
+        ),
     )?;
     println!("Added Codexplain style: {}", path.display());
+    println!("Preview with: codexplain style preview {name}");
     Ok(())
 }
 
@@ -5887,14 +6085,29 @@ fn list_custom_styles() {
         println!("No custom Codexplain styles");
         return;
     }
-    for style in styles {
-        println!(
-            "{}\ttrigger={}\trenderers={}",
-            style.name,
-            style.trigger,
-            renderers_to_names(&style.renderers)
-        );
-    }
+    let profile = load_profile();
+    let rows = styles
+        .iter()
+        .map(|style| {
+            vec![
+                style.name.clone(),
+                style.trigger.clone(),
+                renderers_to_names(&style.renderers),
+                style.tone.clone(),
+            ]
+        })
+        .collect::<Vec<_>>();
+    println!(
+        "{}",
+        table(
+            &["Style", "Trigger", "Renderers", "Tone"],
+            &rows,
+            profile.frame,
+            profile.theme,
+            true,
+            88,
+        )
+    );
 }
 
 fn show_custom_style(args: &[String]) -> io::Result<()> {
@@ -5917,6 +6130,41 @@ fn show_custom_style(args: &[String]) -> io::Result<()> {
     Ok(())
 }
 
+fn preview_custom_style(args: &[String]) -> io::Result<()> {
+    let Some(name) = args.get(2) else {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "style preview requires a style name",
+        ));
+    };
+    let Some(style) = load_custom_styles()
+        .into_iter()
+        .find(|style| style.name == *name || style.trigger == *name)
+    else {
+        println!("Style not found: {name}");
+        return Ok(());
+    };
+    let profile = load_profile_for_args(args);
+    let sample = if style.example.trim().is_empty() {
+        format!(
+            "{} 방식으로 Codexplain 아키텍처를 기능 기준으로 설명해줘.",
+            style.trigger
+        )
+    } else {
+        style.example.clone()
+    };
+    let response = if style.body.trim().is_empty() {
+        "응답 표현을 사용자가 원하는 구조로 재배치합니다. strict artifact는 보존합니다.".to_string()
+    } else {
+        style.body.clone()
+    };
+    println!(
+        "{}",
+        shape_for_output(&sample, &response, &profile, 88, ColorOutput::Ansi)
+    );
+    Ok(())
+}
+
 fn style_command(args: &[String]) -> io::Result<()> {
     match args.get(1).map(String::as_str) {
         Some("add") => write_custom_style(args),
@@ -5926,6 +6174,7 @@ fn style_command(args: &[String]) -> io::Result<()> {
             Ok(())
         }
         Some("show") => show_custom_style(args),
+        Some("preview") => preview_custom_style(args),
         Some(other) => Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             format!("unknown style command: {other}"),
@@ -6304,9 +6553,11 @@ Shape user-facing answers with a clear, readable, color-aware terminal/chat expe
 
 Default answer style:
 - Start with the outcome or current state, not implementation detail.
-- Use concise Korean first when the user writes Korean.
+- Use English by default for global open-source usage.
+- Mirror the user's language when the user writes in Korean or another non-English language.
 - Use connected Unicode boxes or tables when structure helps scanning.
 - Use semantic ANSI colors for labels, risks, success states, artifact names, commands, paths, and next actions when the terminal supports color.
+- Color policy is semantic-sparse: use color as a meaning signal, not decoration. Keep one dominant structure color, one key/accent color, and state colors only for success/warning/danger/reference terms.
 - Use ANSI terminal color by default when Codexplain config asks for `defaultColorOutput: ansi`; for Codex CLI chat output, prefer real ANSI text color over emoji chips or raw HTML spans.
 - Respect explanationDepth light/standard/deep, architectureDepth overview/system/internals, and abstractionLevel concrete/architecture/strategy.
 - Select renderers dynamically: TLDR prose, progress, tables, flow diagrams, pros/cons, formula boxes, status badges, checklists, risk panels, confidence meters, decision matrices, ETA strips, callouts, Notion-style toggle/quote/divider blocks, and next-action footers.
@@ -6315,8 +6566,10 @@ Default answer style:
 - Split explanations by semantic units with active line breaks. If the answer says "two paths", "두 가지", "과정", or "단계", render them as compact 1. 2. 3. numbered sections. Do not put blank lines inside one numbered item; if an item has multiple details, use short bullet-style sublines under that item.
 - Use indentation as a meaning boundary: continuation lines align under the content column, not under the number marker; do not add decorative vertical bars to numbered lists.
 - Architecture, flow, and expansion diagrams should prefer Codexplain renderer-owned boxes before prose. Use a table only when it adds a compact role/decision summary.
+- Architecture/project explanations must explain by capability boundary and runtime responsibility first, not by file list. Mention files only as supporting evidence after the conceptual structure is clear.
 - Architecture/project explanations should create a visible "wow point": TLDR first, conceptual flow second, then a wide-divider table using ━ for the header rule and ─ between rows when it improves scanning.
 - Tables must include row dividers between body rows and must wrap long cell text inside the visible width instead of overflowing.
+- Every visible table row must be separated. Do not produce a dense table where many `│ ... │` body rows appear back-to-back without `├...┤` or `─` row separators.
 - Do not hand-draw long Unicode tables from raw model text. If a cell may exceed the terminal width, use Codexplain's width-safe renderer output, a Markdown table, or short per-item boxes so every cell is filled and padded by visible width.
 - Process answers should use short numbered sections, with one idea per item and bullet-style sublines for multiple details.
 - Keep commands, paths, risks, test evidence, and exact technical facts intact.
@@ -6355,6 +6608,7 @@ Color can be toggled without uninstalling Codexplain:
 codexplain color on
 codexplain color off
 codexplain color status
+codexplain color rules
 ```
 
 Open the project-local status control surface or install local app launchers:
@@ -6432,8 +6686,9 @@ UX selection combines explicit rules, score thresholds, and optional planner hin
 Custom explanation styles:
 
 ```bash
-codexplain style add research-card --trigger "연구 카드" --renderers "tldr,table,formula" --description "배경, 근거, 한계, 다음 행동을 분리한다."
+codexplain style add research-card --trigger "연구 카드" --renderers "tldr,table,formula" --description "배경, 근거, 한계, 다음 행동을 분리한다." --tone "research" --example "연구 카드로 이 설계를 설명해줘"
 codexplain style list
+codexplain style preview research-card
 codexplain style remove research-card
 ```
 "#;
@@ -6443,6 +6698,7 @@ const LOCAL_CONFIG: &str = r#"{
   "defaultColorOutput": "ansi",
   "chatHighlightOutput": "ansi",
   "tuiAssistantColor": "full",
+  "colorPolicy": "semantic-sparse",
   "storageCheck": {
     "minFree": {
       "value": 5,
@@ -6539,7 +6795,7 @@ Apply Codexplain's explanation UX globally unless a repository provides stricter
 
 Default answer style:
 - Preserve exact JSON, code, diffs, patches, logs, test output, and commit messages.
-- For explanatory answers, prefer Korean when the user writes Korean.
+- For explanatory answers, use English by default and mirror the user's language when the user writes in Korean or another non-English language.
 - Use TLDR, Unicode tables, flow diagrams, pros/cons, formula boxes, progress UI, Notion-style toggle/quote/divider blocks, and next actions when they improve scanning.
 - Prefer Markdown-safe chat highlights in chat hosts; use ANSI terminal colors in terminal hosts; fall back to plain text when exact formatting matters.
 - Avoid hand-drawn long raw box tables that can overflow narrow terminals; prefer width-safe renderer output or Markdown tables. If Unicode boxes are used, every body row must be wrapped, padded, and separated by the renderer contract.
@@ -6547,6 +6803,8 @@ Default answer style:
 - Collapse verbose Explored/Ran/Read transcripts into macro progress phases before details.
 - Split "two paths", "두 가지", "과정", and "단계" explanations into compact numbered sections without blank lines inside an item.
 - Architecture explanations should use boxed components and flow boxes before prose; tables should show row dividers and wrap long cells; flow diagrams should keep arrows and branches inside the requested width.
+- Architecture explanations must lead with capability boundaries, runtime responsibility, and abstraction level. Do not lead with a file tree or file-by-file walkthrough unless the user explicitly asks for file layout.
+- Every visible table row must be separated; never stack body rows directly without a row divider.
 - Process answers should use short numbered sections, with one idea per item and bullet-style sublines for multiple details.
 - Keep technical facts, commands, file paths, risks, and test evidence intact.
 <!-- CODEXPLAIN:END -->"#;
@@ -7410,30 +7668,49 @@ fn settings_ui() -> io::Result<()> {
     println!(
         "{}",
         table(
-            &["설정", "현재값"],
+            &["기능 영역", "현재 설정", "사용자가 조절하는 것"],
             &[
-                vec!["theme".to_string(), profile.theme.name().to_string()],
                 vec![
-                    "frame".to_string(),
-                    if profile.frame == Frame::Ascii {
-                        "ascii".to_string()
-                    } else {
-                        "unicode".to_string()
-                    },
-                ],
-                vec![
-                    "explanationDepth".to_string(),
+                    "설명 깊이".to_string(),
                     profile.explanation_depth.clone(),
+                    "답변을 light, standard, deep 중 하나로 압축하거나 확장합니다.".to_string(),
                 ],
                 vec![
-                    "architectureDepth".to_string(),
+                    "아키텍처 시야".to_string(),
                     profile.architecture_depth.clone(),
+                    "구조 설명을 overview, system, internals 중 어디까지 열지 정합니다."
+                        .to_string(),
                 ],
                 vec![
-                    "abstractionLevel".to_string(),
+                    "추상화 레벨".to_string(),
                     profile.abstraction_level.clone(),
+                    "파일 나열이 아니라 concrete, architecture, strategy 관점으로 설명합니다."
+                        .to_string(),
                 ],
-                vec!["uxDensity".to_string(), profile.ux_density.to_string()],
+                vec![
+                    "색상 규칙".to_string(),
+                    format!("{} / semantic-sparse", profile.theme.name()),
+                    "성공, 주의, 위험, 명령, 경로, 산출물에만 제한적으로 색을 씁니다.".to_string(),
+                ],
+                vec![
+                    "레이아웃 밀도".to_string(),
+                    profile.ux_density.to_string(),
+                    "TLDR, 표, 흐름도, callout 같은 UX 블록 조합 빈도입니다.".to_string(),
+                ],
+                vec![
+                    "스타일 라이브러리".to_string(),
+                    format!("{}개", load_custom_styles().len()),
+                    "style add/list/preview/remove로 사용자 설명 방식을 관리합니다.".to_string(),
+                ],
+                vec![
+                    "적용 범위".to_string(),
+                    if project_local_adapter_present_at(&project_path(".")) {
+                        "project-local on".to_string()
+                    } else {
+                        "off".to_string()
+                    },
+                    "현재 프로젝트에만 shim/guidance를 꽂거나 제거합니다.".to_string(),
+                ],
             ],
             profile.frame,
             profile.theme,
@@ -7442,6 +7719,8 @@ fn settings_ui() -> io::Result<()> {
         )
     );
     println!("\nEnter를 누르면 현재값을 유지합니다.");
+    println!("색상 규칙 확인: codexplain color rules");
+    println!("설명방식 추가: codexplain style add <name> --trigger <text> --renderers <list> --description <text> --tone <tone> --example <text>");
 
     if let Some(value) = prompt_choice(
         "theme",
@@ -7746,11 +8025,11 @@ fn usage() -> &'static str {
   codexplain codex --prompt <text> [--local-shape] [codex exec args...]
   codexplain on|install-codex [--project|--local] [--global] [--session] [--force]
   codexplain off|uninstall-codex [--project|--local] [--global] [--session] [--remove-profile]
-  codexplain color on|off|status
+  codexplain color on|off|status|rules
   codexplain tui-color on|full|off|status
   codexplain tui-adapter on|full|off|status|apply|build
-  codexplain style add <name> --trigger <text> --renderers <tldr,table,flow,pros-cons,formula,cause-effect,indexed,progress> --description <text>
-  codexplain style list|show <name>|remove <name>
+  codexplain style add <name> --trigger <text> --renderers <tldr,table,flow,pros-cons,formula,cause-effect,indexed,progress> --description <text> [--tone <tone>] [--example <text>]
+  codexplain style list|show <name>|preview <name>|remove <name>
   codexplain feedback|rlhf --rating <1-5> --comment <text>
   codexplain profile --show|--theme <name>|--frame <unicode|ascii|fallback|auto>|--index-style <style>|--detail <level>
   codexplain profile --explanation-depth <light|standard|deep>|--architecture-depth <overview|system|internals>|--abstraction-level <concrete|architecture|strategy>
@@ -7781,7 +8060,7 @@ Storage-check output contract:
 Themes: none, ocean, forest, warm, sunset, grape, slate, rose, mono
 Color outputs: terminal, ansi, markdown, html, plain. Use --chat-color as an alias for --color-output ansi in Codex CLI.
 Scopes: --project/--local writes only this repository's managed Codexplain files; --global writes only managed guidance under CODEX_HOME; --session prints the current-shell activation command because a child process cannot mutate its parent shell.
-Color toggle: `codexplain color on` forces ANSI text color for Codexplain-shaped exec/review output and best-effort Codex TUI color env; `codexplain color off` restores plain output.
+Color toggle: `codexplain color on` forces ANSI text color for Codexplain-shaped exec/review output and best-effort Codex TUI color env; `codexplain color off` restores plain output. `codexplain color rules` shows the semantic-sparse role map so colors do not become decorative noise.
 TUI assistant color: `codexplain tui-color on` enables project-local full assistant-message color when a patched Codex binary exists under .codexplain/state/codex-upstream/codex-rs/target/release/codex or target/debug/codex; `off` disables only that hook.
 TUI adapter: `codexplain tui-adapter status` reports project-local shim path, mode, active binary/fallback, patched binary status, rollback, and cleanup instructions. `codexplain tui-adapter build` applies the tracked Codex TUI color patch and builds only the project-local patched Codex binary.
 Status bar control: `codexplain statusbar` is the Rust control surface used by local app launchers. It toggles only project-local Codexplain files, updates profile/config controls, and leaves unrelated global Codex settings untouched.
@@ -8593,6 +8872,7 @@ after
             ]
         );
         assert!(style.body.contains("근거"));
+        assert_eq!(style.tone, "technical");
     }
 
     #[test]
@@ -8602,6 +8882,8 @@ after
             trigger: "연구 카드".to_string(),
             renderers: vec![RendererKind::TldrProse, RendererKind::Table],
             body: "배경, 근거, 한계, 다음 행동을 분리한다.".to_string(),
+            tone: "research".to_string(),
+            example: "연구 카드로 설명".to_string(),
         };
 
         let output = render_custom_style_section(
@@ -8610,15 +8892,17 @@ after
                 theme: Theme::None,
                 ..Profile::default()
             },
-            88,
+            120,
         );
 
         assert!(output.contains("┌"));
-        assert!(output.contains("사용자 스타일"));
-        assert!(output.contains("research-card"));
+        assert!(output.contains("설명방식"));
+        assert!(output.contains("research"));
+        assert!(output.contains("연구 카드"));
         assert!(output.contains("tldr,table"));
+        assert!(output.contains("research"));
         assert!(output.contains("다음 행동"));
-        assert_visible_lines_fit(&output, 88);
+        assert_visible_lines_fit(&output, 120);
     }
 
     #[test]
@@ -8669,6 +8953,10 @@ after
         assert!(!session_activation_hint().contains("Installed"));
         assert!(GLOBAL_CODEX_GUIDANCE.contains("CODEXPLAIN:START"));
         assert!(GLOBAL_CODEX_GUIDANCE.contains("CODEXPLAIN:END"));
+        assert!(CODEX_GUIDANCE.contains("capability boundary"));
+        assert!(GLOBAL_CODEX_GUIDANCE.contains("capability boundaries"));
+        assert!(CODEX_GUIDANCE.contains("Use English by default"));
+        assert!(GLOBAL_CODEX_GUIDANCE.contains("use English by default"));
     }
 
     #[test]
@@ -9199,6 +9487,43 @@ after
         assert!(output.contains("│ CLI      │ 명령 입구        │"));
         assert!(output.contains("│ Policy   │ strict 출력 보호 │"));
         assert!(output.contains("│ Renderer │ 표와 흐름도 출력 │"));
+    }
+
+    #[test]
+    fn post_output_repairs_hand_drawn_unicode_tables_without_body_dividers() {
+        let raw = [
+            "설명",
+            "┌──────┬────────┐",
+            "│ 영역 │ 목적   │",
+            "├──────┼────────┤",
+            "│ 평가 │ 승격   │",
+            "│ 훈련 │ 학습   │",
+            "│ 운영 │ 보고   │",
+            "└──────┴────────┘",
+        ]
+        .join("\n");
+        let output = enforce_unicode_table_row_dividers(&raw);
+
+        assert_eq!(output.matches("├──────┼────────┤").count(), 3);
+        assert!(output.contains("│ 평가 │ 승격   │\n├──────┼────────┤\n│ 훈련 │ 학습   │"));
+        assert!(output.contains("│ 훈련 │ 학습   │\n├──────┼────────┤\n│ 운영 │ 보고   │"));
+    }
+
+    #[test]
+    fn post_output_keeps_existing_row_dividers_unchanged() {
+        let rendered = table(
+            &["영역", "목적"],
+            &[
+                vec!["평가".to_string(), "승격".to_string()],
+                vec!["훈련".to_string(), "학습".to_string()],
+            ],
+            Frame::Unicode,
+            Theme::None,
+            true,
+            40,
+        );
+
+        assert_eq!(enforce_unicode_table_row_dividers(&rendered), rendered);
     }
 
     #[test]

@@ -9,11 +9,13 @@ preference tuning.
 
 ## 🧭 Index
 
+- [📌 Project Introduction](#-project-introduction)
+- [👀 Before / After](#-before--after)
 - [⚡ One-Line Setup](#-one-line-setup)
 - [🚀 One-Line Use](#-one-line-use)
-- [👀 Before / After](#-before--after)
 - [✨ What It Improves](#-what-it-improves)
 - [🧩 Adaptive UX Components](#-adaptive-ux-components)
+- [📚 Deep Docs](#-deep-docs)
 - [🧠 Model-Agnostic Goal](#-model-agnostic-goal)
 - [👍 RLHF-Lite](#-rlhf-lite)
 - [🎛️ CLI](#️-cli)
@@ -24,6 +26,145 @@ preference tuning.
 - [🌀 Ouroboros Readiness](#-ouroboros-readiness)
 - [📁 Project Files](#-project-files)
 - [✅ Verification](#-verification)
+
+## 📌 Project Introduction
+
+Codexplain is a local-first readability layer for Codex responses. It is built
+for developers who want Codex answers to keep their technical accuracy while
+becoming easier to scan in terminals, CI logs, and CLI chat transcripts.
+
+Codexplain does three things:
+
+- Preserves strict artifacts such as JSON, code blocks, diffs, patches, logs,
+  test output, and commit messages exactly as Codex produced them.
+- Uses English by default for global open-source use, while mirroring the
+  user's language when the user asks in Korean or another language.
+- Shapes explanatory prose into predictable UX patterns such as TLDRs, numbered
+  steps, width-safe tables, architecture panels, progress reports, risk panels,
+  decision matrices, and next-action footers.
+- Stores preference and adapter configuration project-locally under
+  `.codexplain/` so teams can enable, tune, and remove the integration without
+  hidden global side effects.
+
+Codexplain is intentionally not a model, prompt replacement, or cloud service.
+The Rust binary runs locally, reads the prompt/response/profile context, applies
+deterministic safety checks, and renders a terminal-friendly explanation. It can
+wrap `codex exec` output, post-process saved responses, install project-local
+Codex guidance, and optionally route interactive TUI sessions through a patched
+project-local Codex binary when that adapter is available.
+
+The practical result is a stable answer contract:
+
+```text
+Codex does the coding work.
+Codexplain controls how explanatory answers are structured, colored, and scanned.
+Strict artifacts stay exact.
+Project-local setup stays reversible.
+```
+
+## 👀 Before / After
+
+Codexplain is built around issues that made terminal explanations hard to read:
+dense prose, broken hand-drawn tables, file-first architecture dumps, and noisy
+color. These are the three representative fixes.
+
+### 1. Architecture: file dump → capability map
+
+Before:
+
+```text
+README.md explains the project. rust/codexplain.rs implements the CLI.
+package.json exposes commands. .codexplain contains config and shims.
+```
+
+After:
+
+```text
+• TLDR
+  Codexplain is a presentation boundary around Codex answers.
+  It changes how explanations are shaped, not what strict artifacts contain.
+
+┌───────────────────────┐
+│ Activation Boundary   │
+│ scope: session/project│
+└───────────┬───────────┘
+────────────▼────────────
+┌───────────┴───────────┐
+│ Strict Safety         │
+│ JSON/code/diff pass   │
+└───────────┬───────────┘
+────────────▼────────────
+┌───────────┴───────────┐
+│ UX Planner            │
+│ chooses useful blocks │
+└───────────┬───────────┘
+────────────▼────────────
+┌───────────┴───────────┐
+│ Semantic Renderer     │
+│ width-safe + colored  │
+└───────────┬───────────┘
+────────────▼────────────
+┌───────────┴───────────┐
+│ Rollback Boundary     │
+│ removes managed state │
+└───────────────────────┘
+```
+
+### 2. Tables: overflow → row-divided wrapping
+
+Before:
+
+```text
+┌────────┬────────────────────────┐
+│ 구분   │ 설명                   │
+├────────┼────────────────────────┤
+│ Policy │ JSON/code/diff/log/test output must remain exact but this long text spills outside the table
+│ Render │ Flow/table/progress/risk/color should be selected dynamically
+└────────┴────────────────────────┘
+```
+
+After:
+
+```text
+ 구분      설명
+━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ Policy   JSON/code/diff/log/test output stays exact before rendering.
+────────  ─────────────────────────────────────────────────────────────
+ Render   Flow, table, progress, risk, and color are chosen by prompt,
+          profile, and safety rules.
+────────  ─────────────────────────────────────────────────────────────
+Scope    Local on/off removes only Codexplain-managed state.
+```
+
+Codexplain also repairs non-strict hand-drawn Unicode tables that forgot body
+row separators. Exact JSON, code, diffs, logs, and patches still bypass this
+repair path.
+
+### 3. Color: rainbow noise → semantic highlights
+
+Before:
+
+```text
+Every sentence can become colorful, but the reader still does not know what
+needs attention.
+```
+
+After:
+
+```text
+ 의미      색상 역할             적용 규칙
+━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ 성공      success               완료, 통과, 가능, 보존
+────────  ────────────────────  ─────────────────────────────────────
+ 주의      warning               필요, 진행, 우회, hook
+────────  ────────────────────  ─────────────────────────────────────
+ 위험      danger                실패, 오류, 불가, 안 보임
+────────  ────────────────────  ─────────────────────────────────────
+ 참조      command/path/artifact  commands, paths, JSON/code/diff/log/test
+```
+
+Color is intentionally semantic-sparse: it is a meaning signal, not decoration.
+Emoji cues are used sparingly for scanning, never as the color system.
 
 ## ⚡ One-Line Setup
 
@@ -105,6 +246,25 @@ Open the dependency-free Rust settings UI:
 codexplain settings-ui
 ```
 
+The settings UI is organized by user-facing capability rather than internal
+files:
+
+```text
+ Capability             What You Control
+━━━━━━━━━━━━━━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ Explanation Depth      light, standard, or deep response detail
+─────────────────────  ─────────────────────────────────────────────────────
+ Architecture View      overview, system, or internals structure depth
+─────────────────────  ─────────────────────────────────────────────────────
+ Abstraction Level      concrete, architecture, or strategy explanation mode
+─────────────────────  ─────────────────────────────────────────────────────
+ Color Rules            semantic-sparse role colors, not decorative rainbow UI
+─────────────────────  ─────────────────────────────────────────────────────
+ Style Library          custom explanation styles with preview and rollback
+─────────────────────  ─────────────────────────────────────────────────────
+ Scope Control          session, project-local, global guidance, off/uninstall
+```
+
 Use the status-bar control surface directly:
 
 ```bash
@@ -182,6 +342,41 @@ Turn the Codexplain color layer on or off for this project:
 codexplain color on
 codexplain color off
 codexplain color status
+codexplain color rules
+```
+
+Color is governed by a semantic-sparse policy:
+
+```text
+ Role                  Meaning
+━━━━━━━━━━━━━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ border                Structure lines for tables, boxes, and flows
+────────────────────  ───────────────────────────────────────────────
+ heading               Key terms such as TLDR, renderer, architecture
+────────────────────  ───────────────────────────────────────────────
+ success               완료, 통과, 가능, 보존
+────────────────────  ───────────────────────────────────────────────
+ warning               필요, 진행, 우회, hook
+────────────────────  ───────────────────────────────────────────────
+ danger                실패, 오류, 불가, 안 보임
+────────────────────  ───────────────────────────────────────────────
+ command/path/artifact  Commands, paths, JSON/code/diff/log/test refs
+```
+
+Add a custom explanation style when a team has its own preferred explanation
+shape:
+
+```bash
+codexplain style add research-card \
+  --trigger "연구 카드" \
+  --renderers "tldr,table,formula" \
+  --tone "research" \
+  --description "배경, 근거, 한계, 다음 행동을 분리한다." \
+  --example "연구 카드로 이 설계를 설명해줘"
+
+codexplain style list
+codexplain style preview research-card
+codexplain style remove research-card
 ```
 
 Codexplain can be enabled at three scopes:
@@ -272,54 +467,6 @@ The upstream/fork contract is tracked in
 with adapter routing and validation notes in
 [`docs/codex-tui-adapter-roadmap.md`](docs/codex-tui-adapter-roadmap.md).
 
-## 👀 Before / After
-
-Before Codexplain, architecture answers often arrive as dense prose. The facts
-may be correct, but the structure is hard to scan:
-
-```text
-Codexplain is a local adapter for Codex. It preserves JSON and code, reads
-profile settings, chooses renderers, and formats the output. It can be enabled
-per project with a shim and can optionally use a patched TUI adapter.
-```
-
-After Codexplain, the same idea is rendered as a visual explanation contract:
-
-```text
-• TLDR
-  Codexplain is a project-local expression layer for Codex answers.
-  It keeps strict artifacts unchanged and upgrades explanatory text.
-
-┌──────────────────────┐
-│ Prompt Input         │
-└───────────┬──────────┘
-────────────▼───────────
-┌───────────┴──────────┐
-│ Strict Policy        │
-└───────────┬──────────┘
-────────────▼───────────
-┌───────────┴──────────┐
-│ Renderer Selector    │
-└───────────┬──────────┘
-────────────▼───────────
-┌───────────┴──────────┐
-│ Terminal Output      │
-└──────────────────────┘
-
- 영역                                역할
- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- 보호                                JSON, code, diff, log, test output은 원문 보존
- ──────────────────────────────────  ─────────────────────────────────────────────────────
- 선택                                TLDR, flow, table, pros/cons, progress를 동적 조합
- ──────────────────────────────────  ─────────────────────────────────────────────────────
- 표현                                Unicode layout, ANSI highlight, visible-width wrapping
- ──────────────────────────────────  ─────────────────────────────────────────────────────
- 연결                                project-local shim과 reversible TUI adapter
-```
-
-The point is not decoration. Codexplain turns long answers into a readable
-layout: first the takeaway, then the architecture, then the evidence table.
-
 Give feedback after an answer:
 
 ```bash
@@ -349,7 +496,8 @@ Readable terminal answer
 The result should be:
 
 - TLDR first when the output is explanatory.
-- Korean-first when the user writes Korean.
+- English by default for global open-source use.
+- Korean or another user language when the user writes in that language.
 - Short paragraphs instead of scattered process narration.
 - Unicode box tables and diagrams when they help scanning.
 - Row dividers in dense tables so long architecture lists are easier to track.
@@ -448,6 +596,26 @@ Planner hint example:
 ```bash
 CODEXPLAIN_UX_PLAN="status-badge,risk-panel,next-action" \
   codexplain shape --prompt "상태 보고" --response "실패: provider timeout"
+```
+
+## 📚 Deep Docs
+
+README keeps the promotional path short. Detailed design notes live in `docs/`:
+
+```text
+ Document                                 Covers
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ docs/architecture.md                     Capability boundaries, runtime flow, safety
+───────────────────────────────────────  ─────────────────────────────────────────────
+ docs/features.md                         Renderer catalog, settings UI, custom styles
+───────────────────────────────────────  ─────────────────────────────────────────────
+ docs/explanation-ux-methodology.md       Explanation UX rules and quality gates
+───────────────────────────────────────  ─────────────────────────────────────────────
+ docs/explanation-research.md             Research basis for structured explanation
+───────────────────────────────────────  ─────────────────────────────────────────────
+ docs/upstream-codex-tui-style-hook.md    Full TUI assistant-message color hook design
+───────────────────────────────────────  ─────────────────────────────────────────────
+ docs/codex-tui-adapter-roadmap.md        Adapter routing, rollback, and release path
 ```
 
 ## 🧠 Model-Agnostic Goal
