@@ -105,3 +105,21 @@ cargo test
 The quality check fails on overflowing renderer output, missing body row
 dividers, broken flow connectors, sparse architecture diagrams, and missing
 numbered decomposition for two-path/process answers.
+
+## Row Divider Enforcement
+
+Codexplain-rendered tables always separate body rows. If a non-strict answer
+contains a hand-drawn Unicode table with a header divider but no body row
+dividers, Codexplain post-processing inserts row separators between adjacent
+body rows.
+
+```text
+ Before                                 After
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ │ row 1 │ value │                    │ row 1 │ value │
+ │ row 2 │ value │                    ├───────┼───────┤
+                                      │ row 2 │ value │
+```
+
+Strict artifacts are still preserved. JSON, code, diffs, patches, logs, tests,
+and commit messages bypass this table repair path.

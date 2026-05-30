@@ -1959,7 +1959,113 @@ fn shape_for_output(
 ) -> String {
     let strict = should_back_off(prompt, response);
     let rendered = shape(prompt, response, profile, width);
+    let rendered = if strict {
+        rendered
+    } else {
+        enforce_unicode_table_row_dividers(&rendered)
+    };
     apply_color_output(&rendered, mode, strict)
+}
+
+fn enforce_unicode_table_row_dividers(value: &str) -> String {
+    let lines = value.lines().map(str::to_string).collect::<Vec<_>>();
+    if lines.is_empty() {
+        return value.to_string();
+    }
+    let mut out = Vec::new();
+    let mut index = 0;
+    while index < lines.len() {
+        if is_unicode_table_top(&lines[index]) {
+            let (block, next_index) = take_unicode_table_block(&lines, index);
+            out.extend(normalize_unicode_table_block(block));
+            index = next_index;
+        } else {
+            out.push(lines[index].clone());
+            index += 1;
+        }
+    }
+    let mut joined = out.join("\n");
+    if value.ends_with('\n') {
+        joined.push('\n');
+    }
+    joined
+}
+
+fn take_unicode_table_block(lines: &[String], start: usize) -> (Vec<String>, usize) {
+    let mut block = Vec::new();
+    let mut index = start;
+    while index < lines.len() {
+        block.push(lines[index].clone());
+        if is_unicode_table_bottom(&lines[index]) {
+            return (block, index + 1);
+        }
+        index += 1;
+    }
+    (block, index)
+}
+
+fn normalize_unicode_table_block(block: Vec<String>) -> Vec<String> {
+    let Some(header_divider_index) = block.iter().position(|line| is_unicode_table_divider(line))
+    else {
+        return block;
+    };
+    let body_dividers = block
+        .iter()
+        .skip(header_divider_index + 1)
+        .filter(|line| is_unicode_table_divider(line))
+        .count();
+    if body_dividers > 0 {
+        return block;
+    }
+    let Some(bottom_index) = block.iter().rposition(|line| is_unicode_table_bottom(line)) else {
+        return block;
+    };
+    let body_row_count = block
+        .iter()
+        .take(bottom_index)
+        .skip(header_divider_index + 1)
+        .filter(|line| is_unicode_table_data_row(line))
+        .count();
+    if body_row_count < 2 {
+        return block;
+    }
+
+    let divider = block[header_divider_index].clone();
+    let mut normalized = Vec::new();
+    for (index, line) in block.iter().enumerate() {
+        normalized.push(line.clone());
+        if index > header_divider_index
+            && index + 1 < bottom_index
+            && is_unicode_table_data_row(line)
+            && block
+                .get(index + 1)
+                .map(|next| is_unicode_table_data_row(next))
+                .unwrap_or(false)
+        {
+            normalized.push(divider.clone());
+        }
+    }
+    normalized
+}
+
+fn is_unicode_table_top(line: &str) -> bool {
+    let stripped = strip_ansi(line).trim().to_string();
+    stripped.starts_with('┌') && stripped.ends_with('┐')
+}
+
+fn is_unicode_table_bottom(line: &str) -> bool {
+    let stripped = strip_ansi(line).trim().to_string();
+    stripped.starts_with('└') && stripped.ends_with('┘')
+}
+
+fn is_unicode_table_divider(line: &str) -> bool {
+    let stripped = strip_ansi(line).trim().to_string();
+    stripped.starts_with('├') && stripped.ends_with('┤')
+}
+
+fn is_unicode_table_data_row(line: &str) -> bool {
+    let stripped = strip_ansi(line).trim().to_string();
+    stripped.starts_with('│') && stripped.ends_with('│')
 }
 
 fn strip_ansi(value: &str) -> String {
@@ -6462,6 +6568,7 @@ Default answer style:
 - Architecture/project explanations must explain by capability boundary and runtime responsibility first, not by file list. Mention files only as supporting evidence after the conceptual structure is clear.
 - Architecture/project explanations should create a visible "wow point": TLDR first, conceptual flow second, then a wide-divider table using ━ for the header rule and ─ between rows when it improves scanning.
 - Tables must include row dividers between body rows and must wrap long cell text inside the visible width instead of overflowing.
+- Every visible table row must be separated. Do not produce a dense table where many `│ ... │` body rows appear back-to-back without `├...┤` or `─` row separators.
 - Do not hand-draw long Unicode tables from raw model text. If a cell may exceed the terminal width, use Codexplain's width-safe renderer output, a Markdown table, or short per-item boxes so every cell is filled and padded by visible width.
 - Process answers should use short numbered sections, with one idea per item and bullet-style sublines for multiple details.
 - Keep commands, paths, risks, test evidence, and exact technical facts intact.
@@ -6696,6 +6803,7 @@ Default answer style:
 - Split "two paths", "두 가지", "과정", and "단계" explanations into compact numbered sections without blank lines inside an item.
 - Architecture explanations should use boxed components and flow boxes before prose; tables should show row dividers and wrap long cells; flow diagrams should keep arrows and branches inside the requested width.
 - Architecture explanations must lead with capability boundaries, runtime responsibility, and abstraction level. Do not lead with a file tree or file-by-file walkthrough unless the user explicitly asks for file layout.
+- Every visible table row must be separated; never stack body rows directly without a row divider.
 - Process answers should use short numbered sections, with one idea per item and bullet-style sublines for multiple details.
 - Keep technical facts, commands, file paths, risks, and test evidence intact.
 <!-- CODEXPLAIN:END -->"#;
@@ -9376,6 +9484,43 @@ after
         assert!(output.contains("│ CLI      │ 명령 입구        │"));
         assert!(output.contains("│ Policy   │ strict 출력 보호 │"));
         assert!(output.contains("│ Renderer │ 표와 흐름도 출력 │"));
+    }
+
+    #[test]
+    fn post_output_repairs_hand_drawn_unicode_tables_without_body_dividers() {
+        let raw = [
+            "설명",
+            "┌──────┬────────┐",
+            "│ 영역 │ 목적   │",
+            "├──────┼────────┤",
+            "│ 평가 │ 승격   │",
+            "│ 훈련 │ 학습   │",
+            "│ 운영 │ 보고   │",
+            "└──────┴────────┘",
+        ]
+        .join("\n");
+        let output = enforce_unicode_table_row_dividers(&raw);
+
+        assert_eq!(output.matches("├──────┼────────┤").count(), 3);
+        assert!(output.contains("│ 평가 │ 승격   │\n├──────┼────────┤\n│ 훈련 │ 학습   │"));
+        assert!(output.contains("│ 훈련 │ 학습   │\n├──────┼────────┤\n│ 운영 │ 보고   │"));
+    }
+
+    #[test]
+    fn post_output_keeps_existing_row_dividers_unchanged() {
+        let rendered = table(
+            &["영역", "목적"],
+            &[
+                vec!["평가".to_string(), "승격".to_string()],
+                vec!["훈련".to_string(), "학습".to_string()],
+            ],
+            Frame::Unicode,
+            Theme::None,
+            true,
+            40,
+        );
+
+        assert_eq!(enforce_unicode_table_row_dividers(&rendered), rendered);
     }
 
     #[test]

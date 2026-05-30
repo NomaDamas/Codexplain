@@ -131,8 +131,12 @@ After:
  Render   Flow, table, progress, risk, and color are chosen by prompt,
           profile, and safety rules.
 ────────  ─────────────────────────────────────────────────────────────
- Scope    Local on/off removes only Codexplain-managed state.
+Scope    Local on/off removes only Codexplain-managed state.
 ```
+
+Codexplain also repairs non-strict hand-drawn Unicode tables that forgot body
+row separators. Exact JSON, code, diffs, logs, and patches still bypass this
+repair path.
 
 ### 3. Color: rainbow noise → semantic highlights
 
