@@ -3325,7 +3325,7 @@ fn macro_progress_rows(response: &str) -> Option<Vec<Vec<String>>> {
 
     let mut rows = vec![vec![
         "🧭 탐색".to_string(),
-        "레포 구조와 핵심 파일을 훑어 작업 지도를 만든 단계".to_string(),
+        "기능 경계와 책임 흐름을 훑어 작업 지도를 만든 단계".to_string(),
         format!("{explored}개 읽기/탐색 신호"),
     ]];
 
@@ -3339,7 +3339,7 @@ fn macro_progress_rows(response: &str) -> Option<Vec<Vec<String>>> {
 
     rows.push(vec![
         "⚙️ 실행".to_string(),
-        "명령을 실행해 실제 파일/설정/출력 상태를 확인한 단계".to_string(),
+        "명령을 실행해 실제 기능/설정/출력 상태를 확인한 단계".to_string(),
         format!("{commands}개 command 신호"),
     ]);
 
@@ -6695,6 +6695,7 @@ Default answer style:
 - Collapse verbose Explored/Ran/Read transcripts into macro progress phases before details.
 - Split "two paths", "두 가지", "과정", and "단계" explanations into compact numbered sections without blank lines inside an item.
 - Architecture explanations should use boxed components and flow boxes before prose; tables should show row dividers and wrap long cells; flow diagrams should keep arrows and branches inside the requested width.
+- Architecture explanations must lead with capability boundaries, runtime responsibility, and abstraction level. Do not lead with a file tree or file-by-file walkthrough unless the user explicitly asks for file layout.
 - Process answers should use short numbered sections, with one idea per item and bullet-style sublines for multiple details.
 - Keep technical facts, commands, file paths, risks, and test evidence intact.
 <!-- CODEXPLAIN:END -->"#;
@@ -8843,6 +8844,8 @@ after
         assert!(!session_activation_hint().contains("Installed"));
         assert!(GLOBAL_CODEX_GUIDANCE.contains("CODEXPLAIN:START"));
         assert!(GLOBAL_CODEX_GUIDANCE.contains("CODEXPLAIN:END"));
+        assert!(CODEX_GUIDANCE.contains("capability boundary"));
+        assert!(GLOBAL_CODEX_GUIDANCE.contains("capability boundaries"));
     }
 
     #[test]

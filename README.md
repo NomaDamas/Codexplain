@@ -10,12 +10,12 @@ preference tuning.
 ## 🧭 Index
 
 - [📌 Project Introduction](#-project-introduction)
-- [🏗️ System Architecture](#️-system-architecture)
+- [👀 Before / After](#-before--after)
 - [⚡ One-Line Setup](#-one-line-setup)
 - [🚀 One-Line Use](#-one-line-use)
-- [👀 Before / After](#-before--after)
 - [✨ What It Improves](#-what-it-improves)
 - [🧩 Adaptive UX Components](#-adaptive-ux-components)
+- [📚 Deep Docs](#-deep-docs)
 - [🧠 Model-Agnostic Goal](#-model-agnostic-goal)
 - [👍 RLHF-Lite](#-rlhf-lite)
 - [🎛️ CLI](#️-cli)
@@ -60,101 +60,105 @@ Strict artifacts stay exact.
 Project-local setup stays reversible.
 ```
 
-## 🏗️ System Architecture
+## 👀 Before / After
 
-Codexplain is easiest to understand as five runtime capabilities, not as a
-file list. Codex still performs the coding/reasoning work. Codexplain controls
-the presentation boundary around explanatory output.
+Codexplain is built around issues that made terminal explanations hard to read:
+dense prose, broken hand-drawn tables, file-first architecture dumps, and noisy
+color. These are the three representative fixes.
 
-```text
-User request / Codex response
-        │
-        ▼
-Activation Boundary
-project-local, session-only, or global guidance scope
-        │
-        ▼
-Execution Boundary
-run Codex, capture completed output, preserve stderr/exit status
-        │
-        ▼
-Safety Boundary
-JSON, code, diff, logs, tests, patches, commits pass through unchanged
-        │
-        ▼
-Preference Boundary
-depth, abstraction, theme, color policy, and custom styles are resolved
-        │
-        ▼
-Rendering Boundary
-TLDR, tables, flow boxes, progress, risk panels, and semantic color are composed
-        │
-        ▼
-Rollback Boundary
-off/uninstall removes only Codexplain-managed blocks and adapter files
-```
+### 1. Architecture: file dump → capability map
 
-The responsibility split is capability-first:
+Before:
 
 ```text
- Capability                                Responsibility
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- Activation Boundary                       Chooses session, project-local, or global guidance scope
-───────────────────────────────────────  ─────────────────────────────────────────────────────
- Strict Safety                            Detects exact artifacts and avoids corrupting them
-───────────────────────────────────────  ─────────────────────────────────────────────────────
- UX Planner                               Selects the smallest useful combination of TLDR, table,
-                                           flow, progress, risk, quote, toggle, and next action
-───────────────────────────────────────  ─────────────────────────────────────────────────────
- Semantic Renderer                         Wraps by visible terminal width and applies sparse
-                                           role-based ANSI color instead of decorative coloring
-───────────────────────────────────────  ─────────────────────────────────────────────────────
- Lifecycle Manager                         Installs, updates, disables, and removes only
-                                           Codexplain-managed state
+README.md explains the project. rust/codexplain.rs implements the CLI.
+package.json exposes commands. .codexplain contains config and shims.
 ```
 
-The key command paths are:
+After:
 
-1. `codexplain shape`
-   - Input: prompt, response, profile, width, and color mode.
-   - Flow: strict-artifact guard → prompt signal detection → renderer
-     selection → terminal rendering.
-   - Output: shaped explanatory text, with exact artifacts preserved.
+```text
+• TLDR
+  Codexplain is a presentation boundary around Codex answers.
+  It changes how explanations are shaped, not what strict artifacts contain.
 
-2. `codexplain codex --local-shape`
-   - Input: Codex command arguments plus shaping options.
-   - Flow: run Codex → capture completed stdout → apply the same local shaper.
-   - Output: Codex result with Codexplain explanation UX applied.
+┌───────────────────────┐
+│ Activation Boundary   │
+│ scope: session/project│
+└───────────┬───────────┘
+────────────▼────────────
+┌───────────┴───────────┐
+│ Strict Safety         │
+│ JSON/code/diff pass   │
+└───────────┬───────────┘
+────────────▼────────────
+┌───────────┴───────────┐
+│ UX Planner            │
+│ chooses useful blocks │
+└───────────┬───────────┘
+────────────▼────────────
+┌───────────┴───────────┐
+│ Semantic Renderer     │
+│ width-safe + colored  │
+└───────────┬───────────┘
+────────────▼────────────
+┌───────────┴───────────┐
+│ Rollback Boundary     │
+│ removes managed state │
+└───────────────────────┘
+```
 
-3. `codexplain on|off --local`
-   - Input: current repository path and scope flags.
-   - Flow: write or remove only Codexplain-managed files and managed
-     `AGENTS.md` blocks.
-   - Output: reversible project-local integration; unrelated user settings are
-     left untouched.
+### 2. Tables: overflow → row-divided wrapping
 
-4. `codexplain tui-adapter`
-   - Input: local adapter action such as `status`, `on`, `off`, `apply`, or
-     `build`.
-   - Flow: inspect shim/config state and optional patched Codex binary paths.
-   - Output: explicit routing state, rollback path, and build/cleanup guidance.
+Before:
 
-5. `codexplain quality-check` and `compat-check`
-   - Input: repository state and renderer width constraints.
-   - Flow: run deterministic checks for overflow, row dividers, architecture
-     panels, connector integrity, strict artifacts, and local-scope behavior.
-   - Output: script-safe pass/fail evidence for release and harness work.
+```text
+┌────────┬────────────────────────┐
+│ 구분   │ 설명                   │
+├────────┼────────────────────────┤
+│ Policy │ JSON/code/diff/log/test output must remain exact but this long text spills outside the table
+│ Render │ Flow/table/progress/risk/color should be selected dynamically
+└────────┴────────────────────────┘
+```
 
-The important architectural constraint is that Codexplain only owns the
-presentation layer. It may add structure, boxes, tables, color, and local
-adapter routing around explanatory text, but it must not mutate exact technical
-artifacts or make irreversible changes outside the selected project/global
-scope.
+After:
 
-Implementation files still exist, but they are supporting evidence rather than
-the primary architecture model. The Rust core implements the boundaries above;
-the shell shims connect those boundaries to Codex; `.codexplain/` stores only
-project-local state.
+```text
+ 구분      설명
+━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ Policy   JSON/code/diff/log/test output stays exact before rendering.
+────────  ─────────────────────────────────────────────────────────────
+ Render   Flow, table, progress, risk, and color are chosen by prompt,
+          profile, and safety rules.
+────────  ─────────────────────────────────────────────────────────────
+ Scope    Local on/off removes only Codexplain-managed state.
+```
+
+### 3. Color: rainbow noise → semantic highlights
+
+Before:
+
+```text
+Every sentence can become colorful, but the reader still does not know what
+needs attention.
+```
+
+After:
+
+```text
+ 의미      색상 역할             적용 규칙
+━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ 성공      success               완료, 통과, 가능, 보존
+────────  ────────────────────  ─────────────────────────────────────
+ 주의      warning               필요, 진행, 우회, hook
+────────  ────────────────────  ─────────────────────────────────────
+ 위험      danger                실패, 오류, 불가, 안 보임
+────────  ────────────────────  ─────────────────────────────────────
+ 참조      command/path/artifact  commands, paths, JSON/code/diff/log/test
+```
+
+Color is intentionally semantic-sparse: it is a meaning signal, not decoration.
+Emoji cues are used sparingly for scanning, never as the color system.
 
 ## ⚡ One-Line Setup
 
@@ -457,54 +461,6 @@ The upstream/fork contract is tracked in
 with adapter routing and validation notes in
 [`docs/codex-tui-adapter-roadmap.md`](docs/codex-tui-adapter-roadmap.md).
 
-## 👀 Before / After
-
-Before Codexplain, architecture answers often arrive as dense prose. The facts
-may be correct, but the structure is hard to scan:
-
-```text
-Codexplain is a local adapter for Codex. It preserves JSON and code, reads
-profile settings, chooses renderers, and formats the output. It can be enabled
-per project with a shim and can optionally use a patched TUI adapter.
-```
-
-After Codexplain, the same idea is rendered as a visual explanation contract:
-
-```text
-• TLDR
-  Codexplain is a project-local expression layer for Codex answers.
-  It keeps strict artifacts unchanged and upgrades explanatory text.
-
-┌──────────────────────┐
-│ Prompt Input         │
-└───────────┬──────────┘
-────────────▼───────────
-┌───────────┴──────────┐
-│ Strict Policy        │
-└───────────┬──────────┘
-────────────▼───────────
-┌───────────┴──────────┐
-│ Renderer Selector    │
-└───────────┬──────────┘
-────────────▼───────────
-┌───────────┴──────────┐
-│ Terminal Output      │
-└──────────────────────┘
-
- 영역                                역할
- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- 보호                                JSON, code, diff, log, test output은 원문 보존
- ──────────────────────────────────  ─────────────────────────────────────────────────────
- 선택                                TLDR, flow, table, pros/cons, progress를 동적 조합
- ──────────────────────────────────  ─────────────────────────────────────────────────────
- 표현                                Unicode layout, ANSI highlight, visible-width wrapping
- ──────────────────────────────────  ─────────────────────────────────────────────────────
- 연결                                project-local shim과 reversible TUI adapter
-```
-
-The point is not decoration. Codexplain turns long answers into a readable
-layout: first the takeaway, then the architecture, then the evidence table.
-
 Give feedback after an answer:
 
 ```bash
@@ -633,6 +589,26 @@ Planner hint example:
 ```bash
 CODEXPLAIN_UX_PLAN="status-badge,risk-panel,next-action" \
   codexplain shape --prompt "상태 보고" --response "실패: provider timeout"
+```
+
+## 📚 Deep Docs
+
+README keeps the promotional path short. Detailed design notes live in `docs/`:
+
+```text
+ Document                                 Covers
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ docs/architecture.md                     Capability boundaries, runtime flow, safety
+───────────────────────────────────────  ─────────────────────────────────────────────
+ docs/features.md                         Renderer catalog, settings UI, custom styles
+───────────────────────────────────────  ─────────────────────────────────────────────
+ docs/explanation-ux-methodology.md       Explanation UX rules and quality gates
+───────────────────────────────────────  ─────────────────────────────────────────────
+ docs/explanation-research.md             Research basis for structured explanation
+───────────────────────────────────────  ─────────────────────────────────────────────
+ docs/upstream-codex-tui-style-hook.md    Full TUI assistant-message color hook design
+───────────────────────────────────────  ─────────────────────────────────────────────
+ docs/codex-tui-adapter-roadmap.md        Adapter routing, rollback, and release path
 ```
 
 ## 🧠 Model-Agnostic Goal
