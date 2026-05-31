@@ -23,6 +23,24 @@ Codexplain and which research-backed ideas should be discussed before adding.
   papers?** (2023): compares GPT-4 feedback with human reviewers across Nature
   family journals and ICLR, motivating rubric-like feedback surfaces.
   Source: https://arxiv.org/abs/2310.01783
+- Itti and Koch, **Computational modelling of visual attention** (Nature
+  Reviews Neuroscience, 2001): supports treating salience as context-dependent;
+  the same visual signal can be useful or noisy depending on surrounding
+  content.
+  Source: https://www.nature.com/articles/35058500
+- Groen et al., **Priority coding in the visual system** (Nature Reviews
+  Neuroscience, 2022): supports prioritization as a behavior-linked signal, not
+  decoration. Codexplain maps this to task-relevant outcomes, risks, commands,
+  paths, and strict artifacts.
+  Source: https://www.nature.com/articles/s41583-022-00582-9
+- Foster et al., **Pinging the brain to reveal the hidden attentional priority
+  map using encephalography** (Nature Communications, 2023): describes
+  selective attention as prioritizing relevant information while suppressing
+  task-irrelevant information, which motivates sparse highlights.
+  Source: https://www.nature.com/articles/s41467-023-40405-8
+- W3C WAI, **Understanding Success Criterion 1.4.1: Use of Color**: supports
+  redundant coding. Color must not be the only way meaning is conveyed.
+  Source: https://w3c.github.io/wcag/understanding/use-of-color.html
 - Zhu et al., **Using Reinforcement Learning to Train Large Language Models to
   Explain Human Decisions** (ICLR 2026): supports outcome-rewarded explanation
   generation.
@@ -56,6 +74,34 @@ Codexplain and which research-backed ideas should be discussed before adding.
 - Width-safe rendering: tables are layout-owned, visibly measured, wrapped, and
   checked by `quality-check`.
 
+## Research-Based Highlighting Policy
+
+Codexplain does not highlight text just because it is a project noun, technical
+term, or repeated phrase. Highlighting is treated as a scarce attention channel.
+
+```text
+ Signal class          Highlighted examples
+━━━━━━━━━━━━━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ Outcome               PASS, FAIL, DONE, APPROVED, blocked
+────────────────────  ───────────────────────────────────────────────
+ Risk                  warning, risk, drift, regression, OOM, unsafe
+────────────────────  ───────────────────────────────────────────────
+ Strict artifact       JSON/code/diff/log/test/stdout/stderr
+────────────────────  ───────────────────────────────────────────────
+ Action/reference      codexplain commands, CLI flags, project paths
+```
+
+Non-critical nouns such as "renderer", "architecture", "Codexplain", "policy",
+or "TUI" are not colored inside normal prose. They can still receive structural
+styling when they are table headers, section labels, or diagram nodes. This
+keeps visual priority aligned with the user's task rather than with word
+frequency.
+
+Emoji cues follow the same rule: they may supplement status, warning, inspect,
+time, and next-action labels, but they never replace text labels or color roles.
+This follows the redundant-coding principle from WCAG: meaning remains readable
+when color or emoji rendering is unavailable.
+
 ## Candidate Additions To Discuss
 
 - Preference summary memory: derive a compact "user explanation preference
@@ -68,4 +114,3 @@ Codexplain and which research-backed ideas should be discussed before adding.
   facts outside the original answer unless marked as inference.
 - Peer-review mode: add Nature/ICLR-style review cards with strengths,
   weaknesses, missing evidence, actionability, and confidence.
-

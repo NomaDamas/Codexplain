@@ -1731,7 +1731,11 @@ fn semantic_highlight(theme: Theme, text: &str, fallback_role: &str) -> String {
         .split_whitespace()
         .any(|token| highlight_role(token).is_some())
     {
-        return color(theme, fallback_role, text);
+        return if fallback_role == "heading" || fallback_role == "border" {
+            color(theme, fallback_role, text)
+        } else {
+            text.to_string()
+        };
     }
     let mut out = String::new();
     let mut token = String::new();
@@ -1765,64 +1769,68 @@ fn highlight_role(token: &str) -> Option<&'static str> {
     let normalized = token.trim_matches(highlight_trim_char).to_ascii_lowercase();
     let normalized = strip_korean_particle(&normalized);
     match normalized.as_str() {
-        "pass" | "passed" | "success" | "완료" | "통과" | "보존" | "있음" | "가능" | "가능한" => {
-            Some("success")
-        }
-        "fail" | "failed" | "error" | "blocked" | "실패" | "오류" | "없음" | "안" | "불가" => {
+        "pass" | "passed" | "success" | "succeeded" | "done" | "complete" | "completed"
+        | "approved" | "ok" | "완료" | "통과" | "성공" | "승인" => Some("success"),
+        "fail" | "failed" | "failure" | "error" | "blocked" | "unsafe" | "denied" | "rejected"
+        | "broken" | "oom" | "panic" | "실패" | "오류" | "차단" | "불가" | "위험" => {
             Some("danger")
         }
-        "warn" | "warning" | "주의" | "남음" | "진행" | "필요" | "수정" | "우회" | "hook"
-        | "hooks" | "후처리" => Some("warning"),
-        "json" | "code" | "diff" | "log" | "logs" | "test" | "테스트" | "syntax" | "status"
-        | "stdout" | "stderr" | "output" | "artifact" | "artifacts" => Some("artifact"),
-        "on" | "off" | "install" | "uninstall" | "install-codex" | "uninstall-codex" => {
-            Some("command")
+        "warn" | "warning" | "risk" | "risky" | "caution" | "drift" | "regression" | "missing"
+        | "required" | "needs" | "주의" | "위험성" | "드리프트" | "회귀" | "필요" => {
+            Some("warning")
         }
-        "cli" | "policy" | "profile" | "config" | "renderer" | "renderers" | "selector"
-        | "core" | "semantic" | "highlight" | "integration" | "codexplain" | "rust" | "ux"
-        | "gateway" | "runner" | "lifecycle" | "tui" | "terminal" | "color" | "colors"
-        | "architecture" | "아키텍처" | "통합" | "색상" | "렌더링" | "support" | "감지"
-        | "감지함" | "assistant" | "응답" | "wrapper" | "shim" | "wrapper/shim"
-        | "openai/codex" => Some("heading"),
+        "json" | "code" | "diff" | "patch" | "log" | "logs" | "test" | "tests" | "stderr"
+        | "stdout" | "artifact" | "artifacts" | "테스트" | "로그" | "패치" => {
+            Some("artifact")
+        }
+        "on" | "off" | "install" | "uninstall" | "install-codex" | "uninstall-codex" | "shape"
+        | "post-response" | "quality-check" | "compat-check" | "storage-check" => Some("command"),
         _ => {
-            if normalized.contains("json")
-                || normalized.contains("diff")
-                || normalized.contains("log")
-                || normalized.contains("test")
-            {
+            if is_artifact_combo(&normalized) {
                 Some("artifact")
-            } else if normalized.contains("wrapper")
-                || normalized.contains("shim")
-                || normalized.contains("openai/codex")
-                || normalized.contains("codexplain")
-            {
-                Some("heading")
-            } else if normalized.contains("hook") {
-                Some("warning")
-            } else if normalized.contains("없")
-                || normalized.contains("안보")
-                || normalized.contains("안-보")
-            {
-                Some("danger")
-            } else if normalized.contains("가능") || normalized.contains("있") {
-                Some("success")
-            } else if normalized.contains("agents.md")
-                || normalized.contains(".codexplain")
-                || normalized.contains(".codex/")
-                || normalized.contains("ux-profile.json")
-                || normalized.contains("config.json")
-                || normalized.contains("post-response")
-                || normalized.contains("build-size")
-                || normalized.contains("storage-check")
-                || normalized.starts_with("~/")
-                || normalized.starts_with("./")
-            {
+            } else if is_command_like(&normalized) {
+                Some("command")
+            } else if is_path_like(&normalized) {
                 Some("path")
             } else {
                 None
             }
         }
     }
+}
+
+fn is_artifact_combo(value: &str) -> bool {
+    let separators = ['/', ',', '+', '|'];
+    value.chars().any(|ch| separators.contains(&ch))
+        && [
+            "json", "code", "diff", "patch", "log", "test", "stdout", "stderr",
+        ]
+        .iter()
+        .any(|needle| value.contains(needle))
+}
+
+fn is_command_like(value: &str) -> bool {
+    value.starts_with("codexplain")
+        || value.starts_with("codex")
+        || value.starts_with("npm")
+        || value.starts_with("cargo")
+        || value.starts_with("git")
+        || value.starts_with("--")
+}
+
+fn is_path_like(value: &str) -> bool {
+    value.starts_with("~/")
+        || value.starts_with("./")
+        || value.starts_with("../")
+        || value.starts_with('/')
+        || value.contains("agents.md")
+        || value.contains(".codexplain")
+        || value.contains(".codex/")
+        || value.ends_with(".json")
+        || value.ends_with(".md")
+        || value.ends_with(".rs")
+        || value.ends_with(".toml")
+        || value.ends_with(".patch")
 }
 
 fn highlight_trim_char(ch: char) -> bool {
@@ -2252,6 +2260,7 @@ fn select_chat_highlights(items: &[(String, &'static str)]) -> Vec<(String, &'st
     let mut danger_count = 0;
     let mut success_count = 0;
     let mut utility_count = 0;
+    let mut artifact_count = 0;
 
     for (label, role) in items {
         if selected.len() >= 6 {
@@ -2274,7 +2283,11 @@ fn select_chat_highlights(items: &[(String, &'static str)]) -> Vec<(String, &'st
                 heading_count += 1;
                 true
             }
-            "command" | "path" | "artifact" if utility_count < 1 => {
+            "artifact" if artifact_count < 1 => {
+                artifact_count += 1;
+                true
+            }
+            "command" | "path" if utility_count < 1 => {
                 utility_count += 1;
                 true
             }
@@ -8349,8 +8362,9 @@ mod tests {
     fn renders_unicode_pros_cons() {
         let output = pros_cons(&Profile::default());
         assert!(output.contains('┌'));
-        assert!(output.contains("JS / Node"));
-        assert!(output.contains("Rust"));
+        let plain = strip_ansi(&output);
+        assert!(plain.contains("JS / Node"));
+        assert!(plain.contains("Rust"));
     }
 
     #[test]
@@ -9149,8 +9163,7 @@ after
 
         assert!(!output.contains("<span"), "{output}");
         assert!(!output.contains("\x1b["), "{output}");
-        assert!(output.contains("**[KEY]** CODEXPLAIN"), "{output}");
-        assert!(output.contains("**[KEY]** 응답"), "{output}");
+        assert!(output.contains("**[REF]** `CODEXPLAIN`"), "{output}");
         assert!(
             output.contains("**[REF]** `JSON/code/diff/log/test`"),
             "{output}"
@@ -9840,7 +9853,6 @@ after
 
         assert_visible_lines_fit(&colored, 64);
         assert_eq!(visible_line_widths(&colored), visible_line_widths(&plain));
-        assert!(colored.contains("\x1b[1;32m보존"));
         assert!(colored.contains("\x1b[1;33mJSON/code/diff/log는"));
         assert!(colored.contains("\x1b[1;36mAGENTS.md와"));
         assert!(semantic_highlight(
@@ -9861,12 +9873,18 @@ after
             "accent"
         )
         .contains("\x1b[1;33mJSON/code/diff/log는"));
-        assert!(semantic_highlight(
+        let generic = semantic_highlight(
             Theme::Ocean,
             "CLI Policy Renderer Profile Semantic Highlight Output Mode",
+            "accent",
+        );
+        assert!(!generic.contains("\x1b["), "{generic:?}");
+        assert!(semantic_highlight(
+            Theme::Ocean,
+            "Renderer output has risk when JSON/code/diff is rewritten.",
             "accent"
         )
-        .contains("\x1b[1;34mCLI"));
+        .contains("\x1b[1;33mrisk"));
     }
 
     #[test]
@@ -9914,10 +9932,9 @@ after
         assert_visible_lines_fit(&colored, 78);
         assert_eq!(visible_line_widths(&plain), visible_line_widths(&colored));
         assert!(plain.contains("최종 assistant 응답"));
-        assert!(colored.contains("\x1b[1;32m있음"));
-        assert!(colored.contains("\x1b[1;33mhook"));
-        assert!(colored.contains("\x1b[1;31m안"));
-        assert!(colored.contains("\x1b[1;34mTUI"));
+        assert!(colored.contains("\x1b[1;31merror"));
+        assert!(colored.contains("\x1b[1;33m필요"));
+        assert!(!colored.contains("\x1b[1;34mTUI"));
     }
 
     #[test]
@@ -9935,8 +9952,7 @@ after
         );
 
         assert!(output.starts_with("**Codexplain highlights**:"), "{output}");
-        assert!(output.contains("**[OK]** 있음"), "{output}");
-        assert!(output.contains("**[RISK]** 안"), "{output}");
+        assert!(output.contains("**[REF]** `CODEX`"), "{output}");
         assert!(
             !output
                 .lines()
@@ -10065,8 +10081,8 @@ after
         assert!(output.starts_with("\x1b[36m┌"));
         assert!(output.contains("\x1b[1;34m Label "));
         assert!(output.contains("\x1b[1;32m TLDR "));
-        assert!(output.contains("\x1b[1;33m 위험 "));
-        assert!(output.contains("\x1b[1;34mcolor"));
+        assert!(output.contains("\x1b[1;31m위험"));
+        assert!(output.contains("color"));
         assert!(output.contains("supplemental"));
         assert!(output.contains("TLDR"));
         assert!(output.contains("위험"));
@@ -10102,7 +10118,7 @@ after
         assert_eq!(visible_line_widths(&colored), visible_line_widths(&plain));
         assert!(colored.contains("\x1b[36m┌"));
         assert!(colored.contains("\x1b[1;32m 장점 "));
-        assert!(colored.contains("\x1b[1;33m 위험 "));
+        assert!(colored.contains("\x1b[1;31m위험"));
         assert!(colored.contains("색은 보조 신호입니다."));
         assert!(colored.contains("텍스트 의미가 항상 남습니다."));
     }

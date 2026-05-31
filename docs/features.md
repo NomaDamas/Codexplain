@@ -58,11 +58,11 @@ Teams can add explanation patterns without changing Rust code.
 
 ```bash
 codexplain style add research-card \
-  --trigger "연구 카드" \
+  --trigger "research card" \
   --renderers "tldr,table,formula" \
   --tone "research" \
-  --description "배경, 근거, 한계, 다음 행동을 분리한다." \
-  --example "연구 카드로 이 설계를 설명해줘"
+  --description "Separate background, evidence, limitations, and next action." \
+  --example "Explain this design as a research card"
 
 codexplain style list
 codexplain style preview research-card
@@ -74,26 +74,29 @@ unless the user explicitly manages a global guidance block.
 
 ## Color Policy
 
-Codexplain uses semantic-sparse color.
+Codexplain uses semantic-sparse color. Highlighting is a task-relevance cue,
+not a decoration layer.
 
 ```text
  Role                    Intended Meaning
 ━━━━━━━━━━━━━━━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
  border                  Table, box, and flow structure
 ──────────────────────  ───────────────────────────────────────────────
- heading                 TLDR, architecture, renderer, important labels
+ heading                 TLDR and structural section labels
 ──────────────────────  ───────────────────────────────────────────────
- success                 completed, passed, possible, preserved
+ success                 PASS, DONE, APPROVED, completed
 ──────────────────────  ───────────────────────────────────────────────
- warning                 needed, running, workaround, hook
+ warning                 risk, warning, drift, regression, required
 ──────────────────────  ───────────────────────────────────────────────
- danger                  failed, error, impossible, not visible
+ danger                  FAIL, blocked, unsafe, OOM, error
 ──────────────────────  ───────────────────────────────────────────────
  command/path/artifact    exact commands, paths, JSON/code/diff/log/test
 ```
 
 The rule is intentionally strict: color should improve attention, not make the
-whole answer rainbow-colored.
+whole answer rainbow-colored. Ordinary nouns such as "renderer", "architecture",
+"Codexplain", and "TUI" are not colored inside normal prose unless they appear
+as structural labels.
 
 ## Quality Gates
 
