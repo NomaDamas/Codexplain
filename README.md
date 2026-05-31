@@ -1,14 +1,62 @@
 # Codexplain
 
-Codexplain is a project-local explanation UX layer for Codex.
+> Make Codex answers easier to scan, safer to copy, and nicer to read in a
+> terminal.
 
-It does not replace Codex or depend on a specific GPT version. The goal is to
-make Codex answers easier to understand across model versions by adding a
-stable explanation contract, terminal-friendly rendering, and feedback-driven
-preference tuning.
+Codexplain is a local-first explanation UX layer for Codex. It does not replace
+Codex, change the model, or rewrite strict artifacts. It wraps explanatory
+answers with a stable reading contract: TLDR first, width-safe tables, capability
+diagrams, sparse semantic color, progress blocks, and reversible project-local
+setup.
+
+```text
+ Codex writes the answer.
+ Codexplain makes the explanation readable.
+ JSON, code, diffs, logs, and tests stay exact.
+```
+
+## 🚀 30-Second Pitch
+
+```text
+ Pain                                  Codexplain fix
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ Dense prose                           TLDR, sections, numbered flow
+────────────────────────────────────  ───────────────────────────────────────
+ Broken terminal tables                Width-safe renderer + row dividers
+────────────────────────────────────  ───────────────────────────────────────
+ File-by-file architecture dumps       Capability maps and flow diagrams
+────────────────────────────────────  ───────────────────────────────────────
+ Random rainbow highlighting           Research-based sparse attention cues
+────────────────────────────────────  ───────────────────────────────────────
+ Risky install/uninstall behavior      Project-local reversible adapter
+```
+
+## ⚡ Try It
+
+```bash
+npm install -g github:NomaDamas/Codexplain
+codexplain install-codex --local --force
+codexplain shape --prompt "Explain this architecture with a TLDR and table" --response "DONE: tests PASS. Risk: JSON/code/diff output must stay exact."
+```
+
+## ✨ What You Get
+
+- 🧭 **Clear structure**: TLDR, sections, flow diagrams, tables, pros/cons,
+  risk panels, progress bars, and next actions.
+- 🛡️ **Strict safety**: JSON, code, diffs, patches, logs, tests, and commit
+  messages bypass decorative rendering.
+- 🎨 **Meaningful color**: highlights only outcomes, risks, strict artifacts,
+  commands, and paths instead of coloring every technical noun.
+- 📦 **Project-local control**: `on`, `off`, and uninstall remove only
+  Codexplain-managed state.
+- 🌍 **English-first docs**: global open-source defaults, while responses can
+  mirror the user's language.
 
 ## 🧭 Index
 
+- [🚀 30-Second Pitch](#-30-second-pitch)
+- [⚡ Try It](#-try-it)
+- [✨ What You Get](#-what-you-get)
 - [📌 Project Introduction](#-project-introduction)
 - [👀 Before / After](#-before--after)
 - [⚡ One-Line Setup](#-one-line-setup)
