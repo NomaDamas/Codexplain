@@ -5810,8 +5810,46 @@ fn codex_tui_slash_patch_already_applied() -> bool {
         })
         .unwrap_or(false)
         && fs::read_to_string(slash_dispatch)
-            .map(|content| content.contains("run_codexplain_slash_command"))
+            .map(|content| {
+                content.contains("run_codexplain_slash_command")
+                    && content.contains("run_codexplain_slash_command(\"toggle\")")
+                    && content.contains("\"toggle\" | \"on\"")
+                    && content.contains("Usage: /codexplain [toggle|on|off|status|help]")
+            })
             .unwrap_or(false)
+}
+
+fn refresh_stale_codex_tui_slash_patch() -> io::Result<bool> {
+    let root = upstream_codex_rs_root();
+    let slash_dispatch = root.join("tui/src/chatwidget/slash_dispatch.rs");
+    let Ok(current) = fs::read_to_string(&slash_dispatch) else {
+        return Ok(false);
+    };
+    if !current.contains("run_codexplain_slash_command") {
+        return Ok(false);
+    }
+    let next = current
+        .replace(
+            "self.run_codexplain_slash_command(\"status\");",
+            "self.run_codexplain_slash_command(\"toggle\");",
+        )
+        .replace(
+            "let action = action.split_whitespace().next().unwrap_or(\"status\");",
+            "let action = action.split_whitespace().next().unwrap_or(\"toggle\");",
+        )
+        .replace(
+            "\"on\" | \"enable\" | \"off\" | \"disable\" | \"status\" | \"help\" | \"-h\" | \"--help\"",
+            "\"toggle\" | \"on\" | \"enable\" | \"off\" | \"disable\" | \"status\" | \"help\" | \"-h\" | \"--help\"",
+        )
+        .replace(
+            "Usage: /codexplain [on|off|status|help]",
+            "Usage: /codexplain [toggle|on|off|status|help]",
+        );
+    if next != current {
+        fs::write(slash_dispatch, next)?;
+        return Ok(true);
+    }
+    Ok(false)
 }
 
 fn apply_codex_tui_patch() -> io::Result<String> {
@@ -5850,6 +5888,10 @@ fn apply_codex_tui_patch() -> io::Result<String> {
             !codex_tui_color_patch_already_applied()
         };
         if !patch_needed {
+            continue;
+        }
+        if patch_name.contains("slash") && refresh_stale_codex_tui_slash_patch()? {
+            applied.push(format!("refreshed: {patch_name}"));
             continue;
         }
         run_command_checked(
