@@ -223,6 +223,7 @@ enum RendererKind {
     Formula,
     IndexedList,
     CauseEffect,
+    ProblemDiagnosis,
     Flow,
     Progress,
     TldrProse,
@@ -235,6 +236,7 @@ enum ExplanationIntent {
     DecisionRule,
     OrderedSteps,
     CauseEffectReport,
+    ProblemDiagnosis,
     ProcessFlow,
     ProgressReport,
     StructuredSummary,
@@ -328,7 +330,7 @@ struct Profile {
 impl Default for Profile {
     fn default() -> Self {
         Self {
-            theme: Theme::Ocean,
+            theme: Theme::Mono,
             frame: Frame::Unicode,
             index_style: IndexStyle::Decimal,
             detail: "deep".to_string(),
@@ -840,6 +842,10 @@ impl RendererKind {
             "formula" | "equation" | "math" | "수식" | "공식" => Some(Self::Formula),
             "cause-effect" | "cause_effect" | "causal" | "cause" | "effect" | "원인-결과"
             | "원인결과" | "원인" | "결과" => Some(Self::CauseEffect),
+            "problem-diagnosis" | "diagnosis" | "debug-explain" | "why-not" | "why-failed"
+            | "문제진단" | "문제-진단" | "왜안됨" | "왜-안됨" => {
+                Some(Self::ProblemDiagnosis)
+            }
             "indexed" | "numbered" | "list" | "ordered-list" | "목록" | "리스트" => {
                 Some(Self::IndexedList)
             }
@@ -860,6 +866,7 @@ impl RendererKind {
             Self::Formula => ExplanationIntent::DecisionRule,
             Self::IndexedList => ExplanationIntent::OrderedSteps,
             Self::CauseEffect => ExplanationIntent::CauseEffectReport,
+            Self::ProblemDiagnosis => ExplanationIntent::ProblemDiagnosis,
             Self::Flow => ExplanationIntent::ProcessFlow,
             Self::Progress => ExplanationIntent::ProgressReport,
             Self::TldrProse => ExplanationIntent::StatusSummary,
@@ -892,6 +899,12 @@ const PROMPT_SIGNAL_MAP: &[PromptSignal] = &[
         intent: ExplanationIntent::DecisionRule,
         kind: PromptSignalKind::Keyword,
         pattern: "수식|공식|formula|equation|math|decision rule",
+    },
+    PromptSignal {
+        renderer: RendererKind::ProblemDiagnosis,
+        intent: ExplanationIntent::ProblemDiagnosis,
+        kind: PromptSignalKind::Keyword,
+        pattern: "왜.*안|왜.*안되|왜.*안돼|왜.*실패|왜.*오류|안되는.*이유|안 되는.*이유|문제.*설명|문제.*원인|원인.*해결책|diagnose|diagnosis|why.*not|why.*fail|why.*failed|why.*error|what.*wrong|root cause.*fix",
     },
     PromptSignal {
         renderer: RendererKind::CauseEffect,
@@ -1902,7 +1915,7 @@ fn configured_tui_color_mode() -> String {
         .and_then(|raw| extract_json_string(&raw, "tuiAssistantColor"))
         .unwrap_or_else(|| {
             if color_feature_enabled() {
-                "full".to_string()
+                "semantic".to_string()
             } else {
                 "off".to_string()
             }
@@ -1930,7 +1943,7 @@ fn tui_color_env_value() -> String {
     ) {
         value
     } else if tui_color_feature_enabled() {
-        "full".to_string()
+        "semantic".to_string()
     } else {
         "off".to_string()
     }
@@ -4557,6 +4570,124 @@ fn infer_action_from_clause(clause: &str) -> String {
     }
 }
 
+fn problem_diagnosis_report(
+    profile: &Profile,
+    prompt: &str,
+    response: &str,
+    summary: &str,
+    width: usize,
+) -> String {
+    let conclusion = compact(summary, 1);
+    let evidence = diagnosis_evidence(response, summary);
+    let fix = diagnosis_fix(response, summary);
+    let answer = compact(response, summary_sentence_limit(profile).min(4).max(2));
+    let korean = contains_korean(prompt) || contains_korean(response);
+    let headers = if korean {
+        ["흐름", "내용"]
+    } else {
+        ["Flow", "Message"]
+    };
+    let rows = if korean {
+        vec![
+            vec!["결론".to_string(), conclusion],
+            vec!["왜 그런가".to_string(), evidence],
+            vec!["해결 흐름".to_string(), fix],
+            vec!["네 질문".to_string(), compact(prompt, 1)],
+            vec!["답".to_string(), answer],
+        ]
+    } else {
+        vec![
+            vec!["Conclusion".to_string(), conclusion],
+            vec!["Evidence".to_string(), evidence],
+            vec!["Fix".to_string(), fix],
+            vec!["Your question".to_string(), compact(prompt, 1)],
+            vec!["Answer".to_string(), answer],
+        ]
+    };
+    wide_divider_table(&headers, &rows, profile.theme, width)
+}
+
+fn contains_korean(value: &str) -> bool {
+    value.chars().any(|ch| ('가'..='힣').contains(&ch))
+}
+
+fn diagnosis_evidence(response: &str, summary: &str) -> String {
+    if let Some(value) = labeled_diagnosis_value(response, "Evidence:") {
+        return value;
+    }
+    let mut evidence = Vec::new();
+    for sentence in split_sentences(response) {
+        let lower = sentence.to_ascii_lowercase();
+        if lower.contains("because")
+            || lower.contains("error")
+            || lower.contains("fail")
+            || lower.contains("missing")
+            || lower.contains("dirty")
+            || lower.contains("skip")
+            || sentence.contains("때문")
+            || sentence.contains("오류")
+            || sentence.contains("실패")
+            || sentence.contains("안 ")
+            || sentence.contains("없")
+        {
+            evidence.push(compact(&sentence, 1));
+        }
+        if evidence.len() >= 2 {
+            break;
+        }
+    }
+    if evidence.is_empty() {
+        compact(summary, 2)
+    } else {
+        evidence.join(" / ")
+    }
+}
+
+fn diagnosis_fix(response: &str, summary: &str) -> String {
+    if let Some(value) = labeled_diagnosis_value(response, "Fix:") {
+        return value;
+    }
+    for sentence in split_sentences(response) {
+        let lower = sentence.to_ascii_lowercase();
+        if lower.contains("fix")
+            || lower.contains("solution")
+            || lower.contains("run ")
+            || lower.contains("use ")
+            || lower.contains("should")
+            || sentence.contains("해결")
+            || sentence.contains("실행")
+            || sentence.contains("수정")
+            || sentence.contains("해야")
+        {
+            return compact(&sentence, 1);
+        }
+    }
+    infer_action_from_clause(summary)
+}
+
+fn labeled_diagnosis_value(response: &str, label: &str) -> Option<String> {
+    let start = response.find(label)? + label.len();
+    let tail = response[start..].trim();
+    if tail.is_empty() {
+        return None;
+    }
+    let mut end = tail.len();
+    for marker in [" Evidence:", " Fix:", " Conclusion:", " Answer:"] {
+        if marker.trim() == label {
+            continue;
+        }
+        if let Some(index) = tail.find(marker) {
+            end = end.min(index);
+        }
+    }
+    let value = tail[..end].trim().trim_matches(highlight_trim_char);
+    if value.is_empty() {
+        None
+    } else {
+        Some(value.to_string())
+    }
+}
+
 fn summary_sentence_limit(profile: &Profile) -> usize {
     match profile.explanation_depth.as_str() {
         "light" => 3,
@@ -4630,6 +4761,11 @@ fn dispatch_explanation(
         if requested.contains(&RendererKind::CauseEffect) {
             sections.push(cause_effect_report(profile, response, summary, width));
         }
+        if requested.contains(&RendererKind::ProblemDiagnosis) {
+            sections.push(problem_diagnosis_report(
+                profile, prompt, response, summary, width,
+            ));
+        }
         if requested.contains(&RendererKind::Progress) {
             sections.push(progress_report(profile, prompt, response, summary, width));
         }
@@ -4679,6 +4815,9 @@ fn dispatch_explanation(
             RendererKind::CauseEffect => {
                 sections.push(cause_effect_report(profile, response, summary, width))
             }
+            RendererKind::ProblemDiagnosis => sections.push(problem_diagnosis_report(
+                profile, prompt, response, summary, width,
+            )),
             RendererKind::IndexedList => {
                 let items = indexed_items(prompt, response, summary);
                 sections.push(indexed(
@@ -4722,6 +4861,9 @@ fn dispatch_explanation(
         }
         ExplanationIntent::CauseEffectReport => {
             cause_effect_report(profile, response, summary, width)
+        }
+        ExplanationIntent::ProblemDiagnosis => {
+            problem_diagnosis_report(profile, prompt, response, summary, width)
         }
         ExplanationIntent::OrderedSteps => {
             let items = indexed_items(prompt, response, summary);
@@ -4767,6 +4909,7 @@ fn specialized_table_renderer_requested(requested: &[RendererKind]) -> bool {
             renderer,
             RendererKind::ProsCons
                 | RendererKind::CauseEffect
+                | RendererKind::ProblemDiagnosis
                 | RendererKind::Progress
                 | RendererKind::IndexedList
         )
@@ -4834,9 +4977,16 @@ fn looks_like_machine_output(response: &str) -> bool {
 fn split_sentences(text: &str) -> Vec<String> {
     let mut items = Vec::new();
     let mut sentence = String::new();
-    for ch in text.chars() {
+    let chars = text.chars().collect::<Vec<_>>();
+    for (index, ch) in chars.iter().copied().enumerate() {
         sentence.push(ch);
-        if matches!(ch, '.' | '!' | '?' | '。' | '！' | '？') {
+        let previous = index.checked_sub(1).and_then(|i| chars.get(i)).copied();
+        let next = chars.get(index + 1).copied();
+        let path_dot = ch == '.'
+            && (next == Some('/')
+                || previous == Some('/')
+                || next.is_some_and(|value| value.is_ascii_alphanumeric()));
+        if matches!(ch, '.' | '!' | '?' | '。' | '！' | '？') && !path_dot {
             items.push(sentence.trim().to_string());
             sentence.clear();
         }
@@ -5341,7 +5491,7 @@ fn save_profile_at(root: &Path, profile: &Profile) -> io::Result<()> {
                 "  \"detailScale\": {},\n",
                 "  \"uxDensity\": {},\n",
                 "  \"riskSensitivity\": {},\n",
-                "  \"explanationMoves\": [\"tldr\", \"answer-first\", \"plain-language\", \"evidence\", \"next-step\"],\n",
+                "  \"explanationMoves\": [\"tldr\", \"answer-first\", \"problem-diagnosis\", \"evidence\", \"fix\", \"question-answer\", \"next-step\"],\n",
                 "  \"feedback\": {{\"positive\": 0, \"negative\": 0, \"revisions\": 0, \"rewardScore\": 0, \"signals\": []}}\n",
                 "}}\n"
             ),
@@ -5369,8 +5519,8 @@ fn color_command(args: &[String]) -> io::Result<()> {
     let action = args.get(1).map(String::as_str).unwrap_or("status");
     match action {
         "on" | "enable" => {
-            write_color_config("ansi", "ansi", "full")?;
-            println!("Codexplain color: on\n- defaultColorOutput: ansi\n- chatHighlightOutput: ansi\n- tuiAssistantColor: full\n- TUI env: CLICOLOR_FORCE=1 FORCE_COLOR=3 COLORTERM=truecolor CODEXPLAIN_TUI_COLOR=full");
+            write_color_config("ansi", "ansi", "semantic")?;
+            println!("Codexplain color: on\n- defaultColorOutput: ansi\n- chatHighlightOutput: ansi\n- tuiAssistantColor: semantic\n- TUI env: CLICOLOR_FORCE=1 FORCE_COLOR=3 COLORTERM=truecolor CODEXPLAIN_TUI_COLOR=semantic\n- policy: restrained semantic emphasis");
         }
         "off" | "disable" => {
             write_color_config("plain", "plain", "off")?;
@@ -5464,8 +5614,8 @@ fn tui_color_command(args: &[String]) -> io::Result<()> {
     let action = args.get(1).map(String::as_str).unwrap_or("status");
     match action {
         "on" | "enable" => {
-            write_color_config("ansi", "ansi", "full")?;
-            println!("Codexplain TUI assistant color: on\n- scope: project-local only\n- mode: full\n- patchedCodex: {}", patched_codex_status());
+            write_color_config("ansi", "ansi", "semantic")?;
+            println!("Codexplain TUI assistant color: on\n- scope: project-local only\n- mode: semantic\n- patchedCodex: {}", patched_codex_status());
         }
         "full" => {
             write_color_config("ansi", "ansi", "full")?;
@@ -5496,10 +5646,10 @@ fn tui_adapter_command(args: &[String]) -> io::Result<()> {
     let action = args.get(1).map(String::as_str).unwrap_or("status");
     match parse_tui_adapter_action(action)? {
         TuiAdapterAction::EnableFull => {
-            write_color_config("ansi", "ansi", "full")?;
+            write_color_config("ansi", "ansi", "semantic")?;
             println!(
                 "{}",
-                tui_adapter_status_report("full", patched_codex_status())
+                tui_adapter_status_report("semantic", patched_codex_status())
             );
         }
         TuiAdapterAction::Disable => {
@@ -5520,10 +5670,10 @@ fn tui_adapter_command(args: &[String]) -> io::Result<()> {
         TuiAdapterAction::Build => {
             let patch_outcome = apply_codex_tui_patch()?;
             build_patched_codex_binary()?;
-            write_color_config("ansi", "ansi", "full")?;
+            write_color_config("ansi", "ansi", "semantic")?;
             println!(
                 "{}\n- patch: {}\n- build: cargo build -p codex-cli --bin codex\n- result: project-local patched Codex TUI ready",
-                tui_adapter_status_report("full", patched_codex_status()),
+                tui_adapter_status_report("semantic", patched_codex_status()),
                 patch_outcome
             );
         }
@@ -5577,7 +5727,7 @@ fn tui_adapter_status_report(mode: &str, patched_status: String) -> String {
             "- patchedCodex: {}\n",
             "- fallback: exec/review shaping remains available; interactive TUI assistant-message recoloring requires a project-local patched Codex binary\n",
             "- rollback: codexplain tui-adapter off, or codexplain off --local to remove managed project files and blocks\n",
-            "- build: codexplain tui-adapter build applies patches/codex-tui-assistant-color.patch and builds only the project-local patched Codex binary\n",
+            "- build: codexplain tui-adapter build applies the assistant-color and /codexplain slash patches, then builds only the project-local patched Codex binary\n",
             "- cleanup: codexplain build-clean --patched-codex removes only the project-local patched Codex target cache"
         ),
         mode,
@@ -5591,6 +5741,14 @@ fn codex_tui_patch_path() -> PathBuf {
     project_path("patches/codex-tui-assistant-color.patch")
 }
 
+fn codex_tui_slash_patch_path() -> PathBuf {
+    project_path("patches/codex-tui-codexplain-slash.patch")
+}
+
+fn codex_tui_patch_paths() -> Vec<PathBuf> {
+    vec![codex_tui_patch_path(), codex_tui_slash_patch_path()]
+}
+
 fn upstream_codex_root() -> PathBuf {
     project_path(".codexplain/state/codex-upstream")
 }
@@ -5600,6 +5758,10 @@ fn upstream_codex_rs_root() -> PathBuf {
 }
 
 fn codex_tui_patch_already_applied() -> bool {
+    codex_tui_color_patch_already_applied() && codex_tui_slash_patch_already_applied()
+}
+
+fn codex_tui_color_patch_already_applied() -> bool {
     let root = upstream_codex_rs_root();
     let markdown = root.join("tui/src/markdown.rs");
     let messages = root.join("tui/src/history_cell/messages.rs");
@@ -5615,10 +5777,24 @@ fn codex_tui_patch_already_applied() -> bool {
             .unwrap_or(false)
 }
 
+fn codex_tui_slash_patch_already_applied() -> bool {
+    let root = upstream_codex_rs_root();
+    let slash_command = root.join("tui/src/slash_command.rs");
+    let slash_dispatch = root.join("tui/src/chatwidget/slash_dispatch.rs");
+    fs::read_to_string(slash_command)
+        .map(|content| {
+            content.contains("SlashCommand::Codexplain")
+                && content.contains("control project-local Codexplain")
+        })
+        .unwrap_or(false)
+        && fs::read_to_string(slash_dispatch)
+            .map(|content| content.contains("run_codexplain_slash_command"))
+            .unwrap_or(false)
+}
+
 fn apply_codex_tui_patch() -> io::Result<String> {
     let upstream = upstream_codex_root();
     let codex_rs = upstream_codex_rs_root();
-    let patch = codex_tui_patch_path();
 
     if !codex_rs.join("Cargo.toml").exists() {
         return Err(io::Error::new(
@@ -5629,34 +5805,55 @@ fn apply_codex_tui_patch() -> io::Result<String> {
             ),
         ));
     }
-    if !patch.exists() {
-        return Err(io::Error::new(
-            io::ErrorKind::NotFound,
-            format!("missing tracked patch file: {}", patch.display()),
-        ));
-    }
     if codex_tui_patch_already_applied() {
         return Ok("already-applied".to_string());
     }
 
-    run_command_checked(
-        Command::new("git")
-            .arg("-C")
-            .arg(&upstream)
-            .arg("apply")
-            .arg("--check")
-            .arg(&patch),
-        "git apply --check patches/codex-tui-assistant-color.patch",
-    )?;
-    run_command_checked(
-        Command::new("git")
-            .arg("-C")
-            .arg(&upstream)
-            .arg("apply")
-            .arg(&patch),
-        "git apply patches/codex-tui-assistant-color.patch",
-    )?;
-    Ok("applied".to_string())
+    let mut applied = Vec::new();
+    for patch in codex_tui_patch_paths() {
+        if !patch.exists() {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("missing tracked patch file: {}", patch.display()),
+            ));
+        }
+        let patch_name = patch
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("codex-tui.patch")
+            .to_string();
+        let patch_needed = if patch_name.contains("slash") {
+            !codex_tui_slash_patch_already_applied()
+        } else {
+            !codex_tui_color_patch_already_applied()
+        };
+        if !patch_needed {
+            continue;
+        }
+        run_command_checked(
+            Command::new("git")
+                .arg("-C")
+                .arg(&upstream)
+                .arg("apply")
+                .arg("--check")
+                .arg(&patch),
+            &format!("git apply --check {patch_name}"),
+        )?;
+        run_command_checked(
+            Command::new("git")
+                .arg("-C")
+                .arg(&upstream)
+                .arg("apply")
+                .arg(&patch),
+            &format!("git apply {patch_name}"),
+        )?;
+        applied.push(patch_name);
+    }
+    if applied.is_empty() {
+        Ok("already-applied".to_string())
+    } else {
+        Ok(format!("applied: {}", applied.join(", ")))
+    }
 }
 
 fn build_patched_codex_binary() -> io::Result<()> {
@@ -5924,6 +6121,7 @@ fn renderers_to_names(renderers: &[RendererKind]) -> String {
             RendererKind::ProsCons => "pros-cons",
             RendererKind::Formula => "formula",
             RendererKind::CauseEffect => "cause-effect",
+            RendererKind::ProblemDiagnosis => "problem-diagnosis",
             RendererKind::IndexedList => "indexed",
             RendererKind::Flow => "flow",
             RendererKind::Progress => "progress",
@@ -6585,6 +6783,7 @@ Default answer style:
 - Every visible table row must be separated. Do not produce a dense table where many `│ ... │` body rows appear back-to-back without `├...┤` or `─` row separators.
 - Do not hand-draw long Unicode tables from raw model text. If a cell may exceed the terminal width, use Codexplain's width-safe renderer output, a Markdown table, or short per-item boxes so every cell is filled and padded by visible width.
 - Process answers should use short numbered sections, with one idea per item and bullet-style sublines for multiple details.
+- Problem-diagnosis answers should be answer-first, then flow downward from evidence/reason to fix and the user's exact question. In Korean, use natural labels such as 결론, 왜 그런가, 해결 흐름, 네 질문, 답 instead of forcing rigid English labels. In English, Conclusion/Evidence/Fix/Your question/Answer is acceptable when it improves scanning.
 - Keep commands, paths, risks, test evidence, and exact technical facts intact.
 - Do not continue an Ouroboros evolve/ralph lineage if drift is detected. Restart with an explicit project-local Seed.
 
@@ -6645,10 +6844,12 @@ codexplain compat-check
 `codex exec` and `codex review` can be post-processed with Codexplain ANSI text color. Interactive Codex TUI is passed through to the real Codex process with color env (`CLICOLOR_FORCE`, `FORCE_COLOR`, `COLORTERM`). Assistant-message recoloring inside ratatui requires the project-local patched Codex renderer.
 
 When this shim is active, `codex` startup performs a best-effort GitHub release
-check. If a newer Codexplain release exists and this repo is on a clean branch,
-the shim runs `git pull --ff-only` and rebuilds the release binary before
-starting Codex. It never blocks Codex startup on network failure. Disable it for
-one command with `CODEXPLAIN_AUTO_UPDATE=off codex`.
+check. If a newer Codexplain release exists and this repo is on a branch with no
+user-code changes, the shim runs `git pull --ff-only` and rebuilds the release
+binary before starting Codex. Dirty Codexplain-managed local adapter files do
+not block the check; unrelated dirty files still do. It never blocks Codex
+startup on network failure. Disable it for one command with
+`CODEXPLAIN_AUTO_UPDATE=off codex`.
 
 Project-local interactive TUI assistant color can be toggled without touching global Codex settings:
 
@@ -6670,12 +6871,14 @@ codexplain tui-adapter apply
 codexplain tui-adapter build
 ```
 
-`tui-adapter on` is an alias for the existing `full` enable behavior. If no
+`tui-adapter on` uses restrained semantic highlighting by default. Use
+`tui-adapter full` only when you explicitly want stronger recoloring. If no
 patched binary is present, it exits successfully and reports the fallback:
 exec/review shaping still works, while interactive TUI assistant-message
 recoloring needs a project-local patched Codex binary. `tui-adapter build`
-applies `patches/codex-tui-assistant-color.patch` to the ignored project-local
-upstream clone and builds only the project-local patched Codex binary.
+applies `patches/codex-tui-assistant-color.patch` and
+`patches/codex-tui-codexplain-slash.patch` to the ignored project-local upstream
+clone and builds only the project-local patched Codex binary.
 
 The shim routes to `.codexplain/state/codex-upstream/codex-rs/target/release/codex` or `.codexplain/state/codex-upstream/codex-rs/target/debug/codex` when that binary exists and `tuiAssistantColor` is enabled.
 
@@ -6701,6 +6904,7 @@ Custom explanation styles:
 
 ```bash
 codexplain style add research-card --trigger "연구 카드" --renderers "tldr,table,formula" --description "배경, 근거, 한계, 다음 행동을 분리한다." --tone "research" --example "연구 카드로 이 설계를 설명해줘"
+codexplain style add problem-diagnosis --trigger "왜 안됨" --renderers "problem-diagnosis" --description "문제 원인과 해결책을 결론부터 말하고 근거, 해결 흐름, 질문-답으로 자연스럽게 내려가며 정리한다." --tone "direct" --example "왜 안되고 있는지 문제와 해결책을 설명해줘"
 codexplain style list
 codexplain style preview research-card
 codexplain style remove research-card
@@ -6711,7 +6915,7 @@ const LOCAL_CONFIG: &str = r#"{
   "schemaVersion": 1,
   "defaultColorOutput": "ansi",
   "chatHighlightOutput": "ansi",
-  "tuiAssistantColor": "full",
+  "tuiAssistantColor": "semantic",
   "colorPolicy": "semantic-sparse",
   "storageCheck": {
     "minFree": {
@@ -6743,7 +6947,7 @@ else
   export CODEXPLAIN_COLOR=always
   export CODEXPLAIN_COLOR_OUTPUT=ansi
   CODEXPLAIN_TUI_COLOR_VALUE=$(sed -n 's/.*"tuiAssistantColor"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$ROOT/.codexplain/config.json" 2>/dev/null | head -n 1)
-  export CODEXPLAIN_TUI_COLOR="${CODEXPLAIN_TUI_COLOR_VALUE:-full}"
+  export CODEXPLAIN_TUI_COLOR="${CODEXPLAIN_TUI_COLOR_VALUE:-semantic}"
   export CLICOLOR_FORCE=1
   export FORCE_COLOR=3
   export COLORTERM=truecolor
@@ -6756,8 +6960,16 @@ codexplain_auto_update() {
   command -v git >/dev/null 2>&1 || return 0
   command -v cargo >/dev/null 2>&1 || return 0
   [ -d "$ROOT/.git" ] || return 0
-  git -C "$ROOT" diff --quiet >/dev/null 2>&1 || return 0
-  git -C "$ROOT" diff --cached --quiet >/dev/null 2>&1 || return 0
+  dirty_paths=$({
+    git -C "$ROOT" diff --name-only 2>/dev/null
+    git -C "$ROOT" diff --cached --name-only 2>/dev/null
+  } | sort -u)
+  for dirty_path in $dirty_paths; do
+    case "$dirty_path" in
+      AGENTS.md|.codexplain/README.md|.codexplain/config.json|.codexplain/ux-profile.json|.codexplain/activate|.codexplain/post-response|.codexplain/bin/codex) ;;
+      *) return 0 ;;
+    esac
+  done
   branch=$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || printf HEAD)
   [ "$branch" != "HEAD" ] || return 0
   current=$(sed -n 's/^version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/v\1/p' "$ROOT/Cargo.toml" 2>/dev/null | head -n 1)
@@ -6789,7 +7001,7 @@ else
   export CODEXPLAIN_COLOR=always
   export CODEXPLAIN_COLOR_OUTPUT=ansi
   CODEXPLAIN_TUI_COLOR_VALUE=$(sed -n 's/.*"tuiAssistantColor"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$CODEXPLAIN_PROJECT_DIR/.codexplain/config.json" 2>/dev/null | head -n 1)
-  export CODEXPLAIN_TUI_COLOR="${CODEXPLAIN_TUI_COLOR_VALUE:-full}"
+  export CODEXPLAIN_TUI_COLOR="${CODEXPLAIN_TUI_COLOR_VALUE:-semantic}"
   export CLICOLOR_FORCE=1
   export FORCE_COLOR=3
   export COLORTERM=truecolor
@@ -7196,6 +7408,8 @@ fn slash_control(args: &[String]) -> io::Result<()> {
         "status" => {
             println!("contract=codexplain.slash.v1");
             println!("slash=/codexplain status");
+            println!("native_tui_slash=bridge");
+            println!("fallback=./bin/codexplain slash on|off|status");
             println!(
                 "project_local_adapter={}",
                 pass_fail(project_local_adapter_present_at(&project_path(".")))
@@ -7220,6 +7434,7 @@ fn slash_control(args: &[String]) -> io::Result<()> {
                 "/codexplain off    -> strict project-local removal of Codexplain-managed state"
             );
             println!("/codexplain status -> project-local activation status");
+            println!("If the Codex TUI intercepts unknown slash commands, run ./bin/codexplain slash <action> or use the project-local patched TUI adapter.");
         }
         other => {
             return Err(io::Error::new(
@@ -7860,7 +8075,7 @@ fn settings_ui() -> io::Result<()> {
     }
 
     save_profile(&profile)?;
-    write_color_config("ansi", "ansi", "full")?;
+    write_color_config("ansi", "ansi", "semantic")?;
     println!("saved=.codexplain/ux-profile.json");
     println!("color=ansi");
     Ok(())
@@ -7875,7 +8090,7 @@ fn statusbar_control(args: &[String]) -> io::Result<()> {
         "on" | "enable" => {
             let root = trusted_statusbar_project_root();
             install_local_codex_project_at(&root)?;
-            write_color_config_at(&root, "ansi", "ansi", "full")?;
+            write_color_config_at(&root, "ansi", "ansi", "semantic")?;
             println!("statusbar=on");
             print_statusbar_state_at(&root);
         }
@@ -8029,7 +8244,7 @@ fn apply_expression_mode(profile: &mut Profile, value: &str) -> io::Result<()> {
 
 fn apply_statusbar_color_output_at(root: &Path, value: &str) -> io::Result<()> {
     match value.trim().to_ascii_lowercase().as_str() {
-        "ansi" | "terminal" | "color" => write_color_config_at(root, "ansi", "ansi", "full"),
+        "ansi" | "terminal" | "color" => write_color_config_at(root, "ansi", "ansi", "semantic"),
         "plain" | "none" | "off" => write_color_config_at(root, "plain", "plain", "off"),
         "html" | "html-chat" | "chat" => write_color_config_at(root, "html", "html", "full"),
         other => Err(io::Error::new(
@@ -8122,7 +8337,7 @@ fn usage() -> &'static str {
   codexplain color on|off|status|rules
   codexplain tui-color on|full|off|status
   codexplain tui-adapter on|full|off|status|apply|build
-  codexplain style add <name> --trigger <text> --renderers <tldr,table,flow,pros-cons,formula,cause-effect,indexed,progress> --description <text> [--tone <tone>] [--example <text>]
+  codexplain style add <name> --trigger <text> --renderers <tldr,table,flow,pros-cons,formula,cause-effect,problem-diagnosis,indexed,progress> --description <text> [--tone <tone>] [--example <text>]
   codexplain style list|show <name>|preview <name>|remove <name>
   codexplain feedback|rlhf --rating <1-5> --comment <text>
   codexplain profile --show|--theme <name>|--frame <unicode|ascii|fallback|auto>|--index-style <style>|--detail <level>
@@ -8156,7 +8371,7 @@ Color outputs: terminal, ansi, markdown, html, plain. Use --chat-color as an ali
 Scopes: --project/--local writes only this repository's managed Codexplain files; --global writes only managed guidance under CODEX_HOME; --session prints the current-shell activation command because a child process cannot mutate its parent shell.
 Color toggle: `codexplain color on` forces ANSI text color for Codexplain-shaped exec/review output and best-effort Codex TUI color env; `codexplain color off` restores plain output. `codexplain color rules` shows the semantic-sparse role map so colors do not become decorative noise.
 TUI assistant color: `codexplain tui-color on` enables project-local full assistant-message color when a patched Codex binary exists under .codexplain/state/codex-upstream/codex-rs/target/release/codex or target/debug/codex; `off` disables only that hook.
-TUI adapter: `codexplain tui-adapter status` reports project-local shim path, mode, active binary/fallback, patched binary status, rollback, and cleanup instructions. `codexplain tui-adapter build` applies the tracked Codex TUI color patch and builds only the project-local patched Codex binary.
+TUI adapter: `codexplain tui-adapter status` reports project-local shim path, mode, active binary/fallback, patched binary status, rollback, and cleanup instructions. `codexplain tui-adapter build` applies the tracked Codex TUI assistant-color and native `/codexplain` slash patches, then builds only the project-local patched Codex binary.
 Slash control: `/codexplain on|off|status` is bridged by project guidance to `codexplain slash on|off|status`; `off` strictly removes the managed AGENTS block and `.codexplain/` while leaving unrelated Codex settings untouched.
 Status bar control: `codexplain statusbar` is the Rust control surface used by local app launchers. It toggles only project-local Codexplain files, updates profile/config controls, and leaves unrelated global Codex settings untouched.
 Settings UI: `codexplain settings-ui` opens a dependency-free Rust terminal UI for theme, frame, depth, abstraction, UX density, and color mode; `codexplain install-app` writes lightweight macOS/Linux/Windows launchers under .codexplain/app.
@@ -9018,6 +9233,8 @@ after
         assert!(CODEX_SHIM_SH.contains("codex --local-shape"));
         assert!(CODEX_SHIM_SH.contains("codexplain_auto_update"));
         assert!(CODEX_SHIM_SH.contains("CODEXPLAIN_AUTO_UPDATE"));
+        assert!(CODEX_SHIM_SH.contains("dirty_paths"));
+        assert!(CODEX_SHIM_SH.contains(".codexplain/config.json"));
         assert!(CODEX_SHIM_SH.contains("pull --ff-only"));
         assert!(CODEX_SHIM_SH.contains("cargo build --release"));
         assert!(CODEX_SHIM_SH.contains("FORCE_COLOR=3"));
@@ -9254,6 +9471,7 @@ after
         assert!(LOCAL_README.contains("codexplain tui-adapter on"));
         assert!(LOCAL_README.contains("codexplain tui-adapter status"));
         assert!(LOCAL_README.contains("codexplain tui-adapter build"));
+        assert!(LOCAL_README.contains("codex-tui-codexplain-slash.patch"));
         assert!(LOCAL_README
             .contains("builds the project-local patched Codex TUI binary only when it is missing"));
         assert!(LOCAL_README.contains("project-local patched Codex"));
@@ -9269,6 +9487,21 @@ after
         assert_eq!(
             parse_tui_adapter_action("on").unwrap(),
             TuiAdapterAction::EnableFull
+        );
+    }
+
+    #[test]
+    fn tui_adapter_tracks_color_and_native_slash_patches() {
+        let paths = codex_tui_patch_paths();
+        assert!(paths
+            .iter()
+            .any(|path| path.ends_with("patches/codex-tui-assistant-color.patch")));
+        assert!(paths
+            .iter()
+            .any(|path| path.ends_with("patches/codex-tui-codexplain-slash.patch")));
+        assert!(
+            tui_adapter_status_report("semantic", "not-built".to_string())
+                .contains("/codexplain slash patches")
         );
     }
 
@@ -10709,6 +10942,7 @@ after
             RendererKind::ProsCons,
             RendererKind::Formula,
             RendererKind::CauseEffect,
+            RendererKind::ProblemDiagnosis,
             RendererKind::IndexedList,
             RendererKind::Flow,
             RendererKind::Progress,
@@ -10729,6 +10963,9 @@ after
         assert!(catalog
             .iter()
             .any(|signal| signal.intent == ExplanationIntent::CauseEffectReport));
+        assert!(catalog
+            .iter()
+            .any(|signal| signal.intent == ExplanationIntent::ProblemDiagnosis));
         assert!(catalog
             .iter()
             .any(|signal| signal.intent == ExplanationIntent::OrderedSteps));
@@ -10773,6 +11010,11 @@ after
                 "원인-결과 리포트로 설명해줘",
                 RendererKind::CauseEffect,
                 ExplanationIntent::CauseEffectReport,
+            ),
+            (
+                "왜 안되고 있는지 문제에 대한 설명과 해결책을 말해줘",
+                RendererKind::ProblemDiagnosis,
+                ExplanationIntent::ProblemDiagnosis,
             ),
             (
                 "1,2,3 번호 목록으로 설명",
@@ -10836,6 +11078,12 @@ after
                 "결과",
             ),
             (
+                "왜 안되고 있는지 문제 설명해줘",
+                RendererKind::ProblemDiagnosis,
+                "결론",
+                "네 질문",
+            ),
+            (
                 "1,2,3 번호 목록으로 설명",
                 RendererKind::IndexedList,
                 "1. 작업 완료",
@@ -10896,6 +11144,31 @@ after
             !output.contains("실행 흐름은 크게 두 가지입니다."),
             "intro sentence should not consume a numbered slot: {output}"
         );
+    }
+
+    #[test]
+    fn problem_diagnosis_uses_answer_first_korean_flow_order() {
+        let profile = Profile {
+            theme: Theme::None,
+            ..Profile::default()
+        };
+        let output = shape(
+            "왜 안되고 있는지 문제에 대한 설명과 해결책을 말해줘",
+            "현재 /codexplain 명령은 Codex TUI가 unknown slash command를 먼저 가로채기 때문에 모델까지 도달하지 않습니다. Evidence: slash status는 CLI fallback으로만 pass입니다. Fix: patched TUI adapter에 slash registry hook을 넣거나 ./bin/codexplain slash status를 직접 실행해야 합니다.",
+            &profile,
+            88,
+        );
+
+        let conclusion = output.find("결론").unwrap();
+        let evidence = output.find("왜 그런가").unwrap();
+        let fix = output.find("해결 흐름").unwrap();
+        let question = output.find("네 질문").unwrap();
+        let answer = output.find("답").unwrap();
+
+        assert!(conclusion < evidence && evidence < fix && fix < question && question < answer);
+        assert!(output.contains("codexplain"), "{output}");
+        assert!(output.contains("slash status"), "{output}");
+        assert_visible_lines_fit(&output, 88);
     }
 
     #[test]

@@ -1,0 +1,8 @@
+name: problem-diagnosis
+trigger: 왜 안됨
+renderers: problem-diagnosis
+tone: direct
+body:
+문제 원인과 해결책을 결론부터 말하고 근거, 해결 흐름, 질문-답으로 자연스럽게 내려가며 정리한다.
+example:
+왜 안되고 있는지 문제와 해결책을 설명해줘

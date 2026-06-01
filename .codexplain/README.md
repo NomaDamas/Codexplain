@@ -17,6 +17,7 @@ Color can be toggled without uninstalling Codexplain:
 codexplain color on
 codexplain color off
 codexplain color status
+codexplain color rules
 ```
 
 Open the project-local status control surface or install local app launchers:
@@ -39,10 +40,12 @@ codexplain compat-check
 `codex exec` and `codex review` can be post-processed with Codexplain ANSI text color. Interactive Codex TUI is passed through to the real Codex process with color env (`CLICOLOR_FORCE`, `FORCE_COLOR`, `COLORTERM`). Assistant-message recoloring inside ratatui requires the project-local patched Codex renderer.
 
 When this shim is active, `codex` startup performs a best-effort GitHub release
-check. If a newer Codexplain release exists and this repo is on a clean branch,
-the shim runs `git pull --ff-only` and rebuilds the release binary before
-starting Codex. It never blocks Codex startup on network failure. Disable it for
-one command with `CODEXPLAIN_AUTO_UPDATE=off codex`.
+check. If a newer Codexplain release exists and this repo is on a branch with no
+user-code changes, the shim runs `git pull --ff-only` and rebuilds the release
+binary before starting Codex. Dirty Codexplain-managed local adapter files do
+not block the check; unrelated dirty files still do. It never blocks Codex
+startup on network failure. Disable it for one command with
+`CODEXPLAIN_AUTO_UPDATE=off codex`.
 
 Project-local interactive TUI assistant color can be toggled without touching global Codex settings:
 
@@ -64,12 +67,14 @@ codexplain tui-adapter apply
 codexplain tui-adapter build
 ```
 
-`tui-adapter on` is an alias for the existing `full` enable behavior. If no
+`tui-adapter on` uses restrained semantic highlighting by default. Use
+`tui-adapter full` only when you explicitly want stronger recoloring. If no
 patched binary is present, it exits successfully and reports the fallback:
 exec/review shaping still works, while interactive TUI assistant-message
 recoloring needs a project-local patched Codex binary. `tui-adapter build`
-applies `patches/codex-tui-assistant-color.patch` to the ignored project-local
-upstream clone and builds only the project-local patched Codex binary.
+applies `patches/codex-tui-assistant-color.patch` and
+`patches/codex-tui-codexplain-slash.patch` to the ignored project-local upstream
+clone and builds only the project-local patched Codex binary.
 
 The shim routes to `.codexplain/state/codex-upstream/codex-rs/target/release/codex` or `.codexplain/state/codex-upstream/codex-rs/target/debug/codex` when that binary exists and `tuiAssistantColor` is enabled.
 
@@ -94,7 +99,9 @@ UX selection combines explicit rules, score thresholds, and optional planner hin
 Custom explanation styles:
 
 ```bash
-codexplain style add research-card --trigger "연구 카드" --renderers "tldr,table,formula" --description "배경, 근거, 한계, 다음 행동을 분리한다."
+codexplain style add research-card --trigger "연구 카드" --renderers "tldr,table,formula" --description "배경, 근거, 한계, 다음 행동을 분리한다." --tone "research" --example "연구 카드로 이 설계를 설명해줘"
+codexplain style add problem-diagnosis --trigger "왜 안됨" --renderers "problem-diagnosis" --description "문제 원인과 해결책을 결론부터 말하고 근거, 해결 흐름, 질문-답으로 자연스럽게 내려가며 정리한다." --tone "direct" --example "왜 안되고 있는지 문제와 해결책을 설명해줘"
 codexplain style list
+codexplain style preview research-card
 codexplain style remove research-card
 ```

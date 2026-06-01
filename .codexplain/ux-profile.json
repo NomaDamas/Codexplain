@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "detail": "deep",
   "style": "tutorial",
-  "theme": "ocean",
+  "theme": "mono",
   "frame": "unicode",
   "indexStyle": "decimal",
   "audience": "general",
@@ -18,6 +18,6 @@
   "detailScale": 80,
   "uxDensity": 65,
   "riskSensitivity": 60,
-  "explanationMoves": ["tldr", "answer-first", "plain-language", "evidence", "next-step"],
+  "explanationMoves": ["tldr", "answer-first", "problem-diagnosis", "evidence", "fix", "question-answer", "next-step"],
   "feedback": {"positive": 0, "negative": 0, "revisions": 0, "rewardScore": 0, "signals": []}
 }

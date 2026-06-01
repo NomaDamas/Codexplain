@@ -267,6 +267,10 @@ codexplain slash off
 codexplain slash status
 ```
 
+Native `/codexplain` inside the full-screen Codex TUI requires the
+project-local patched TUI adapter, because upstream Codex owns the slash command
+registry before prompts reach the model.
+
 Cleanly uninstall only the managed global Codexplain block:
 
 ```bash
@@ -449,6 +453,13 @@ codexplain style add research-card \
   --description "Separate background, evidence, limitations, and next action." \
   --example "Explain this design as a research card"
 
+codexplain style add problem-diagnosis \
+  --trigger "why is this not working" \
+  --renderers "problem-diagnosis" \
+  --tone "direct" \
+  --description "Answer first, then flow through evidence, reason, fix, and the user's exact question." \
+  --example "Explain why this is not working and how to fix it"
+
 codexplain style list
 codexplain style preview research-card
 codexplain style remove research-card
@@ -468,16 +479,19 @@ currently open terminal session.
 
 When the project-local shim is active, `codex` startup checks GitHub releases
 best-effort. If a newer Codexplain release exists and this repository is on a
-clean branch, the shim runs `git pull --ff-only` and rebuilds the release
-binary before starting Codex. Network failures or dirty worktrees are skipped
-so Codex still opens. Disable this for one command with:
+branch with no user-code changes, the shim runs `git pull --ff-only` and
+rebuilds the release binary before starting Codex. Dirty Codexplain-managed
+local adapter files do not block the check; unrelated dirty files still do.
+Network failures are skipped so Codex still opens. Disable this for one command
+with:
 
 ```bash
 CODEXPLAIN_AUTO_UPDATE=off codex
 ```
 
 Turn the project-local interactive Codex TUI assistant-message color hook on or
-off. `codexplain install-codex --local` and `npm run on` default this to `full`
+off. `codexplain install-codex --local` and `npm run on` default this to
+restrained `semantic`
 so newly opened Codex TUI sessions show color immediately after
 `source .codexplain/activate`. This does not modify global Codex settings.
 It only routes through a project-local patched Codex binary. `on --local`
@@ -502,12 +516,14 @@ codexplain tui-adapter apply
 codexplain tui-adapter build
 ```
 
-`tui-adapter on` is an alias for the existing `full` enable behavior. It exits
+`tui-adapter on` uses restrained `semantic` highlighting. Use
+`tui-adapter full` only when you explicitly want stronger recoloring. It exits
 successfully even when no patched Codex binary is available. In that case it
 enables project-local config, keeps exec/review shaping available, and reports
 that interactive TUI assistant-message recoloring requires a project-local
 patched Codex binary. `tui-adapter build` applies the tracked
-`patches/codex-tui-assistant-color.patch` and builds only the ignored
+`patches/codex-tui-assistant-color.patch` and
+`patches/codex-tui-codexplain-slash.patch`, then builds only the ignored
 project-local patched Codex binary.
 
 For Codex CLI chat output, explicitly use `--chat-color` when you want real
@@ -605,6 +621,8 @@ The result should be:
 - Pros/cons and tradeoff questions as comparison panels instead of loose bullets.
 - Cause-effect questions as cause/result/response reports instead of
   unstructured prose.
+- Problem-diagnosis questions as `Conclusion → Evidence → Fix → Your question
+  → Answer` reports when users ask why something is not working.
 - Progress reports with a short status label above the bar, then a compact
   checkpoint table for current state, percentage, and next action.
 - Workflow progress blocks for development, harness, and user-defined workflows

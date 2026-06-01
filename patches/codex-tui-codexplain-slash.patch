@@ -1,0 +1,139 @@
+diff --git a/codex-rs/tui/src/chatwidget/slash_dispatch.rs b/codex-rs/tui/src/chatwidget/slash_dispatch.rs
+index b479718..7c14bff 100644
+--- a/codex-rs/tui/src/chatwidget/slash_dispatch.rs
++++ b/codex-rs/tui/src/chatwidget/slash_dispatch.rs
+@@ -13,6 +13,7 @@ use crate::bottom_pane::slash_commands::BuiltinCommandFlags;
+ use crate::bottom_pane::slash_commands::ServiceTierCommand;
+ use crate::bottom_pane::slash_commands::SlashCommandItem;
+ use crate::bottom_pane::slash_commands::find_slash_command;
++use std::process::Command;
+ 
+ #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+ enum SlashCommandDispatchSource {
+@@ -385,6 +386,9 @@ impl ChatWidget {
+                     );
+                 }
+             }
++            SlashCommand::Codexplain => {
++                self.run_codexplain_slash_command("status");
++            }
+             SlashCommand::Ide => {
+                 self.handle_ide_command();
+             }
+@@ -776,6 +780,9 @@ impl ChatWidget {
+                 self.app_event_tx
+                     .send(AppEvent::ResumeSessionByIdOrName(args));
+             }
++            SlashCommand::Codexplain if !trimmed.is_empty() => {
++                self.run_codexplain_slash_command(trimmed);
++            }
+             SlashCommand::SandboxReadRoot if !trimmed.is_empty() => {
+                 self.app_event_tx
+                     .send(AppEvent::BeginWindowsSandboxGrantReadRoot { path: args });
+@@ -798,6 +805,54 @@ impl ChatWidget {
+         }
+     }
+ 
++    fn run_codexplain_slash_command(&mut self, action: &str) {
++        let action = action.split_whitespace().next().unwrap_or("status");
++        let allowed = matches!(
++            action,
++            "on" | "enable" | "off" | "disable" | "status" | "help" | "-h" | "--help"
++        );
++        if !allowed {
++            self.add_error_message("Usage: /codexplain [on|off|status|help]".to_string());
++            return;
++        }
++        let cwd = self
++            .current_cwd
++            .clone()
++            .unwrap_or_else(|| self.config.cwd.to_path_buf());
++        let local_bin = cwd.join("bin/codexplain");
++        let mut command = if local_bin.exists() {
++            Command::new(local_bin)
++        } else {
++            Command::new("codexplain")
++        };
++        let output = command.current_dir(&cwd).arg("slash").arg(action).output();
++        match output {
++            Ok(output) => {
++                let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
++                let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
++                if output.status.success() {
++                    self.add_info_message(
++                        if stdout.is_empty() {
++                            format!("Codexplain {action}: ok")
++                        } else {
++                            stdout
++                        },
++                        None,
++                    );
++                } else {
++                    self.add_error_message(if stderr.is_empty() {
++                        format!("Codexplain {action} failed")
++                    } else {
++                        stderr
++                    });
++                }
++            }
++            Err(error) => {
++                self.add_error_message(format!("Failed to run Codexplain slash command: {error}"));
++            }
++        }
++    }
++
+     pub(super) fn submit_queued_slash_prompt(&mut self, user_message: UserMessage) -> QueueDrain {
+         let UserMessage {
+             text,
+@@ -946,6 +1001,7 @@ impl ChatWidget {
+             | SlashCommand::Vim
+             | SlashCommand::Diff
+             | SlashCommand::Rename
++            | SlashCommand::Codexplain
+             | SlashCommand::TestApproval => QueueDrain::Continue,
+             SlashCommand::Feedback
+             | SlashCommand::New
+diff --git a/codex-rs/tui/src/slash_command.rs b/codex-rs/tui/src/slash_command.rs
+index 4a43409..9486dae 100644
+--- a/codex-rs/tui/src/slash_command.rs
++++ b/codex-rs/tui/src/slash_command.rs
+@@ -44,6 +44,7 @@ pub enum SlashCommand {
+     Diff,
+     Mention,
+     Status,
++    Codexplain,
+     DebugConfig,
+     Title,
+     Statusline,
+@@ -96,6 +97,7 @@ impl SlashCommand {
+             SlashCommand::Skills => "use skills to improve how Codex performs specific tasks",
+             SlashCommand::Hooks => "view and manage lifecycle hooks",
+             SlashCommand::Status => "show current session configuration and token usage",
++            SlashCommand::Codexplain => "control project-local Codexplain",
+             SlashCommand::DebugConfig => "show config layers and requirement sources for debugging",
+             SlashCommand::Title => "configure which items appear in the terminal title",
+             SlashCommand::Statusline => "configure which items appear in the status line",
+@@ -154,6 +156,7 @@ impl SlashCommand {
+                 | SlashCommand::Ide
+                 | SlashCommand::Keymap
+                 | SlashCommand::Mcp
++                | SlashCommand::Codexplain
+                 | SlashCommand::Raw
+                 | SlashCommand::Pets
+                 | SlashCommand::Side
+@@ -172,6 +175,7 @@ impl SlashCommand {
+                 | SlashCommand::Diff
+                 | SlashCommand::Mention
+                 | SlashCommand::Status
++                | SlashCommand::Codexplain
+                 | SlashCommand::Ide
+         )
+     }
+@@ -207,6 +211,7 @@ impl SlashCommand {
+             | SlashCommand::Skills
+             | SlashCommand::Hooks
+             | SlashCommand::Status
++            | SlashCommand::Codexplain
+             | SlashCommand::DebugConfig
+             | SlashCommand::Ps
+             | SlashCommand::Stop
