@@ -5980,6 +5980,7 @@ fn apply_codex_tui_patch() -> io::Result<String> {
                 format!("missing tracked patch file: {}", patch.display()),
             ));
         }
+        let patch = fs::canonicalize(&patch)?;
         let patch_name = patch
             .file_name()
             .and_then(|name| name.to_str())
