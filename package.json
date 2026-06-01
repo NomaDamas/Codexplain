@@ -1,6 +1,6 @@
 {
   "name": "codexplain",
-  "version": "0.18.11",
+  "version": "0.18.12",
   "description": "Readable explanation UX layer for Codex responses",
   "bin": {
     "codexplain": "bin/codexplain",
@@ -8,9 +8,22 @@
     "claudex": "bin/claudex",
     "claudex-codex": "bin/claudex-codex"
   },
+  "files": [
+    "bin",
+    "rust",
+    "docs",
+    "patches",
+    "Formula",
+    "Cargo.toml",
+    "Cargo.lock",
+    "README.md",
+    "LICENSE",
+    "AGENTS.md"
+  ],
   "scripts": {
     "test": "cargo test",
     "check": "cargo fmt --check && cargo test",
+    "postinstall": "cargo build --release",
     "demo": "cargo run --quiet -- demo",
     "build:rust": "cargo build --release",
     "test:rust": "cargo test",

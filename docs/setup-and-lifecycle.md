@@ -6,8 +6,15 @@ turn off, and safe to remove without damaging unrelated Codex settings.
 ## 1️⃣ Project-Local Setup
 
 ```bash
-npm install -g github:NomaDamas/Codexplain
+npm install -g codexplain
 codexplain install-codex --local --force
+```
+
+Homebrew:
+
+```bash
+brew tap NomaDamas/Codexplain https://github.com/NomaDamas/Codexplain
+brew install codexplain
 ```
 
 Inside this repository during development:
@@ -82,6 +89,7 @@ When Codexplain guidance reaches the agent, these commands map to local control:
 /codexplain on
 /codexplain off
 /codexplain status
+/codexplain settings
 ```
 
 Bare `/codexplain` is a toggle. If Codexplain is enabled, it disables the
@@ -95,6 +103,7 @@ codexplain slash on
 codexplain slash off
 codexplain slash status
 codexplain slash toggle
+codexplain slash settings
 ```
 
 Native `/codexplain` inside the full-screen Codex TUI requires the project-local

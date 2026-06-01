@@ -54,8 +54,8 @@ JSON, code, diffs, logs, tests, and patches stay exact.
 ## ✨ What You Get
 
 1️⃣ **Readable explanations**  
-TLDRs, short sections, diagrams, tables, progress reports, risk panels, and next
-actions.
+TLDRs, short sections, mandatory architecture diagrams, tables, progress
+reports, risk panels, and next actions.
 
 2️⃣ **Strict artifact safety**  
 JSON, code, diffs, patches, logs, tests, and commit messages bypass decorative
@@ -169,8 +169,15 @@ highlight/no-highlight difference visible while the examples remain copyable.
 ### 1️⃣ Install and enable for one project
 
 ```bash
-npm install -g github:NomaDamas/Codexplain
+npm install -g codexplain
 codexplain install-codex --local --force
+```
+
+Homebrew users can install from the tap formula:
+
+```bash
+brew tap NomaDamas/Codexplain https://github.com/NomaDamas/Codexplain
+brew install codexplain
 ```
 
 ### 2️⃣ Use it directly

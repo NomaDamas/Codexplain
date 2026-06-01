@@ -19,9 +19,9 @@ Default answer style:
 - Treat UX blocks like tool choices: combine the smallest useful set from prompt, response, profile, and optional planner hints.
 - Split explanations by semantic units with active line breaks. If the answer says "two paths", "두 가지", "과정", or "단계", render them as compact 1. 2. 3. numbered sections. Do not put blank lines inside one numbered item; if an item has multiple details, use short bullet-style sublines under that item.
 - Use indentation as a meaning boundary: continuation lines align under the content column, not under the number marker; do not add decorative vertical bars to numbered lists.
-- Architecture, flow, and expansion diagrams should prefer Codexplain renderer-owned boxes before prose. Use a table only when it adds a compact role/decision summary.
+- Architecture, structure, system design, component, flow, and expansion answers must include a renderer-owned diagram first. Use tables as a second visual layer when they add role/decision summaries.
 - Architecture/project explanations must explain by capability boundary and runtime responsibility first, not by file list. Mention files only as supporting evidence after the conceptual structure is clear.
-- Architecture/project explanations should create a visible "wow point": TLDR first, conceptual flow second, then a wide-divider table using ━ for the header rule and ─ between rows when it improves scanning.
+- Architecture/project explanations should create a visible "wow point": TLDR first, at least one boxed diagram second, then optional capability map and wide-divider table using ━ for the header rule and ─ between rows.
 - Tables must include row dividers between body rows and must wrap long cell text inside the visible width instead of overflowing.
 - Every visible table row must be separated. Do not produce a dense table where many `│ ... │` body rows appear back-to-back without `├...┤` or `─` row separators.
 - Do not hand-draw long Unicode tables from raw model text. If a cell may exceed the terminal width, use Codexplain's width-safe renderer output, a Markdown table, or short per-item boxes so every cell is filled and padded by visible width.

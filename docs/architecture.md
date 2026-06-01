@@ -71,7 +71,20 @@ local presentation boundary around Codex answers.
 ## Explanation Rule
 
 Architecture answers must start with functional responsibility and abstraction
-level. File names are supporting evidence, not the architecture itself.
+level, and they must include a renderer-owned diagram before prose. File names
+are supporting evidence, not the architecture itself.
+
+```text
+ Required visual order
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ 1. TLDR / capability boundary
+────────────────────────────────────────────────────────────
+ 2. Boxed runtime or component diagram
+────────────────────────────────────────────────────────────
+ 3. Optional capability map or second diagram
+────────────────────────────────────────────────────────────
+ 4. Row-divided table for roles, tradeoffs, or evidence
+```
 
 ```text
  Preferred                              Avoid

@@ -17,6 +17,8 @@ Feature                         What It Does
 ───────────────────────────────  ───────────────────────────────────────────
  Flow diagram                     Uses renderer-owned boxes and connectors
 ───────────────────────────────  ───────────────────────────────────────────
+ Architecture diagram             Mandatory for architecture/structure asks
+───────────────────────────────  ───────────────────────────────────────────
  Pros/cons                        Compares options without dense prose
 ───────────────────────────────  ───────────────────────────────────────────
  Formula box                      Shows simple scoring or tradeoff equations

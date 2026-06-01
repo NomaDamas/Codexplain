@@ -969,6 +969,19 @@ fn select_renderer(prompt: &str, profile: &Profile) -> RendererSelection {
         }
     }
 
+    if architecture_prompt_requested(prompt) {
+        return RendererSelection {
+            renderer: RendererKind::Flow,
+            intent: ExplanationIntent::ProcessFlow,
+            signal: PromptSignal {
+                renderer: RendererKind::Flow,
+                intent: ExplanationIntent::ProcessFlow,
+                kind: PromptSignalKind::Keyword,
+                pattern: "architecture-diagram-required",
+            },
+        };
+    }
+
     prompt_signal_map()
         .iter()
         .copied()
@@ -994,6 +1007,10 @@ fn select_renderer(prompt: &str, profile: &Profile) -> RendererSelection {
 
 fn requested_renderers(prompt: &str) -> Vec<RendererKind> {
     let mut renderers = Vec::new();
+    if architecture_prompt_requested(prompt) {
+        renderers.push(RendererKind::Flow);
+        renderers.push(RendererKind::Table);
+    }
     for signal in prompt_signal_map()
         .iter()
         .copied()
@@ -1011,6 +1028,29 @@ fn requested_renderers(prompt: &str) -> Vec<RendererKind> {
         }
     }
     renderers
+}
+
+fn architecture_prompt_requested(prompt: &str) -> bool {
+    [
+        "아키텍처",
+        "구조",
+        "설계",
+        "컴포넌트",
+        "구성",
+        "순서도",
+        "전개도",
+        "다이어그램",
+        "도식",
+        "architecture",
+        "system design",
+        "component",
+        "components",
+        "structure",
+        "diagram",
+        "map",
+    ]
+    .iter()
+    .any(|pattern| prompt_matches_pattern(prompt, pattern))
 }
 
 fn push_ux_component(items: &mut Vec<UxComponent>, item: UxComponent) {
@@ -3090,12 +3130,24 @@ fn codexplain_flow(frame: Frame, theme: Theme, max_width: usize) -> String {
 
 fn architecture_panels(profile: &Profile, summary: &str, width: usize) -> String {
     let flow_panel = codexplain_flow(profile.frame, profile.theme, width);
+    let capability_map = render_expansion_diagram(
+        &[
+            "Capability Boundary",
+            "Runtime Path",
+            "Safety Gate",
+            "Renderer UX",
+            "Lifecycle Control",
+        ],
+        profile.frame,
+        profile.theme,
+        width,
+    );
     let rows = architecture_showcase_rows(summary, profile);
     let showcase = wide_divider_table(&["영역", "역할"], &rows, profile.theme, width.max(50));
     format!(
         "{}\n\n{}",
         architecture_tldr(profile, summary, width),
-        format!("{flow_panel}\n\n{showcase}")
+        format!("{flow_panel}\n\n{capability_map}\n\n{showcase}")
     )
 }
 
@@ -4777,10 +4829,7 @@ fn dispatch_explanation(
 ) -> String {
     let requested = requested_renderers(prompt);
     let ux_components = requested_ux_components(prompt, response, profile);
-    let wants_architecture = requested.contains(&RendererKind::Table)
-        && (requested.contains(&RendererKind::Flow)
-            || prompt_matches_pattern(prompt, "아키텍처")
-            || prompt_matches_pattern(prompt, "architecture"));
+    let wants_architecture = architecture_prompt_requested(prompt);
 
     if requested.len() > 1 || wants_architecture {
         let mut sections = Vec::new();
@@ -5859,7 +5908,8 @@ fn codex_tui_slash_patch_already_applied() -> bool {
                 content.contains("run_codexplain_slash_command")
                     && content.contains("run_codexplain_slash_command(\"toggle\")")
                     && content.contains("\"toggle\" | \"on\"")
-                    && content.contains("Usage: /codexplain [toggle|on|off|status|help]")
+                    && content.contains("\"settings\" | \"setting\"")
+                    && content.contains("Usage: /codexplain [toggle|on|off|status|settings|help]")
             })
             .unwrap_or(false)
 }
@@ -5887,8 +5937,16 @@ fn refresh_stale_codex_tui_slash_patch() -> io::Result<bool> {
             "\"toggle\" | \"on\" | \"enable\" | \"off\" | \"disable\" | \"status\" | \"help\" | \"-h\" | \"--help\"",
         )
         .replace(
+            "\"toggle\" | \"on\" | \"enable\" | \"off\" | \"disable\" | \"status\" | \"help\" | \"-h\" | \"--help\"",
+            "\"toggle\" | \"on\" | \"enable\" | \"off\" | \"disable\" | \"status\" | \"settings\" | \"setting\" | \"config\" | \"configure\" | \"help\" | \"-h\" | \"--help\"",
+        )
+        .replace(
             "Usage: /codexplain [on|off|status|help]",
             "Usage: /codexplain [toggle|on|off|status|help]",
+        )
+        .replace(
+            "Usage: /codexplain [toggle|on|off|status|help]",
+            "Usage: /codexplain [toggle|on|off|status|settings|help]",
         );
     if next != current {
         fs::write(slash_dispatch, next)?;
@@ -5996,17 +6054,46 @@ fn ensure_project_local_patched_codex_binary() -> io::Result<String> {
         return Ok("already-built".to_string());
     }
 
-    let codex_rs = upstream_codex_rs_root();
-    if !codex_rs.join("Cargo.toml").exists() {
-        return Ok(format!(
-            "skipped: missing project-local upstream clone at {}",
-            codex_rs.display()
-        ));
-    }
+    ensure_project_local_codex_upstream()?;
 
     let patch_outcome = apply_codex_tui_patch()?;
     build_patched_codex_binary()?;
     Ok(format!("built ({patch_outcome})"))
+}
+
+fn ensure_project_local_codex_upstream() -> io::Result<String> {
+    let upstream = upstream_codex_root();
+    let codex_rs = upstream_codex_rs_root();
+    if codex_rs.join("Cargo.toml").exists() {
+        return Ok("already-cloned".to_string());
+    }
+    if upstream.exists() {
+        return Err(io::Error::other(format!(
+            "project-local Codex upstream exists but is incomplete: {}",
+            upstream.display()
+        )));
+    }
+    fs::create_dir_all(
+        upstream
+            .parent()
+            .unwrap_or_else(|| Path::new(".codexplain/state")),
+    )?;
+    run_command_checked(
+        Command::new("git")
+            .arg("clone")
+            .arg("--depth")
+            .arg("1")
+            .arg("https://github.com/openai/codex.git")
+            .arg(&upstream),
+        "git clone --depth 1 https://github.com/openai/codex.git",
+    )?;
+    if !codex_rs.join("Cargo.toml").exists() {
+        return Err(io::Error::other(format!(
+            "cloned Codex upstream but codex-rs/Cargo.toml was not found at {}",
+            codex_rs.display()
+        )));
+    }
+    Ok("cloned".to_string())
 }
 
 fn run_command_checked(command: &mut Command, label: &str) -> io::Result<()> {
@@ -6904,9 +6991,9 @@ Default answer style:
 - Treat UX blocks like tool choices: combine the smallest useful set from prompt, response, profile, and optional planner hints.
 - Split explanations by semantic units with active line breaks. If the answer says "two paths", "두 가지", "과정", or "단계", render them as compact 1. 2. 3. numbered sections. Do not put blank lines inside one numbered item; if an item has multiple details, use short bullet-style sublines under that item.
 - Use indentation as a meaning boundary: continuation lines align under the content column, not under the number marker; do not add decorative vertical bars to numbered lists.
-- Architecture, flow, and expansion diagrams should prefer Codexplain renderer-owned boxes before prose. Use a table only when it adds a compact role/decision summary.
+- Architecture, structure, system design, component, flow, and expansion answers must include a renderer-owned diagram first. Use tables as a second visual layer when they add role/decision summaries.
 - Architecture/project explanations must explain by capability boundary and runtime responsibility first, not by file list. Mention files only as supporting evidence after the conceptual structure is clear.
-- Architecture/project explanations should create a visible "wow point": TLDR first, conceptual flow second, then a wide-divider table using ━ for the header rule and ─ between rows when it improves scanning.
+- Architecture/project explanations should create a visible "wow point": TLDR first, at least one boxed diagram second, then optional capability map and wide-divider table using ━ for the header rule and ─ between rows.
 - Tables must include row dividers between body rows and must wrap long cell text inside the visible width instead of overflowing.
 - Every visible table row must be separated. Do not produce a dense table where many `│ ... │` body rows appear back-to-back without `├...┤` or `─` row separators.
 - Do not hand-draw long Unicode tables from raw model text. If a cell may exceed the terminal width, use Codexplain's width-safe renderer output, a Markdown table, or short per-item boxes so every cell is filled and padded by visible width.
@@ -7119,6 +7206,20 @@ codexplain_auto_update() {
   fi
 }
 codexplain_auto_update
+codexplain_ensure_patched_tui() {
+  case "${CODEXPLAIN_TUI_AUTO_BUILD:-1}" in
+    0|false|off|never) return 0 ;;
+  esac
+  case "${CODEXPLAIN_TUI_COLOR:-semantic}" in
+    off|plain|none|no-color) return 0 ;;
+  esac
+  [ -x "$ROOT/.codexplain/state/codex-upstream/codex-rs/target/release/codex" ] && return 0
+  [ -x "$ROOT/.codexplain/state/codex-upstream/codex-rs/target/debug/codex" ] && return 0
+  "$ROOT/bin/codexplain" tui-adapter build >/dev/null 2>&1 || {
+    printf 'Codexplain warning: /codexplain slash command needs patched Codex TUI; auto-build failed. Run: %s tui-adapter build\n' "$ROOT/bin/codexplain" >&2
+  }
+}
+codexplain_ensure_patched_tui
 exec "$ROOT/bin/codexplain" codex --local-shape "$@"
 "#;
 
@@ -7165,7 +7266,7 @@ Default answer style:
 - Avoid hand-drawn architecture, flow, or expansion diagrams when labels may wrap; prefer renderer-owned boxes so connectors, arrows, and branch labels remain aligned.
 - Collapse verbose Explored/Ran/Read transcripts into macro progress phases before details.
 - Split "two paths", "두 가지", "과정", and "단계" explanations into compact numbered sections without blank lines inside an item.
-- Architecture explanations should use boxed components and flow boxes before prose; tables should show row dividers and wrap long cells; flow diagrams should keep arrows and branches inside the requested width.
+- Architecture explanations must use boxed components and flow boxes before prose; tables should show row dividers and wrap long cells; flow diagrams should keep arrows and branches inside the requested width.
 - Architecture explanations must lead with capability boundaries, runtime responsibility, and abstraction level. Do not lead with a file tree or file-by-file walkthrough unless the user explicitly asks for file layout.
 - Every visible table row must be separated; never stack body rows directly without a row divider.
 - Process answers should use short numbered sections, with one idea per item and bullet-style sublines for multiple details.
@@ -9720,6 +9821,8 @@ Do not remove this.
         assert!(CODEX_SHIM_SH.contains(".codexplain/config.json"));
         assert!(CODEX_SHIM_SH.contains("pull --ff-only"));
         assert!(CODEX_SHIM_SH.contains("cargo build --release"));
+        assert!(CODEX_SHIM_SH.contains("codexplain_ensure_patched_tui"));
+        assert!(CODEX_SHIM_SH.contains("tui-adapter build"));
         assert!(CODEX_SHIM_SH.contains("FORCE_COLOR=3"));
         assert!(CODEX_SHIM_SH.contains("NO_COLOR=1"));
         assert!(ACTIVATE_SH.contains(
@@ -9882,6 +9985,7 @@ Do not remove this.
             .expect("slash patch should be readable");
         assert!(patch.contains("run_codexplain_slash_command(\"toggle\")"));
         assert!(patch.contains("[toggle|on|off|status|settings|help]"));
+        assert!(patch.contains("\"settings\" | \"setting\""));
         assert!(slash_help().contains("settings"));
         assert!(slash_enabled_guide().contains("settings UI"));
     }
@@ -11688,6 +11792,31 @@ Do not remove this.
             assert!(output.contains(expected_primary), "{prompt}: {output}");
             assert!(output.contains(expected_secondary), "{prompt}: {output}");
         }
+    }
+
+    #[test]
+    fn architecture_prompts_force_diagram_first_and_table_second() {
+        let profile = Profile {
+            theme: Theme::None,
+            ..Profile::default()
+        };
+        let output = shape(
+            "이 프로젝트 아키텍처를 설명해줘",
+            "Codexplain은 Codex 응답 표현층을 프로젝트 로컬에서 제어합니다.",
+            &profile,
+            88,
+        );
+        let selection = select_renderer("이 프로젝트 아키텍처를 설명해줘", &profile);
+        let requested = requested_renderers("이 프로젝트 아키텍처를 설명해줘");
+
+        assert_eq!(selection.renderer, RendererKind::Flow);
+        assert!(requested.contains(&RendererKind::Flow), "{requested:?}");
+        assert!(requested.contains(&RendererKind::Table), "{requested:?}");
+        assert!(output.contains("│ Prompt Input"), "{output}");
+        assert!(output.contains("│ Capability Boundary"), "{output}");
+        assert!(output.contains("━━━━━━━━"), "{output}");
+        assert!(output.find("│ Prompt Input").unwrap() < output.find("━━━━━━━━").unwrap());
+        assert_visible_lines_fit(&output, 88);
     }
 
     #[test]
