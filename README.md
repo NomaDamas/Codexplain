@@ -42,6 +42,11 @@ codexplain install-codex --local --force
 codexplain shape --prompt "Explain this architecture with a TLDR and table" --response "DONE: tests PASS. Risk: JSON/code/diff output must stay exact."
 ```
 
+After local install, new zsh shells auto-activate Codexplain when they start
+inside this project or when you `cd` into it. You can still run
+`source ./.codexplain/activate` manually for the already-open shell you are
+using right now.
+
 ## ✨ What You Get
 
 - 🧭 **Clear structure**: TLDR, sections, flow diagrams, tables, pros/cons,
@@ -199,22 +204,34 @@ repair path.
 Before:
 
 ```text
-Every sentence can become colorful, but the reader still does not know what
-needs attention.
+DONE: tests PASS. Risk: JSON/code/diff output must stay exact.
+Next: run compat-check before release.
 ```
 
 After:
 
+![Codexplain semantic highlight before and after](docs/codexplain-highlight-before-after.svg)
+
+<pre>
+<span style="color:#16a34a;font-weight:700">DONE</span>: tests <span style="color:#16a34a;font-weight:700">PASS</span>.
+<span style="color:#ca8a04;font-weight:700">Risk</span>: <span style="color:#0891b2">JSON/code/diff</span> output must stay exact.
+<span style="color:#9333ea;font-weight:700">Next</span>: run <span style="color:#2563eb;font-weight:700">compat-check</span> before release.
+</pre>
+
+The SVG preview above is intentional: GitHub README sanitizes arbitrary inline
+CSS in many contexts, so the image makes the highlight/no-highlight difference
+visible on GitHub while the text fallback remains copyable.
+
 ```text
- Meaning   Color role            Rule
-━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- Success   success               PASS, DONE, APPROVED, completed
-────────  ────────────────────  ─────────────────────────────────────
- Warning   warning               risk, warning, drift, regression
-────────  ────────────────────  ─────────────────────────────────────
- Danger    danger                FAIL, blocked, unsafe, OOM, error
-────────  ────────────────────  ─────────────────────────────────────
- Reference command/path/artifact commands, paths, JSON/code/diff/log/test
+ Meaning     Highlight role       Example terms
+━━━━━━━━━━  ━━━━━━━━━━━━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ Success    green + bold          PASS, DONE, APPROVED, completed
+──────────  ───────────────────  ───────────────────────────────────
+ Warning    amber + bold          risk, warning, drift, regression
+──────────  ───────────────────  ───────────────────────────────────
+ Danger     red + bold            FAIL, blocked, unsafe, OOM, error
+──────────  ───────────────────  ───────────────────────────────────
+ Reference  cyan/blue             commands, paths, JSON/code/diff/log/test
 ```
 
 Color is intentionally semantic-sparse: it is a task-relevance signal, not
@@ -242,6 +259,19 @@ If you are inside this repository while developing it:
 ```bash
 npm run on
 ```
+
+`on`/`install-codex --local` installs a managed zsh auto-activation block in
+`~/.zshrc`. After opening a new shell, entering this folder and running `codex`
+uses Codexplain automatically:
+
+```bash
+cd /Users/jinminseong/Desktop/oheunyoung
+codex
+```
+
+`off`/`uninstall-codex --local` removes that managed zsh block and the
+project-local shim. Already-open Codex TUI sessions keep whatever binary they
+started with, so reopen Codex after toggling.
 
 Cleanly uninstall the managed local integration:
 

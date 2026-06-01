@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="300" viewBox="0 0 920 300" role="img" aria-labelledby="title desc">
+  <title id="title">Codexplain highlight before and after</title>
+  <desc id="desc">Before shows plain unhighlighted text. After shows restrained semantic highlights for DONE, PASS, Risk, JSON/code/diff, Next, and compat-check.</desc>
+  <rect width="920" height="300" rx="24" fill="#0f172a"/>
+  <rect x="32" y="34" width="400" height="232" rx="18" fill="#111827" stroke="#334155" stroke-width="2"/>
+  <rect x="488" y="34" width="400" height="232" rx="18" fill="#111827" stroke="#334155" stroke-width="2"/>
+  <text x="56" y="72" fill="#94a3b8" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="18" font-weight="700">Before: no highlight</text>
+  <text x="512" y="72" fill="#94a3b8" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="18" font-weight="700">After: semantic highlight</text>
+  <text x="56" y="126" fill="#e5e7eb" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="18">DONE: tests PASS.</text>
+  <text x="56" y="164" fill="#e5e7eb" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="18">Risk: JSON/code/diff exact.</text>
+  <text x="56" y="202" fill="#e5e7eb" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="18">Next: run compat-check.</text>
+  <text x="512" y="126" fill="#16a34a" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="18" font-weight="700">DONE</text>
+  <text x="568" y="126" fill="#e5e7eb" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="18">: tests </text>
+  <text x="650" y="126" fill="#16a34a" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="18" font-weight="700">PASS</text>
+  <text x="700" y="126" fill="#e5e7eb" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="18">.</text>
+  <text x="512" y="164" fill="#ca8a04" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="18" font-weight="700">Risk</text>
+  <text x="564" y="164" fill="#e5e7eb" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="18">: </text>
+  <text x="588" y="164" fill="#0891b2" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="18" font-weight="700">JSON/code/diff</text>
+  <text x="740" y="164" fill="#e5e7eb" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="18"> exact.</text>
+  <text x="512" y="202" fill="#9333ea" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="18" font-weight="700">Next</text>
+  <text x="564" y="202" fill="#e5e7eb" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="18">: run </text>
+  <text x="630" y="202" fill="#2563eb" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="18" font-weight="700">compat-check</text>
+  <text x="765" y="202" fill="#e5e7eb" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="18">.</text>
+  <text x="512" y="238" fill="#64748b" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14">Sparse roles: success, risk, artifact, next action.</text>
+</svg>

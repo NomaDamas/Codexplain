@@ -11,6 +11,13 @@ codex exec "이 프로젝트 아키텍처를 표와 흐름도로 설명해줘"
 
 The shim only prepends `.codexplain/bin` in the current shell. `codexplain on --local` builds the project-local patched Codex TUI binary only when it is missing. `codexplain uninstall-codex --local` removes the shim files and the managed AGENTS.md block.
 
+`codexplain on --local` also installs a managed zsh hook in `~/.zshrc` so new
+shells automatically activate Codexplain when they start inside this project or
+`cd` into it. `codexplain off --local` removes only that managed hook and the
+project-local Codexplain files. Existing Codex TUI sessions must be reopened
+after off/uninstall because slash commands are registered when the TUI binary
+starts.
+
 Color can be toggled without uninstalling Codexplain:
 
 ```bash

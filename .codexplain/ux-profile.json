@@ -18,6 +18,7 @@
   "detailScale": 80,
   "uxDensity": 65,
   "riskSensitivity": 60,
+  "emojiCues": true,
   "explanationMoves": ["tldr", "answer-first", "problem-diagnosis", "evidence", "fix", "question-answer", "next-step"],
   "feedback": {"positive": 0, "negative": 0, "revisions": 0, "rewardScore": 0, "signals": []}
 }

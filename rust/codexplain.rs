@@ -325,6 +325,7 @@ struct Profile {
     detail_scale: u8,
     ux_density: u8,
     risk_sensitivity: u8,
+    emoji_cues: bool,
 }
 
 impl Default for Profile {
@@ -353,6 +354,7 @@ impl Default for Profile {
             detail_scale: 80,
             ux_density: 65,
             risk_sensitivity: 60,
+            emoji_cues: true,
         }
     }
 }
@@ -3632,7 +3634,7 @@ fn status_badge(profile: &Profile, response: &str) -> String {
         "BLOCKED" => "danger",
         _ => "warning",
     };
-    let marker = ux_emoji_for_role(role);
+    let marker = ux_emoji_for_role(profile, role);
     format!(
         "{} {} {}",
         marker,
@@ -3714,7 +3716,7 @@ fn confidence_meter(profile: &Profile, response: &str, width: usize) -> String {
         color(
             profile.theme,
             "heading",
-            &format!("{} 확신도", ux_emoji_for_role("inspect"))
+            &format!("{} 확신도", ux_emoji_for_role(profile, "inspect"))
         ),
         render_progress_bar(
             percent,
@@ -3771,7 +3773,7 @@ fn decision_matrix(profile: &Profile, width: usize) -> String {
 }
 
 fn next_action_footer(profile: &Profile, width: usize) -> String {
-    let label = format!("{} 다음 행동:", ux_emoji_for_role("next"));
+    let label = format!("{} 다음 행동:", ux_emoji_for_role(profile, "next"));
     let body = "검증 결과, 위험, 남은 항목 중 하나만 선택해 바로 실행합니다.";
     let label_width = visible_width(&label);
     let body_width = width.saturating_sub(label_width + 1).max(12);
@@ -3813,7 +3815,7 @@ fn eta_strip(profile: &Profile, response: &str) -> String {
         color(
             profile.theme,
             "heading",
-            &format!("{} ETA:", ux_emoji_for_role("time"))
+            &format!("{} ETA:", ux_emoji_for_role(profile, "time"))
         ),
         color(profile.theme, "accent", eta),
         color(profile.theme, "heading", "진척"),
@@ -3833,7 +3835,7 @@ fn attention_callout(profile: &Profile, response: &str, width: usize) -> String 
     table(
         &["주의", "내용"],
         &[vec![
-            format!("{} 중요", ux_emoji_for_role("warning")),
+            format!("{} 중요", ux_emoji_for_role(profile, "warning")),
             message.to_string(),
         ]],
         profile.frame,
@@ -3843,7 +3845,10 @@ fn attention_callout(profile: &Profile, response: &str, width: usize) -> String 
     )
 }
 
-fn ux_emoji_for_role(role: &str) -> &'static str {
+fn ux_emoji_for_role(profile: &Profile, role: &str) -> &'static str {
+    if !profile.emoji_cues {
+        return "•";
+    }
     match role {
         "success" => "✅",
         "danger" | "warning" => "⚠",
@@ -5374,6 +5379,9 @@ fn load_profile_from_path(path: &Path) -> Profile {
         if let Some(risk_sensitivity) = extract_json_u8(&raw, "riskSensitivity") {
             profile.risk_sensitivity = risk_sensitivity;
         }
+        if let Some(emoji_cues) = extract_json_bool(&raw, "emojiCues") {
+            profile.emoji_cues = emoji_cues;
+        }
     }
     if let Ok(theme) = env::var("CODEXPLAIN_THEME") {
         profile.theme = Theme::parse(Some(&theme));
@@ -5410,6 +5418,12 @@ fn load_profile_from_path(path: &Path) -> Profile {
         if let Some(parsed) = parse_control_value(&value) {
             profile.risk_sensitivity = parsed;
         }
+    }
+    if let Ok(value) = env::var("CODEXPLAIN_EMOJI_CUES") {
+        profile.emoji_cues = !matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "0" | "false" | "off" | "none" | "never" | "no"
+        );
     }
     profile
 }
@@ -5449,6 +5463,12 @@ fn load_profile_for_args(args: &[String]) -> Profile {
     }
     if let Some(value) = arg_value(args, "--risk-sensitivity").and_then(parse_control_value) {
         profile.risk_sensitivity = value;
+    }
+    if args.iter().any(|arg| arg == "--emoji-cues") {
+        profile.emoji_cues = true;
+    }
+    if args.iter().any(|arg| arg == "--no-emoji-cues") {
+        profile.emoji_cues = false;
     }
     profile.theme = match color_output_mode(args) {
         ColorOutput::Terminal => profile
@@ -5491,6 +5511,7 @@ fn save_profile_at(root: &Path, profile: &Profile) -> io::Result<()> {
                 "  \"detailScale\": {},\n",
                 "  \"uxDensity\": {},\n",
                 "  \"riskSensitivity\": {},\n",
+                "  \"emojiCues\": {},\n",
                 "  \"explanationMoves\": [\"tldr\", \"answer-first\", \"problem-diagnosis\", \"evidence\", \"fix\", \"question-answer\", \"next-step\"],\n",
                 "  \"feedback\": {{\"positive\": 0, \"negative\": 0, \"revisions\": 0, \"rewardScore\": 0, \"signals\": []}}\n",
                 "}}\n"
@@ -5510,7 +5531,8 @@ fn save_profile_at(root: &Path, profile: &Profile) -> io::Result<()> {
             profile.abstraction_level,
             profile.detail_scale,
             profile.ux_density,
-            profile.risk_sensitivity
+            profile.risk_sensitivity,
+            profile.emoji_cues
         ),
     )
 }
@@ -6004,6 +6026,21 @@ fn extract_json_u8(raw: &str, key: &str) -> Option<u8> {
         None
     } else {
         digits.parse::<i32>().ok().map(clamp_control)
+    }
+}
+
+fn extract_json_bool(raw: &str, key: &str) -> Option<bool> {
+    let needle = format!("\"{key}\"");
+    let index = raw.find(&needle)?;
+    let rest = &raw[index + needle.len()..];
+    let colon = rest.find(':')?;
+    let after_colon = rest[colon + 1..].trim_start();
+    if after_colon.starts_with("true") {
+        Some(true)
+    } else if after_colon.starts_with("false") {
+        Some(false)
+    } else {
+        None
     }
 }
 
@@ -6757,6 +6794,8 @@ fn post_response(args: &[String]) {
 
 const CODEX_GUIDANCE_START: &str = "<!-- CODEXPLAIN:START -->";
 const CODEX_GUIDANCE_END: &str = "<!-- CODEXPLAIN:END -->";
+const SHELL_AUTO_START: &str = "# CODEXPLAIN_AUTO:START";
+const SHELL_AUTO_END: &str = "# CODEXPLAIN_AUTO:END";
 const CODEX_GUIDANCE: &str = r#"<!-- CODEXPLAIN:START -->
 # Codexplain Response UX
 
@@ -6814,6 +6853,13 @@ codex exec "이 프로젝트 아키텍처를 표와 흐름도로 설명해줘"
 ```
 
 The shim only prepends `.codexplain/bin` in the current shell. `codexplain on --local` builds the project-local patched Codex TUI binary only when it is missing. `codexplain uninstall-codex --local` removes the shim files and the managed AGENTS.md block.
+
+`codexplain on --local` also installs a managed zsh hook in `~/.zshrc` so new
+shells automatically activate Codexplain when they start inside this project or
+`cd` into it. `codexplain off --local` removes only that managed hook and the
+project-local Codexplain files. Existing Codex TUI sessions must be reopened
+after off/uninstall because slash commands are registered when the TUI binary
+starts.
 
 Color can be toggled without uninstalling Codexplain:
 
@@ -7011,6 +7057,7 @@ case ":$PATH:" in
   *":$CODEXPLAIN_PROJECT_DIR/.codexplain/bin:"*) ;;
   *) export PATH="$CODEXPLAIN_PROJECT_DIR/.codexplain/bin:$PATH" ;;
 esac
+alias codex="$CODEXPLAIN_PROJECT_DIR/.codexplain/bin/codex" 2>/dev/null || true
 echo "Codexplain on: project-local codex shim is first on PATH"
 "#;
 
@@ -7090,6 +7137,7 @@ fn print_session_activation_hint() {
 fn install_local_codex_project() -> io::Result<()> {
     let root = project_path(".");
     install_local_codex_project_at(&root)?;
+    install_shell_autoload_for_project(&root)?;
     println!(
         "TUI adapter build: {}",
         ensure_project_local_patched_codex_binary()?
@@ -7126,6 +7174,158 @@ fn install_local_codex_project_at(root: &Path) -> io::Result<()> {
     fs::write(agents_path, next)?;
     println!("Installed project-local Codex UX: .codexplain/bin/codex, .codexplain/activate, .codexplain/post-response, .codexplain/README.md, .codexplain/config.json, AGENTS.md");
     Ok(())
+}
+
+fn shell_autoload_rc_path() -> Option<PathBuf> {
+    env::var("HOME")
+        .ok()
+        .map(|home| PathBuf::from(home).join(".zshrc"))
+}
+
+fn shell_autoload_function_name(root: &Path) -> String {
+    let mut value = root
+        .display()
+        .to_string()
+        .chars()
+        .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '_' })
+        .collect::<String>();
+    value.truncate(80);
+    format!("_codexplain_auto_activate_{value}")
+}
+
+fn shell_autoload_block(root: &Path) -> String {
+    let root_display = root.display().to_string();
+    let root_quoted = shell_single_quote(&root_display);
+    let function_name = shell_autoload_function_name(root);
+    format!(
+        "{SHELL_AUTO_START} {root_display}\n\
+# Managed by Codexplain. Remove with: codexplain off --local\n\
+{function_name}() {{\n\
+  [ \"${{CODEXPLAIN_AUTO_ACTIVATING:-}}\" = \"1\" ] && return 0\n\
+  _codexplain_root='{root_quoted}'\n\
+  case \"$PWD/\" in\n\
+    \"$_codexplain_root\"/*)\n\
+      if [ -x \"$_codexplain_root/.codexplain/bin/codex\" ] && [ \"${{CODEXPLAIN_PROJECT_DIR:-}}\" != \"$_codexplain_root\" ]; then\n\
+        CODEXPLAIN_AUTO_ACTIVATING=1\n\
+        export CODEXPLAIN_AUTO_ACTIVATING\n\
+        if [ -z \"${{CODEXPLAIN_PREV_CODEX_ALIAS+x}}\" ]; then\n\
+          CODEXPLAIN_PREV_CODEX_ALIAS=$(alias codex 2>/dev/null || true)\n\
+        fi\n\
+        export CODEXPLAIN_PROJECT_DIR=\"$_codexplain_root\"\n\
+        export CODEXPLAIN_LOCAL_SHAPE=1\n\
+        if grep -Eq '\"defaultColorOutput\"[[:space:]]*:[[:space:]]*\"(plain|none|off|no-color)\"' \"$_codexplain_root/.codexplain/config.json\" 2>/dev/null; then\n\
+          export CODEXPLAIN_COLOR=never\n\
+          export CODEXPLAIN_COLOR_OUTPUT=plain\n\
+          export CODEXPLAIN_TUI_COLOR=off\n\
+          export NO_COLOR=1\n\
+          unset CLICOLOR_FORCE FORCE_COLOR\n\
+        else\n\
+          export CODEXPLAIN_COLOR=always\n\
+          export CODEXPLAIN_COLOR_OUTPUT=ansi\n\
+          export CODEXPLAIN_TUI_COLOR=semantic\n\
+          export CLICOLOR_FORCE=1\n\
+          export FORCE_COLOR=3\n\
+          export COLORTERM=truecolor\n\
+          unset NO_COLOR\n\
+        fi\n\
+        case \":$PATH:\" in\n\
+          *\":$_codexplain_root/.codexplain/bin:\"*) ;;\n\
+          *) export PATH=\"$_codexplain_root/.codexplain/bin:$PATH\" ;;\n\
+        esac\n\
+        alias codex=\"$_codexplain_root/.codexplain/bin/codex\" 2>/dev/null || true\n\
+        unset CODEXPLAIN_AUTO_ACTIVATING\n\
+      fi\n\
+      ;;\n\
+    *)\n\
+      if [ \"${{CODEXPLAIN_PROJECT_DIR:-}}\" = \"$_codexplain_root\" ]; then\n\
+        case \":$PATH:\" in\n\
+          *\":$_codexplain_root/.codexplain/bin:\"*)\n\
+            PATH=$(printf '%s' \"$PATH\" | sed \"s|^$_codexplain_root/.codexplain/bin:||;s|:$_codexplain_root/.codexplain/bin:|:|;s|:$_codexplain_root/.codexplain/bin$||;s|^$_codexplain_root/.codexplain/bin$||\")\n\
+            export PATH\n\
+            ;;\n\
+        esac\n\
+        if [ -n \"${{CODEXPLAIN_PREV_CODEX_ALIAS+x}}\" ]; then\n\
+          if [ -n \"$CODEXPLAIN_PREV_CODEX_ALIAS\" ]; then\n\
+            eval \"alias $CODEXPLAIN_PREV_CODEX_ALIAS\"\n\
+          else\n\
+            unalias codex 2>/dev/null || true\n\
+          fi\n\
+          unset CODEXPLAIN_PREV_CODEX_ALIAS\n\
+        fi\n\
+        unset CODEXPLAIN_PROJECT_DIR CODEXPLAIN_LOCAL_SHAPE CODEXPLAIN_COLOR CODEXPLAIN_COLOR_OUTPUT CODEXPLAIN_TUI_COLOR CLICOLOR_FORCE FORCE_COLOR COLORTERM CODEXPLAIN_AUTO_ACTIVATING\n\
+      fi\n\
+      ;;\n\
+  esac\n\
+}}\n\
+autoload -Uz add-zsh-hook 2>/dev/null || true\n\
+add-zsh-hook chpwd {function_name} 2>/dev/null || true\n\
+{function_name}\n\
+{SHELL_AUTO_END} {root_display}\n"
+    )
+}
+
+fn install_shell_autoload_for_project(root: &Path) -> io::Result<()> {
+    let Some(rc_path) = shell_autoload_rc_path() else {
+        println!("Shell auto-activation skipped: HOME is not set");
+        return Ok(());
+    };
+    let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    let current = fs::read_to_string(&rc_path).unwrap_or_default();
+    let without_old = remove_shell_autoload_block_for_root(&current, &root);
+    let block = shell_autoload_block(&root);
+    let mut next = without_old.trim_end().to_string();
+    if !next.is_empty() {
+        next.push_str("\n\n");
+    }
+    next.push_str(&block);
+    fs::write(&rc_path, next)?;
+    println!(
+        "Installed Codexplain zsh auto-activation: {}",
+        rc_path.display()
+    );
+    Ok(())
+}
+
+fn remove_shell_autoload_for_project(root: &Path) -> io::Result<()> {
+    let Some(rc_path) = shell_autoload_rc_path() else {
+        return Ok(());
+    };
+    let Ok(current) = fs::read_to_string(&rc_path) else {
+        return Ok(());
+    };
+    let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    let next = remove_shell_autoload_block_for_root(&current, &root);
+    if next != current {
+        fs::write(&rc_path, next)?;
+        println!(
+            "Removed Codexplain zsh auto-activation: {}",
+            rc_path.display()
+        );
+    }
+    Ok(())
+}
+
+fn remove_shell_autoload_block_for_root(current: &str, root: &Path) -> String {
+    let start_marker = format!("{SHELL_AUTO_START} {}", root.display());
+    let end_marker = format!("{SHELL_AUTO_END} {}", root.display());
+    let Some(start) = current.find(&start_marker) else {
+        return current.to_string();
+    };
+    let Some(end_offset) = current[start..].find(&end_marker) else {
+        return current.to_string();
+    };
+    let end = start + end_offset + end_marker.len();
+    let mut next = String::new();
+    next.push_str(current[..start].trim_end());
+    let tail = current[end..].trim_start();
+    if !next.is_empty() && !tail.is_empty() {
+        next.push_str("\n\n");
+    }
+    next.push_str(tail);
+    if !next.is_empty() && !next.ends_with('\n') {
+        next.push('\n');
+    }
+    next
 }
 
 fn install_global_codex_guidance() -> io::Result<()> {
@@ -7175,11 +7375,13 @@ fn uninstall_codex_project(args: &[String]) -> io::Result<()> {
 
 fn uninstall_local_codex_project(remove_profile: bool) -> io::Result<()> {
     let root = project_path(".");
+    remove_shell_autoload_for_project(&root)?;
     uninstall_local_codex_project_at(&root, remove_profile)
 }
 
 fn uninstall_local_codex_project_strict() -> io::Result<()> {
     let root = project_path(".");
+    remove_shell_autoload_for_project(&root)?;
     uninstall_local_codex_project_strict_at(&root)
 }
 
@@ -7393,48 +7595,23 @@ fn slash_control(args: &[String]) -> io::Result<()> {
     match args.get(1).map(String::as_str).unwrap_or("help") {
         "on" | "enable" => {
             install_local_codex_project()?;
-            println!("slash=/codexplain on");
-            println!("scope=project-local");
-            println!("strict=on");
-            println!("result=enabled");
+            println!("Codexplain enabled");
         }
         "off" | "disable" => {
             uninstall_local_codex_project_strict()?;
-            println!("slash=/codexplain off");
-            println!("scope=project-local");
-            println!("strict=on");
-            println!("result=disabled");
+            println!("Codexplain disabled");
         }
         "status" => {
-            println!("contract=codexplain.slash.v1");
-            println!("slash=/codexplain status");
-            println!("native_tui_slash=bridge");
-            println!("fallback=./bin/codexplain slash on|off|status");
-            println!(
-                "project_local_adapter={}",
-                pass_fail(project_local_adapter_present_at(&project_path(".")))
-            );
-            println!(
-                "config={}",
-                pass_fail(project_path(".codexplain/config.json").exists())
-            );
-            println!(
-                "managed_agents_block={}",
-                pass_fail(
-                    fs::read_to_string(project_path("AGENTS.md"))
-                        .map(|value| value.contains(CODEX_GUIDANCE_START))
-                        .unwrap_or(false)
-                )
-            );
+            if project_local_adapter_present_at(&project_path("."))
+                && project_path(".codexplain/config.json").exists()
+            {
+                println!("Codexplain enabled");
+            } else {
+                println!("Codexplain disabled");
+            }
         }
         "help" | "-h" | "--help" => {
-            println!("contract=codexplain.slash.v1");
-            println!("/codexplain on     -> strict project-local activation");
-            println!(
-                "/codexplain off    -> strict project-local removal of Codexplain-managed state"
-            );
-            println!("/codexplain status -> project-local activation status");
-            println!("If the Codex TUI intercepts unknown slash commands, run ./bin/codexplain slash <action> or use the project-local patched TUI adapter.");
+            println!("/codexplain on|off|status");
         }
         other => {
             return Err(io::Error::new(
@@ -8006,6 +8183,15 @@ fn settings_ui() -> io::Result<()> {
                     "TLDR, 표, 흐름도, callout 같은 UX 블록 조합 빈도입니다.".to_string(),
                 ],
                 vec![
+                    "이모지 큐".to_string(),
+                    if profile.emoji_cues {
+                        "on".to_string()
+                    } else {
+                        "off".to_string()
+                    },
+                    "상태, 주의, 확인, 다음 행동에만 보조 이모지를 제한적으로 씁니다.".to_string(),
+                ],
+                vec![
                     "스타일 라이브러리".to_string(),
                     format!("{}개", load_custom_styles().len()),
                     "style add/list/preview/remove로 사용자 설명 방식을 관리합니다.".to_string(),
@@ -8072,6 +8258,13 @@ fn settings_ui() -> io::Result<()> {
         if let Some(parsed) = parse_control_value(&value) {
             profile.ux_density = parsed;
         }
+    }
+    if let Some(value) = prompt_choice(
+        "emojiCues",
+        if profile.emoji_cues { "on" } else { "off" },
+        &["on", "off"],
+    )? {
+        profile.emoji_cues = !matches!(value.as_str(), "off" | "false" | "0" | "no");
     }
 
     save_profile(&profile)?;
@@ -8328,8 +8521,8 @@ fn shell_single_quote(value: &str) -> String {
 
 fn usage() -> &'static str {
     "Usage:
-  codexplain shape --prompt <text> [--response <text>] [--width <n>] [--chat-color|--color-output markdown|html|ansi|plain]
-  codexplain post-response --prompt <text> [--width <n>] [--chat-color|--color-output markdown|html|ansi|plain]
+  codexplain shape --prompt <text> [--response <text>] [--width <n>] [--emoji-cues|--no-emoji-cues] [--chat-color|--color-output markdown|html|ansi|plain]
+  codexplain post-response --prompt <text> [--width <n>] [--emoji-cues|--no-emoji-cues] [--chat-color|--color-output markdown|html|ansi|plain]
   codexplain codex --prompt <text> [--local-shape] [codex exec args...]
   codexplain on|install-codex [--project|--local] [--global] [--session] [--force]
   codexplain off|uninstall-codex [--project|--local] [--global] [--session] [--remove-profile]
@@ -8368,7 +8561,8 @@ Storage-check output contract:
 
 Themes: none, ocean, forest, warm, sunset, grape, slate, rose, mono
 Color outputs: terminal, ansi, markdown, html, plain. Use --chat-color as an alias for --color-output ansi in Codex CLI.
-Scopes: --project/--local writes only this repository's managed Codexplain files; --global writes only managed guidance under CODEX_HOME; --session prints the current-shell activation command because a child process cannot mutate its parent shell.
+Scopes: --project/--local writes only this repository's managed Codexplain files and a managed zsh auto-activation block for this exact project root; --global writes only managed guidance under CODEX_HOME; --session prints the current-shell activation command because a child process cannot mutate its parent shell.
+Emoji cues: enabled by default as sparse status/warning/inspect/next-action supplements. Use --no-emoji-cues or settings-ui to turn them off.
 Color toggle: `codexplain color on` forces ANSI text color for Codexplain-shaped exec/review output and best-effort Codex TUI color env; `codexplain color off` restores plain output. `codexplain color rules` shows the semantic-sparse role map so colors do not become decorative noise.
 TUI assistant color: `codexplain tui-color on` enables project-local full assistant-message color when a patched Codex binary exists under .codexplain/state/codex-upstream/codex-rs/target/release/codex or target/debug/codex; `off` disables only that hook.
 TUI adapter: `codexplain tui-adapter status` reports project-local shim path, mode, active binary/fallback, patched binary status, rollback, and cleanup instructions. `codexplain tui-adapter build` applies the tracked Codex TUI assistant-color and native `/codexplain` slash patches, then builds only the project-local patched Codex binary.
@@ -8616,7 +8810,8 @@ fn print_profile(profile: &Profile) {
             "  \"abstractionLevel\": \"{}\",\n",
             "  \"detailScale\": {},\n",
             "  \"uxDensity\": {},\n",
-            "  \"riskSensitivity\": {}\n",
+            "  \"riskSensitivity\": {},\n",
+            "  \"emojiCues\": {}\n",
             "}}"
         ),
         profile.theme.name(),
@@ -8638,7 +8833,8 @@ fn print_profile(profile: &Profile) {
         profile.abstraction_level,
         profile.detail_scale,
         profile.ux_density,
-        profile.risk_sensitivity
+        profile.risk_sensitivity,
+        profile.emoji_cues
     );
 }
 
@@ -8966,6 +9162,23 @@ mod tests {
         assert!(next.contains("➡ 다음 행동:"), "{next}");
         assert!(confidence.contains("🔎 확신도"), "{confidence}");
         assert_visible_lines_fit(&combined, 64);
+    }
+
+    #[test]
+    fn emoji_cues_can_be_disabled_without_losing_text_labels() {
+        let profile = Profile {
+            theme: Theme::None,
+            emoji_cues: false,
+            ..Profile::default()
+        };
+
+        let next = next_action_footer(&profile, 64);
+        let confidence = confidence_meter(&profile, "통과", 64);
+
+        assert!(next.contains("• 다음 행동:"), "{next}");
+        assert!(confidence.contains("• 확신도"), "{confidence}");
+        assert!(!next.contains("➡"), "{next}");
+        assert!(!confidence.contains("🔎"), "{confidence}");
     }
 
     #[test]
@@ -9386,9 +9599,38 @@ after
     #[test]
     fn slash_control_guidance_and_usage_are_discoverable() {
         assert!(usage().contains("codexplain slash on|off|status|help"));
+        assert!(usage().contains("managed zsh auto-activation block"));
         assert!(CODEX_GUIDANCE.contains("/codexplain on"));
         assert!(CODEX_GUIDANCE.contains("./bin/codexplain slash on"));
         assert!(GLOBAL_CODEX_GUIDANCE.contains("codexplain slash <action>"));
+    }
+
+    #[test]
+    fn shell_autoload_block_is_managed_per_project_and_removable() {
+        let root = PathBuf::from("/tmp/codexplain-demo");
+        let block = shell_autoload_block(&root);
+        assert!(block.contains(SHELL_AUTO_START));
+        assert!(block.contains("add-zsh-hook chpwd"));
+        assert!(block.contains("CODEXPLAIN_AUTO_ACTIVATING"));
+        assert!(block.contains("_codexplain_root='/tmp/codexplain-demo'"));
+        assert!(block.contains(".codexplain/bin/codex"));
+        assert!(block.contains("CODEXPLAIN_PREV_CODEX_ALIAS=$(alias codex"));
+        assert!(block.contains("alias codex=\"$_codexplain_root/.codexplain/bin/codex\""));
+        assert!(block.contains("eval \"alias $CODEXPLAIN_PREV_CODEX_ALIAS\""));
+        assert!(!block.contains(". .codexplain/activate"));
+        assert!(!block.contains(":'/tmp/codexplain-demo'/.codexplain/bin"));
+        assert!(block.contains("codexplain off --local"));
+
+        let current = format!("before\n\n{block}\nafter\n");
+        let next = remove_shell_autoload_block_for_root(&current, &root);
+        assert_eq!(next, "before\n\nafter\n");
+    }
+
+    #[test]
+    fn slash_control_output_is_minimal_for_tui() {
+        assert!(usage().contains("/codexplain on|off|status"));
+        assert!(usage().contains("Emoji cues:"));
+        assert!(!usage().contains("contract=codexplain.slash.v1"));
     }
 
     #[test]
