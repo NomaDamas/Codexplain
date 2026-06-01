@@ -15,7 +15,7 @@ index b479718..7c14bff 100644
                  }
              }
 +            SlashCommand::Codexplain => {
-+                self.run_codexplain_slash_command("status");
++                self.run_codexplain_slash_command("toggle");
 +            }
              SlashCommand::Ide => {
                  self.handle_ide_command();
@@ -35,13 +35,13 @@ index b479718..7c14bff 100644
      }
  
 +    fn run_codexplain_slash_command(&mut self, action: &str) {
-+        let action = action.split_whitespace().next().unwrap_or("status");
++        let action = action.split_whitespace().next().unwrap_or("toggle");
 +        let allowed = matches!(
 +            action,
-+            "on" | "enable" | "off" | "disable" | "status" | "help" | "-h" | "--help"
++            "toggle" | "on" | "enable" | "off" | "disable" | "status" | "help" | "-h" | "--help"
 +        );
 +        if !allowed {
-+            self.add_error_message("Usage: /codexplain [on|off|status|help]".to_string());
++            self.add_error_message("Usage: /codexplain [toggle|on|off|status|help]".to_string());
 +            return;
 +        }
 +        let cwd = self

@@ -78,10 +78,14 @@ Use global mode only when you want Codexplain guidance outside one repository.
 When Codexplain guidance reaches the agent, these commands map to local control:
 
 ```text
+/codexplain
 /codexplain on
 /codexplain off
 /codexplain status
 ```
+
+Bare `/codexplain` is a toggle. If Codexplain is enabled, it disables the
+project-local integration. If Codexplain is disabled, it enables it.
 
 If the Codex host intercepts unknown slash commands before the prompt reaches
 the agent, use the direct CLI fallback:
@@ -90,6 +94,7 @@ the agent, use the direct CLI fallback:
 codexplain slash on
 codexplain slash off
 codexplain slash status
+codexplain slash toggle
 ```
 
 Native `/codexplain` inside the full-screen Codex TUI requires the project-local

@@ -6838,7 +6838,7 @@ Terminal UX:
 - Do not hand-draw long raw box tables when cell text may wrap. Prefer Codexplain width-safe tables, Markdown tables, or short boxes with wrapped rows; every row must be layout-owned, padded, and separated, not manually guessed.
 - For long tool transcripts such as Explored/Ran/Read, summarize the macro phase first instead of listing every micro event.
 - Use blank lines between semantic sections so the user can scan without reading a wall of text.
-- Slash control bridge: when a user asks exactly `/codexplain on`, run `./bin/codexplain slash on` for strict project-local activation. When a user asks exactly `/codexplain off`, run `./bin/codexplain slash off` for strict removal of only Codexplain-managed local state. When a user asks `/codexplain status`, run `./bin/codexplain slash status`. Do not treat these as prose requests.
+- Slash control bridge: when a user asks exactly `/codexplain`, run `./bin/codexplain slash toggle` to switch project-local Codexplain on/off. When a user asks exactly `/codexplain on`, run `./bin/codexplain slash on` for strict project-local activation. When a user asks exactly `/codexplain off`, run `./bin/codexplain slash off` for strict removal of only Codexplain-managed local state. When a user asks `/codexplain status`, run `./bin/codexplain slash status`. Do not treat these as prose requests.
 <!-- CODEXPLAIN:END -->"#;
 
 const LOCAL_README: &str = r#"# Codexplain Local Adapter
@@ -7080,7 +7080,7 @@ Default answer style:
 - Every visible table row must be separated; never stack body rows directly without a row divider.
 - Process answers should use short numbered sections, with one idea per item and bullet-style sublines for multiple details.
 - Keep technical facts, commands, file paths, risks, and test evidence intact.
-- Slash control bridge: if a repository has Codexplain installed and a user asks exactly `/codexplain on`, `/codexplain off`, or `/codexplain status`, treat it as a control command and run the matching `codexplain slash <action>` command instead of answering with prose.
+- Slash control bridge: if a repository has Codexplain installed and a user asks exactly `/codexplain`, `/codexplain on`, `/codexplain off`, or `/codexplain status`, treat it as a control command and run the matching `codexplain slash <action>` command instead of answering with prose. Bare `/codexplain` toggles project-local Codexplain on/off.
 <!-- CODEXPLAIN:END -->"#;
 
 fn codex_home_dir() -> PathBuf {
@@ -7592,7 +7592,16 @@ fn remove_codexplain_dir_strict(path: &Path) -> io::Result<()> {
 }
 
 fn slash_control(args: &[String]) -> io::Result<()> {
-    match args.get(1).map(String::as_str).unwrap_or("help") {
+    match args.get(1).map(String::as_str).unwrap_or("toggle") {
+        "toggle" | "" => {
+            if project_local_codexplain_enabled() {
+                uninstall_local_codex_project_strict()?;
+                println!("Codexplain disabled");
+            } else {
+                install_local_codex_project()?;
+                println!("Codexplain enabled");
+            }
+        }
         "on" | "enable" => {
             install_local_codex_project()?;
             println!("Codexplain enabled");
@@ -7602,16 +7611,14 @@ fn slash_control(args: &[String]) -> io::Result<()> {
             println!("Codexplain disabled");
         }
         "status" => {
-            if project_local_adapter_present_at(&project_path("."))
-                && project_path(".codexplain/config.json").exists()
-            {
+            if project_local_codexplain_enabled() {
                 println!("Codexplain enabled");
             } else {
                 println!("Codexplain disabled");
             }
         }
         "help" | "-h" | "--help" => {
-            println!("/codexplain on|off|status");
+            println!("/codexplain toggles on/off; /codexplain on|off|status");
         }
         other => {
             return Err(io::Error::new(
@@ -7621,6 +7628,11 @@ fn slash_control(args: &[String]) -> io::Result<()> {
         }
     }
     Ok(())
+}
+
+fn project_local_codexplain_enabled() -> bool {
+    project_local_adapter_present_at(&project_path("."))
+        && project_path(".codexplain/config.json").exists()
 }
 fn replace_guidance_block(current: &str, block: &str) -> String {
     let Some(start) = current.find(CODEX_GUIDANCE_START) else {
@@ -8526,7 +8538,7 @@ fn usage() -> &'static str {
   codexplain codex --prompt <text> [--local-shape] [codex exec args...]
   codexplain on|install-codex [--project|--local] [--global] [--session] [--force]
   codexplain off|uninstall-codex [--project|--local] [--global] [--session] [--remove-profile]
-  codexplain slash on|off|status|help
+  codexplain slash [toggle|on|off|status|help]
   codexplain color on|off|status|rules
   codexplain tui-color on|full|off|status
   codexplain tui-adapter on|full|off|status|apply|build
@@ -8566,7 +8578,7 @@ Emoji cues: enabled by default as sparse status/warning/inspect/next-action supp
 Color toggle: `codexplain color on` forces ANSI text color for Codexplain-shaped exec/review output and best-effort Codex TUI color env; `codexplain color off` restores plain output. `codexplain color rules` shows the semantic-sparse role map so colors do not become decorative noise.
 TUI assistant color: `codexplain tui-color on` enables project-local full assistant-message color when a patched Codex binary exists under .codexplain/state/codex-upstream/codex-rs/target/release/codex or target/debug/codex; `off` disables only that hook.
 TUI adapter: `codexplain tui-adapter status` reports project-local shim path, mode, active binary/fallback, patched binary status, rollback, and cleanup instructions. `codexplain tui-adapter build` applies the tracked Codex TUI assistant-color and native `/codexplain` slash patches, then builds only the project-local patched Codex binary.
-Slash control: `/codexplain on|off|status` is bridged by project guidance to `codexplain slash on|off|status`; `off` strictly removes the managed AGENTS block and `.codexplain/` while leaving unrelated Codex settings untouched.
+Slash control: bare `/codexplain` toggles project-local Codexplain on/off and is bridged to `codexplain slash toggle`; `/codexplain on|off|status` remain explicit controls. `off` strictly removes the managed AGENTS block and `.codexplain/` while leaving unrelated Codex settings untouched.
 Status bar control: `codexplain statusbar` is the Rust control surface used by local app launchers. It toggles only project-local Codexplain files, updates profile/config controls, and leaves unrelated global Codex settings untouched.
 Settings UI: `codexplain settings-ui` opens a dependency-free Rust terminal UI for theme, frame, depth, abstraction, UX density, and color mode; `codexplain install-app` writes lightweight macOS/Linux/Windows launchers under .codexplain/app.
 Compatibility gate: `codexplain compat-check` validates project-local OMX/harness safety, managed on/off scopes, strict artifact preservation, ignored harness state, and width-safe renderer contracts.
@@ -9598,11 +9610,18 @@ after
 
     #[test]
     fn slash_control_guidance_and_usage_are_discoverable() {
-        assert!(usage().contains("codexplain slash on|off|status|help"));
+        assert!(usage().contains("codexplain slash [toggle|on|off|status|help]"));
         assert!(usage().contains("managed zsh auto-activation block"));
+        assert!(CODEX_GUIDANCE.contains("`/codexplain`"));
+        assert!(CODEX_GUIDANCE.contains("slash toggle"));
         assert!(CODEX_GUIDANCE.contains("/codexplain on"));
         assert!(CODEX_GUIDANCE.contains("./bin/codexplain slash on"));
         assert!(GLOBAL_CODEX_GUIDANCE.contains("codexplain slash <action>"));
+        assert!(GLOBAL_CODEX_GUIDANCE.contains("Bare `/codexplain` toggles"));
+        let patch = fs::read_to_string(project_path("patches/codex-tui-codexplain-slash.patch"))
+            .expect("slash patch should be readable");
+        assert!(patch.contains("run_codexplain_slash_command(\"toggle\")"));
+        assert!(patch.contains("[toggle|on|off|status|help]"));
     }
 
     #[test]
@@ -9628,7 +9647,7 @@ after
 
     #[test]
     fn slash_control_output_is_minimal_for_tui() {
-        assert!(usage().contains("/codexplain on|off|status"));
+        assert!(usage().contains("bare `/codexplain` toggles"));
         assert!(usage().contains("Emoji cues:"));
         assert!(!usage().contains("contract=codexplain.slash.v1"));
     }
