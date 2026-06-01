@@ -2,8 +2,9 @@
 
 # Codexplain
 
-> Make Codex answers easier to scan, safer to copy, and nicer to read in a
-> terminal.
+> Codex explanations suck. Codexplain improves them into clear Claude-like
+> explanations with better UX and Gordon Ramsay-level intolerance for terrible
+> AI output.
 
 Codexplain is a local-first explanation UX layer for Codex. It does not replace
 Codex, change the model, or rewrite strict artifacts. It wraps explanatory
@@ -51,6 +52,9 @@ codexplain shape --prompt "Explain this architecture with a TLDR and table" --re
   commands, and paths instead of coloring every technical noun.
 - 📦 **Project-local control**: `on`, `off`, and uninstall remove only
   Codexplain-managed state.
+- 🕹️ **Slash bridge**: type `/codexplain on`, `/codexplain off`, or
+  `/codexplain status` in Codex when the prompt reaches the agent; the project
+  guidance maps it to strict local control.
 - 🌍 **English-first docs**: global open-source defaults, while responses can
   mirror the user's language.
 
@@ -243,6 +247,24 @@ Cleanly uninstall the managed local integration:
 
 ```bash
 npm run off
+```
+
+Strict slash-style local control:
+
+```text
+/codexplain on      strict project-local activation
+/codexplain off     strict removal of Codexplain-managed local state
+/codexplain status  project-local activation status
+```
+
+The slash bridge works through Codexplain's installed `AGENTS.md` guidance. If a
+Codex host intercepts unknown slash commands before they reach the model, run
+the equivalent CLI command directly:
+
+```bash
+codexplain slash on
+codexplain slash off
+codexplain slash status
 ```
 
 Cleanly uninstall only the managed global Codexplain block:
