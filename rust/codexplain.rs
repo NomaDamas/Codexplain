@@ -5776,6 +5776,7 @@ fn tui_adapter_command(args: &[String]) -> io::Result<()> {
             );
         }
         TuiAdapterAction::ApplyPatch => {
+            ensure_project_local_codex_upstream()?;
             let outcome = apply_codex_tui_patch()?;
             println!(
                 "Codexplain TUI adapter patch\n- scope: project-local only\n- patch: {}\n- result: {}\n- next: codexplain tui-adapter build",
@@ -5784,6 +5785,7 @@ fn tui_adapter_command(args: &[String]) -> io::Result<()> {
             );
         }
         TuiAdapterAction::Build => {
+            ensure_project_local_codex_upstream()?;
             let patch_outcome = apply_codex_tui_patch()?;
             build_patched_codex_binary()?;
             write_color_config("ansi", "ansi", "semantic")?;
@@ -5879,18 +5881,15 @@ fn codex_tui_patch_already_applied() -> bool {
 
 fn codex_tui_color_patch_already_applied() -> bool {
     let root = upstream_codex_rs_root();
-    let markdown = root.join("tui/src/markdown.rs");
     let messages = root.join("tui/src/history_cell/messages.rs");
-    fs::read_to_string(markdown)
+    fs::read_to_string(messages)
         .map(|content| {
-            content.contains(
-                "codexplain_full_color_overrides_existing_prose_foreground_for_semantic_terms",
-            ) && content.contains("codexplain_semantic_terms")
+            content.contains("codexplain_style_hyperlink_lines")
+                && content.contains("codexplain_tui_color_enabled")
+                && content.contains("codexplain_semantic_style")
+                && content.contains("codexplain_style_agent_span")
         })
         .unwrap_or(false)
-        && fs::read_to_string(messages)
-            .map(|content| content.contains("codexplain_style_agent_lines"))
-            .unwrap_or(false)
 }
 
 fn codex_tui_slash_patch_already_applied() -> bool {
@@ -6045,7 +6044,9 @@ fn build_patched_codex_binary() -> io::Result<()> {
             .arg("codex"),
         "cargo build -p codex-cli --bin codex",
     )?;
-    persist_project_local_patched_codex_binary()
+    persist_project_local_patched_codex_binary()?;
+    let _ = cleanup_patched_codex_target(&project_path("."));
+    Ok(())
 }
 
 fn persisted_patched_codex_binary() -> PathBuf {
@@ -7353,10 +7354,8 @@ fn install_codex_project(args: &[String]) -> io::Result<()> {
 }
 
 fn session_activation_hint() -> String {
-    let activate = project_path(".codexplain/activate");
     format!(
-        "Codexplain session activation:\n1. current shell only\n2. run: source {}\n3. verify: which codex",
-        activate.display()
+        "Codexplain session activation:\n1. current shell only\n2. run: source ./.codexplain/activate\n3. verify: which codex"
     )
 }
 
@@ -10205,6 +10204,21 @@ Do not remove this.
         assert!(
             tui_adapter_status_report("semantic", "not-built".to_string())
                 .contains("/codexplain slash patches")
+        );
+        let color_patch =
+            fs::read_to_string(project_path("patches/codex-tui-assistant-color.patch"))
+                .expect("color patch should be readable");
+        assert!(
+            color_patch.contains("codexplain_style_hyperlink_lines"),
+            "{color_patch}"
+        );
+        assert!(
+            color_patch.contains("codexplain_tui_color_enabled"),
+            "{color_patch}"
+        );
+        assert!(
+            color_patch.contains("codexplain_semantic_style"),
+            "{color_patch}"
         );
     }
 
