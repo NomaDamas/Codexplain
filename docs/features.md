@@ -32,8 +32,9 @@ Feature                         What It Does
 
 ## Settings UI
 
-`codexplain settings-ui` is dependency-free and terminal-native. It presents
-settings by capability, not file path.
+Bare `codexplain`, `codexplain settings`, and `codexplain settings-ui` open the
+same dependency-free terminal UI. It presents settings by capability, not file
+path, and works in ordinary Windows, macOS, and Linux terminals.
 
 ```text
  Setting Area              Choices
@@ -48,6 +49,10 @@ settings by capability, not file path.
                            mono, none
 ────────────────────────  ────────────────────────────────────────────────
  UX density                35, 65, 90 presets for how many UX blocks appear
+────────────────────────  ────────────────────────────────────────────────
+ Emoji cues                on, off
+────────────────────────  ────────────────────────────────────────────────
+ Color mode                ansi, plain, html
 ────────────────────────  ────────────────────────────────────────────────
  Scope                     session, project-local, global guidance, off
 ```

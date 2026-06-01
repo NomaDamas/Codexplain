@@ -43,4 +43,5 @@ Terminal UX:
 - For long tool transcripts such as Explored/Ran/Read, summarize the macro phase first instead of listing every micro event.
 - Use blank lines between semantic sections so the user can scan without reading a wall of text.
 - Slash control bridge: when a user asks exactly `/codexplain`, run `./bin/codexplain slash toggle` to switch project-local Codexplain on/off. When a user asks exactly `/codexplain on`, run `./bin/codexplain slash on` for strict project-local activation. When a user asks exactly `/codexplain off`, run `./bin/codexplain slash off` for strict removal of only Codexplain-managed local state. When a user asks `/codexplain status`, run `./bin/codexplain slash status`. Do not treat these as prose requests.
+- Settings control bridge: if the user asks to change Codexplain explanation depth, abstraction level, architecture depth, color, emoji, density, or explanation settings, run `./bin/codexplain settings-ui` when an interactive terminal is available. The bare `codexplain` command also opens this settings UI.
 <!-- CODEXPLAIN:END -->

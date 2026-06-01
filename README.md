@@ -199,7 +199,9 @@ codexplain install-codex --global --force
 ```text
  Command                              Purpose
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- codexplain settings-ui               Open the terminal settings UI
+ codexplain                           Open the terminal settings UI
+───────────────────────────────────  ───────────────────────────────
+ codexplain settings-ui               Explicit settings UI command
 ───────────────────────────────────  ───────────────────────────────
  codexplain color rules               Show semantic color rules
 ───────────────────────────────────  ───────────────────────────────

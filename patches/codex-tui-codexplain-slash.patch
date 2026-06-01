@@ -38,10 +38,10 @@ index b479718..7c14bff 100644
 +        let action = action.split_whitespace().next().unwrap_or("toggle");
 +        let allowed = matches!(
 +            action,
-+            "toggle" | "on" | "enable" | "off" | "disable" | "status" | "help" | "-h" | "--help"
++            "toggle" | "on" | "enable" | "off" | "disable" | "status" | "settings" | "setting" | "config" | "configure" | "help" | "-h" | "--help"
 +        );
 +        if !allowed {
-+            self.add_error_message("Usage: /codexplain [toggle|on|off|status|help]".to_string());
++            self.add_error_message("Usage: /codexplain [toggle|on|off|status|settings|help]".to_string());
 +            return;
 +        }
 +        let cwd = self

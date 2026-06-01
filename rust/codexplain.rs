@@ -1,6 +1,6 @@
 use std::env;
 use std::fs;
-use std::io::{self, Read, Write};
+use std::io::{self, IsTerminal, Read, Write};
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -1958,6 +1958,16 @@ fn parse_color_output(value: &str) -> ColorOutput {
         "chat" | "markdown" | "md" | "chat-markdown" | "markdown-chat" => ColorOutput::Markdown,
         "plain" | "none" | "off" | "no-color" => ColorOutput::Plain,
         _ => ColorOutput::Terminal,
+    }
+}
+
+fn color_output_name(mode: ColorOutput) -> &'static str {
+    match mode {
+        ColorOutput::Terminal => "terminal",
+        ColorOutput::Ansi => "ansi",
+        ColorOutput::Html => "html",
+        ColorOutput::Markdown => "markdown",
+        ColorOutput::Plain => "plain",
     }
 }
 
@@ -6918,6 +6928,7 @@ Terminal UX:
 - For long tool transcripts such as Explored/Ran/Read, summarize the macro phase first instead of listing every micro event.
 - Use blank lines between semantic sections so the user can scan without reading a wall of text.
 - Slash control bridge: when a user asks exactly `/codexplain`, run `./bin/codexplain slash toggle` to switch project-local Codexplain on/off. When a user asks exactly `/codexplain on`, run `./bin/codexplain slash on` for strict project-local activation. When a user asks exactly `/codexplain off`, run `./bin/codexplain slash off` for strict removal of only Codexplain-managed local state. When a user asks `/codexplain status`, run `./bin/codexplain slash status`. Do not treat these as prose requests.
+- Settings control bridge: if the user asks to change Codexplain explanation depth, abstraction level, architecture depth, color, emoji, density, or explanation settings, run `./bin/codexplain settings-ui` when an interactive terminal is available. The bare `codexplain` command also opens this settings UI.
 <!-- CODEXPLAIN:END -->"#;
 
 const LOCAL_README: &str = r#"# Codexplain Local Adapter
@@ -7160,6 +7171,7 @@ Default answer style:
 - Process answers should use short numbered sections, with one idea per item and bullet-style sublines for multiple details.
 - Keep technical facts, commands, file paths, risks, and test evidence intact.
 - Slash control bridge: if a repository has Codexplain installed and a user asks exactly `/codexplain`, `/codexplain on`, `/codexplain off`, or `/codexplain status`, treat it as a control command and run the matching `codexplain slash <action>` command instead of answering with prose. Bare `/codexplain` toggles project-local Codexplain on/off.
+- Settings control bridge: if the user asks to change Codexplain explanation depth, abstraction level, architecture depth, color, emoji, density, or explanation settings, run `codexplain settings-ui` when an interactive terminal is available. The bare `codexplain` command also opens this settings UI.
 <!-- CODEXPLAIN:END -->"#;
 
 fn codex_home_dir() -> PathBuf {
@@ -7230,7 +7242,10 @@ fn install_local_codex_project_at(root: &Path) -> io::Result<()> {
     fs::create_dir_all(&codexplain_dir)?;
     fs::create_dir_all(&codexplain_bin_dir)?;
     fs::write(codexplain_dir.join("README.md"), LOCAL_README)?;
-    fs::write(codexplain_dir.join("config.json"), LOCAL_CONFIG)?;
+    let local_config = codexplain_dir.join("config.json");
+    if !local_config.exists() {
+        fs::write(&local_config, LOCAL_CONFIG)?;
+    }
     let post_response = codexplain_dir.join("post-response");
     fs::write(&post_response, POST_RESPONSE_SH)?;
     set_executable(&post_response)?;
@@ -7679,11 +7694,13 @@ fn slash_control(args: &[String]) -> io::Result<()> {
             } else {
                 install_local_codex_project()?;
                 println!("Codexplain enabled");
+                println!("{}", slash_enabled_guide());
             }
         }
         "on" | "enable" => {
             install_local_codex_project()?;
             println!("Codexplain enabled");
+            println!("{}", slash_enabled_guide());
         }
         "off" | "disable" => {
             uninstall_local_codex_project_strict()?;
@@ -7697,16 +7714,31 @@ fn slash_control(args: &[String]) -> io::Result<()> {
             }
         }
         "help" | "-h" | "--help" => {
-            println!("/codexplain toggles on/off; /codexplain on|off|status");
+            println!("{}", slash_help());
+        }
+        "settings" | "setting" | "config" | "configure" => {
+            println!("{}", slash_settings_guide());
         }
         other => {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                format!("unknown /codexplain action: {other}"),
+                format!("unknown /codexplain action: {other}\n{}", slash_help()),
             ));
         }
     }
     Ok(())
+}
+
+fn slash_help() -> &'static str {
+    "/codexplain toggles on/off; /codexplain on|off|status|settings|help"
+}
+
+fn slash_settings_guide() -> &'static str {
+    "Codexplain settings\n- open UI: codexplain or codexplain settings-ui\n- adjust: explanation depth, architecture view, abstraction level, theme, UX density, emoji cues\n- scope: project-local only; off/uninstall removes managed Codexplain state"
+}
+
+fn slash_enabled_guide() -> &'static str {
+    "Quick guide\n- settings UI: codexplain\n- explicit UI: codexplain settings-ui\n- status: /codexplain status\n- disable: /codexplain off\n- exact artifacts stay unchanged; explanations get Codexplain UX"
 }
 
 fn project_local_codexplain_enabled() -> bool {
@@ -8241,73 +8273,160 @@ fn print_quality_report(report: &QualityReport) {
 
 fn settings_ui() -> io::Result<()> {
     let mut profile = load_profile();
-    println!(
-        "{}",
+    if !io::stdin().is_terminal() {
+        println!("{}", settings_dashboard(&profile, 88));
+        println!("non_interactive=run `codexplain settings-ui` in a terminal to edit");
+        return Ok(());
+    }
+
+    loop {
+        print!("\x1b[2J\x1b[H");
+        println!("{}", settings_dashboard(&profile, 88));
+        println!();
+        println!("1 explanation depth   2 architecture view   3 abstraction level");
+        println!("4 theme               5 UX density          6 emoji cues");
+        println!("7 frame               8 color mode          p preview");
+        println!("s save and exit       q quit without saving");
+        print!("select > ");
+        io::stdout().flush()?;
+
+        let mut input = String::new();
+        io::stdin().read_line(&mut input)?;
+        match input.trim() {
+            "1" => choose_explanation_depth(&mut profile)?,
+            "2" => choose_architecture_depth(&mut profile)?,
+            "3" => choose_abstraction_level(&mut profile)?,
+            "4" => choose_theme(&mut profile)?,
+            "5" => choose_ux_density(&mut profile)?,
+            "6" => choose_emoji_cues(&mut profile)?,
+            "7" => choose_frame(&mut profile)?,
+            "8" => choose_color_mode()?,
+            "p" | "preview" => settings_preview(&profile)?,
+            "s" | "save" | "" => {
+                save_profile(&profile)?;
+                println!("saved=.codexplain/ux-profile.json");
+                return Ok(());
+            }
+            "q" | "quit" | "exit" => {
+                println!("not_saved=.codexplain/ux-profile.json");
+                return Ok(());
+            }
+            other => {
+                println!("ignored=unknown menu item '{other}'");
+                wait_for_enter()?;
+            }
+        }
+    }
+}
+
+fn settings_dashboard(profile: &Profile, width: usize) -> String {
+    let title = "🎛️ Codexplain Settings";
+    let subtitle =
+        "설명 깊이, 추상화 레벨, 색상, 이모지, 출력 밀도를 현재 프로젝트 기준으로 조정합니다.";
+    let rows = vec![
+        vec![
+            "1".to_string(),
+            "🧠 Explanation".to_string(),
+            profile.explanation_depth.clone(),
+            "light / standard / deep".to_string(),
+        ],
+        vec![
+            "2".to_string(),
+            "🧭 Architecture".to_string(),
+            profile.architecture_depth.clone(),
+            "overview / system / internals".to_string(),
+        ],
+        vec![
+            "3".to_string(),
+            "🔭 Abstraction".to_string(),
+            profile.abstraction_level.clone(),
+            "concrete / architecture / strategy".to_string(),
+        ],
+        vec![
+            "4".to_string(),
+            "🎨 Theme".to_string(),
+            profile.theme.name().to_string(),
+            "semantic, restrained color".to_string(),
+        ],
+        vec![
+            "5".to_string(),
+            "📐 UX density".to_string(),
+            profile.ux_density.to_string(),
+            "35 minimal / 65 balanced / 90 rich".to_string(),
+        ],
+        vec![
+            "6".to_string(),
+            "✨ Emoji cues".to_string(),
+            if profile.emoji_cues { "on" } else { "off" }.to_string(),
+            "semantic section and status markers".to_string(),
+        ],
+        vec![
+            "7".to_string(),
+            "▣ Frame".to_string(),
+            if profile.frame == Frame::Ascii {
+                "ascii"
+            } else {
+                "unicode"
+            }
+            .to_string(),
+            "cross-platform terminal borders".to_string(),
+        ],
+        vec![
+            "8".to_string(),
+            "🌈 Color mode".to_string(),
+            color_output_name(configured_color_output().unwrap_or(ColorOutput::Terminal))
+                .to_string(),
+            "ansi / plain / html".to_string(),
+        ],
+    ];
+    format!(
+        "{title}\n{subtitle}\n\n{}",
         table(
-            &["기능 영역", "현재 설정", "사용자가 조절하는 것"],
-            &[
-                vec![
-                    "설명 깊이".to_string(),
-                    profile.explanation_depth.clone(),
-                    "답변을 light, standard, deep 중 하나로 압축하거나 확장합니다.".to_string(),
-                ],
-                vec![
-                    "아키텍처 시야".to_string(),
-                    profile.architecture_depth.clone(),
-                    "구조 설명을 overview, system, internals 중 어디까지 열지 정합니다."
-                        .to_string(),
-                ],
-                vec![
-                    "추상화 레벨".to_string(),
-                    profile.abstraction_level.clone(),
-                    "파일 나열이 아니라 concrete, architecture, strategy 관점으로 설명합니다."
-                        .to_string(),
-                ],
-                vec![
-                    "색상 규칙".to_string(),
-                    format!("{} / semantic-sparse", profile.theme.name()),
-                    "성공, 주의, 위험, 명령, 경로, 산출물에만 제한적으로 색을 씁니다.".to_string(),
-                ],
-                vec![
-                    "레이아웃 밀도".to_string(),
-                    profile.ux_density.to_string(),
-                    "TLDR, 표, 흐름도, callout 같은 UX 블록 조합 빈도입니다.".to_string(),
-                ],
-                vec![
-                    "이모지 큐".to_string(),
-                    if profile.emoji_cues {
-                        "on".to_string()
-                    } else {
-                        "off".to_string()
-                    },
-                    "섹션, 상태, 근거, 해결, 다음 행동에 의미 이모지를 적극적으로 씁니다."
-                        .to_string(),
-                ],
-                vec![
-                    "스타일 라이브러리".to_string(),
-                    format!("{}개", load_custom_styles().len()),
-                    "style add/list/preview/remove로 사용자 설명 방식을 관리합니다.".to_string(),
-                ],
-                vec![
-                    "적용 범위".to_string(),
-                    if project_local_adapter_present_at(&project_path(".")) {
-                        "project-local on".to_string()
-                    } else {
-                        "off".to_string()
-                    },
-                    "현재 프로젝트에만 shim/guidance를 꽂거나 제거합니다.".to_string(),
-                ],
-            ],
+            &["#", "Control", "Current", "Range"],
+            &rows,
             profile.frame,
             profile.theme,
             true,
-            78,
+            width,
         )
-    );
-    println!("\nEnter를 누르면 현재값을 유지합니다.");
-    println!("색상 규칙 확인: codexplain color rules");
-    println!("설명방식 추가: codexplain style add <name> --trigger <text> --renderers <list> --description <text> --tone <tone> --example <text>");
+    )
+}
 
+fn choose_explanation_depth(profile: &mut Profile) -> io::Result<()> {
+    if let Some(value) = prompt_choice(
+        "explanationDepth",
+        &profile.explanation_depth,
+        &["light", "standard", "deep"],
+    )? {
+        profile.explanation_depth = normalize_explanation_depth(&value, &profile.explanation_depth);
+    }
+    Ok(())
+}
+
+fn choose_architecture_depth(profile: &mut Profile) -> io::Result<()> {
+    if let Some(value) = prompt_choice(
+        "architectureDepth",
+        &profile.architecture_depth,
+        &["overview", "system", "internals"],
+    )? {
+        profile.architecture_depth =
+            normalize_architecture_depth(&value, &profile.architecture_depth);
+    }
+    Ok(())
+}
+
+fn choose_abstraction_level(profile: &mut Profile) -> io::Result<()> {
+    if let Some(value) = prompt_choice(
+        "abstractionLevel",
+        &profile.abstraction_level,
+        &["concrete", "architecture", "strategy"],
+    )? {
+        profile.abstraction_level = normalize_abstraction_level(&value, &profile.abstraction_level);
+    }
+    Ok(())
+}
+
+fn choose_theme(profile: &mut Profile) -> io::Result<()> {
     if let Some(value) = prompt_choice(
         "theme",
         profile.theme.name(),
@@ -8317,31 +8436,10 @@ fn settings_ui() -> io::Result<()> {
     )? {
         profile.theme = Theme::parse(Some(&value));
     }
-    if let Some(value) = prompt_choice("frame", "unicode", &["unicode", "ascii"])? {
-        profile.frame = Frame::parse(Some(&value));
-    }
-    if let Some(value) = prompt_choice(
-        "explanationDepth",
-        &profile.explanation_depth,
-        &["light", "standard", "deep"],
-    )? {
-        profile.explanation_depth = normalize_explanation_depth(&value, &profile.explanation_depth);
-    }
-    if let Some(value) = prompt_choice(
-        "architectureDepth",
-        &profile.architecture_depth,
-        &["overview", "system", "internals"],
-    )? {
-        profile.architecture_depth =
-            normalize_architecture_depth(&value, &profile.architecture_depth);
-    }
-    if let Some(value) = prompt_choice(
-        "abstractionLevel",
-        &profile.abstraction_level,
-        &["concrete", "architecture", "strategy"],
-    )? {
-        profile.abstraction_level = normalize_abstraction_level(&value, &profile.abstraction_level);
-    }
+    Ok(())
+}
+
+fn choose_ux_density(profile: &mut Profile) -> io::Result<()> {
     if let Some(value) = prompt_choice(
         "uxDensity",
         &profile.ux_density.to_string(),
@@ -8351,6 +8449,10 @@ fn settings_ui() -> io::Result<()> {
             profile.ux_density = parsed;
         }
     }
+    Ok(())
+}
+
+fn choose_emoji_cues(profile: &mut Profile) -> io::Result<()> {
     if let Some(value) = prompt_choice(
         "emojiCues",
         if profile.emoji_cues { "on" } else { "off" },
@@ -8358,11 +8460,58 @@ fn settings_ui() -> io::Result<()> {
     )? {
         profile.emoji_cues = !matches!(value.as_str(), "off" | "false" | "0" | "no");
     }
+    Ok(())
+}
 
-    save_profile(&profile)?;
-    write_color_config("ansi", "ansi", "semantic")?;
-    println!("saved=.codexplain/ux-profile.json");
-    println!("color=ansi");
+fn choose_frame(profile: &mut Profile) -> io::Result<()> {
+    if let Some(value) = prompt_choice(
+        "frame",
+        if profile.frame == Frame::Ascii {
+            "ascii"
+        } else {
+            "unicode"
+        },
+        &["unicode", "ascii"],
+    )? {
+        profile.frame = Frame::parse(Some(&value));
+    }
+    Ok(())
+}
+
+fn choose_color_mode() -> io::Result<()> {
+    if let Some(value) = prompt_choice(
+        "colorMode",
+        color_output_name(configured_color_output().unwrap_or(ColorOutput::Terminal)),
+        &["ansi", "plain", "html"],
+    )? {
+        match value.as_str() {
+            "plain" => write_color_config("plain", "plain", "off")?,
+            "html" => write_color_config("html", "html", "full")?,
+            _ => write_color_config("ansi", "ansi", "semantic")?,
+        }
+    }
+    Ok(())
+}
+
+fn settings_preview(profile: &Profile) -> io::Result<()> {
+    println!();
+    println!(
+        "{}",
+        shape(
+            "이 프로젝트의 아키텍처를 기능 기준으로 설명해줘",
+            "Codexplain은 Codex 응답을 받아 strict artifact는 보존하고, 일반 설명은 프로필과 렌더러를 거쳐 터미널 친화적인 설명 UX로 바꿉니다.",
+            profile,
+            88,
+        )
+    );
+    wait_for_enter()
+}
+
+fn wait_for_enter() -> io::Result<()> {
+    print!("press Enter > ");
+    io::stdout().flush()?;
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
     Ok(())
 }
 
@@ -8618,7 +8767,7 @@ fn usage() -> &'static str {
   codexplain codex --prompt <text> [--local-shape] [codex exec args...]
   codexplain on|install-codex [--project|--local] [--global] [--session] [--force]
   codexplain off|uninstall-codex [--project|--local] [--global] [--session] [--remove-profile]
-  codexplain slash [toggle|on|off|status|help]
+  codexplain slash [toggle|on|off|status|settings|help]
   codexplain color on|off|status|rules
   codexplain tui-color on|full|off|status
   codexplain tui-adapter on|full|off|status|apply|build
@@ -8629,7 +8778,8 @@ fn usage() -> &'static str {
   codexplain profile --explanation-depth <light|standard|deep>|--architecture-depth <overview|system|internals>|--abstraction-level <concrete|architecture|strategy>
   codexplain profile --detail-scale <0-100>|--ux-density <0-100>|--risk-sensitivity <0-100>
   codexplain statusbar status|on|off|set [--explanation-depth <level>] [--architecture-depth <level>] [--abstraction-level <level>] [--expression-mode <code|concept|metaphor>] [--theme <name>] [--color-output <ansi|plain|html-chat>]
-  codexplain settings-ui
+  codexplain
+  codexplain settings|settings-ui
   codexplain install-app
   codexplain compat-check
   codexplain quality-check [--width <n>]
@@ -8658,9 +8808,9 @@ Emoji cues: enabled by default as active semantic section/status markers such as
 Color toggle: `codexplain color on` forces ANSI text color for Codexplain-shaped exec/review output and best-effort Codex TUI color env; `codexplain color off` restores plain output. `codexplain color rules` shows the semantic-sparse role map so colors do not become decorative noise.
 TUI assistant color: `codexplain tui-color on` enables project-local full assistant-message color when a patched Codex binary exists under .codexplain/state/codex-upstream/codex-rs/target/release/codex or target/debug/codex; `off` disables only that hook.
 TUI adapter: `codexplain tui-adapter status` reports project-local shim path, mode, active binary/fallback, patched binary status, rollback, and cleanup instructions. `codexplain tui-adapter build` applies the tracked Codex TUI assistant-color and native `/codexplain` slash patches, then builds only the project-local patched Codex binary.
-Slash control: bare `/codexplain` toggles project-local Codexplain on/off and is bridged to `codexplain slash toggle`; `/codexplain on|off|status` remain explicit controls. `off` strictly removes the managed AGENTS block and `.codexplain/` while leaving unrelated Codex settings untouched.
+Slash control: bare `/codexplain` toggles project-local Codexplain on/off and is bridged to `codexplain slash toggle`; `/codexplain on|off|status|settings` remain explicit controls. `off` strictly removes the managed AGENTS block and `.codexplain/` while leaving unrelated Codex settings untouched.
 Status bar control: `codexplain statusbar` is the Rust control surface used by local app launchers. It toggles only project-local Codexplain files, updates profile/config controls, and leaves unrelated global Codex settings untouched.
-Settings UI: `codexplain settings-ui` opens a dependency-free Rust terminal UI for theme, frame, depth, abstraction, UX density, and color mode; `codexplain install-app` writes lightweight macOS/Linux/Windows launchers under .codexplain/app.
+Settings UI: bare `codexplain`, `codexplain settings`, and `codexplain settings-ui` open a dependency-free Rust terminal UI for theme, frame, depth, abstraction, UX density, emoji cues, and color mode; `codexplain install-app` writes lightweight macOS/Linux/Windows launchers under .codexplain/app.
 Compatibility gate: `codexplain compat-check` validates project-local OMX/harness safety, managed on/off scopes, strict artifact preservation, ignored harness state, and width-safe renderer contracts.
 Quality gate: `codexplain quality-check --width 88` fails if generated output overflows, table body row dividers disappear, architecture boxes overflow or are too sparse, flow arrows/connectors break, expansion diagrams overflow, or two-path explanations are not numbered.
 Build cleanup: `codexplain build-clean --patched-codex` removes only the ignored project-local patched Codex Cargo target directory.
@@ -8669,7 +8819,7 @@ Index styles: decimal, zero-padded, alpha-lower, alpha-upper, roman-lower, roman
 
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
-    let command = args.first().map(String::as_str).unwrap_or("demo");
+    let command = args.first().map(String::as_str).unwrap_or("settings-ui");
     match command {
         "shape" => {
             let profile = load_profile_for_args(&args);
@@ -8820,7 +8970,7 @@ fn main() {
                 std::process::exit(1);
             }
         }
-        "settings-ui" => {
+        "settings" | "settings-ui" => {
             if let Err(error) = settings_ui() {
                 eprintln!("failed to run Codexplain settings UI: {error}");
                 std::process::exit(1);
@@ -9479,6 +9629,31 @@ after
     }
 
     #[test]
+    fn replace_guidance_block_preserves_user_agents_content() {
+        let input = "# Team rules
+
+- keep this repo-specific rule
+
+<!-- CODEXPLAIN:START -->
+old managed block
+<!-- CODEXPLAIN:END -->
+
+## More project policy
+
+Do not remove this.
+";
+        let output = replace_guidance_block(input, CODEX_GUIDANCE);
+
+        assert!(output.contains("# Team rules"));
+        assert!(output.contains("- keep this repo-specific rule"));
+        assert!(output.contains("## More project policy"));
+        assert!(output.contains("Do not remove this."));
+        assert!(!output.contains("old managed block"));
+        assert_eq!(output.matches("CODEXPLAIN:START").count(), 1);
+        assert_eq!(output.matches("CODEXPLAIN:END").count(), 1);
+    }
+
+    #[test]
     fn custom_style_parser_sanitizes_and_loads_renderer_plan() {
         let style = parse_custom_style(
             "name: research-card!\ntrigger: 연구 카드\nrenderers: tldr,table,formula,cause-effect\nbody:\n배경, 근거, 한계, 다음 행동을 분리한다.\n",
@@ -9693,18 +9868,39 @@ after
 
     #[test]
     fn slash_control_guidance_and_usage_are_discoverable() {
-        assert!(usage().contains("codexplain slash [toggle|on|off|status|help]"));
+        assert!(usage().contains("codexplain slash [toggle|on|off|status|settings|help]"));
+        assert!(usage().contains("codexplain settings|settings-ui"));
         assert!(usage().contains("managed zsh auto-activation block"));
         assert!(CODEX_GUIDANCE.contains("`/codexplain`"));
         assert!(CODEX_GUIDANCE.contains("slash toggle"));
         assert!(CODEX_GUIDANCE.contains("/codexplain on"));
         assert!(CODEX_GUIDANCE.contains("./bin/codexplain slash on"));
+        assert!(CODEX_GUIDANCE.contains("codexplain settings-ui"));
         assert!(GLOBAL_CODEX_GUIDANCE.contains("codexplain slash <action>"));
         assert!(GLOBAL_CODEX_GUIDANCE.contains("Bare `/codexplain` toggles"));
         let patch = fs::read_to_string(project_path("patches/codex-tui-codexplain-slash.patch"))
             .expect("slash patch should be readable");
         assert!(patch.contains("run_codexplain_slash_command(\"toggle\")"));
-        assert!(patch.contains("[toggle|on|off|status|help]"));
+        assert!(patch.contains("[toggle|on|off|status|settings|help]"));
+        assert!(slash_help().contains("settings"));
+        assert!(slash_enabled_guide().contains("settings UI"));
+    }
+
+    #[test]
+    fn settings_dashboard_exposes_cross_platform_controls() {
+        let profile = Profile {
+            theme: Theme::None,
+            ..Profile::default()
+        };
+        let dashboard = settings_dashboard(&profile, 88);
+
+        assert!(dashboard.contains("🎛️ Codexplain Settings"));
+        assert!(dashboard.contains("🧠 Explanation"));
+        assert!(dashboard.contains("🧭 Architecture"));
+        assert!(dashboard.contains("🔭 Abstraction"));
+        assert!(dashboard.contains("✨ Emoji cues"));
+        assert!(dashboard.contains("🌈 Color mode"));
+        assert_visible_lines_fit(&dashboard, 88);
     }
 
     #[test]
@@ -9761,6 +9957,31 @@ after
             "user notes\n"
         );
         assert_eq!(fs::read_to_string(root.join("keep.txt")).unwrap(), "keep");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn install_preserves_existing_codexplain_config() {
+        let root = env::temp_dir().join(format!(
+            "codexplain-config-preserve-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join(".codexplain")).unwrap();
+        fs::write(
+            root.join(".codexplain/config.json"),
+            r#"{"schemaVersion":1,"defaultColorOutput":"plain","custom":true}"#,
+        )
+        .unwrap();
+
+        install_local_codex_project_at(&root).unwrap();
+
+        let config = fs::read_to_string(root.join(".codexplain/config.json")).unwrap();
+        assert!(
+            config.contains(r#""defaultColorOutput":"plain""#),
+            "{config}"
+        );
+        assert!(config.contains(r#""custom":true"#), "{config}");
         fs::remove_dir_all(root).unwrap();
     }
 

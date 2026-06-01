@@ -31,6 +31,8 @@ Useful flags:
 ## 2️⃣ Profile and Settings
 
 ```bash
+codexplain
+codexplain settings
 codexplain settings-ui
 codexplain profile --detail deep --set-style tutorial --theme ocean
 codexplain profile --explanation-depth deep --architecture-depth internals
