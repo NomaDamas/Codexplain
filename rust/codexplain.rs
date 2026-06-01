@@ -7440,7 +7440,7 @@ fn shell_autoload_block(root: &Path) -> String {
   _codexplain_root='{root_quoted}'\n\
   case \"$PWD/\" in\n\
     \"$_codexplain_root\"/*)\n\
-      if [ -x \"$_codexplain_root/.codexplain/bin/codex\" ] && [ \"${{CODEXPLAIN_PROJECT_DIR:-}}\" != \"$_codexplain_root\" ]; then\n\
+      if [ -x \"$_codexplain_root/.codexplain/bin/codex\" ]; then\n\
         CODEXPLAIN_AUTO_ACTIVATING=1\n\
         export CODEXPLAIN_AUTO_ACTIVATING\n\
         if [ -z \"${{CODEXPLAIN_PREV_CODEX_ALIAS+x}}\" ]; then\n\
@@ -10102,6 +10102,8 @@ Do not remove this.
         assert!(block.contains("CODEXPLAIN_AUTO_ACTIVATING"));
         assert!(block.contains("_codexplain_root='/tmp/codexplain-demo'"));
         assert!(block.contains(".codexplain/bin/codex"));
+        assert!(block.contains("if [ -x \"$_codexplain_root/.codexplain/bin/codex\" ]; then"));
+        assert!(!block.contains("[ \"${CODEXPLAIN_PROJECT_DIR:-}\" != \"$_codexplain_root\" ]"));
         assert!(block.contains("CODEXPLAIN_PREV_CODEX_ALIAS=$(alias codex"));
         assert!(block.contains("alias codex=\"$_codexplain_root/.codexplain/bin/codex\""));
         assert!(block.contains("eval \"alias $CODEXPLAIN_PREV_CODEX_ALIAS\""));
