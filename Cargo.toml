@@ -3,7 +3,7 @@ name = "codexplain"
 version = "0.18.11"
 edition = "2021"
 description = "Terminal explanation UX renderer for Codexplain"
-license = "MIT"
+license-file = "LICENSE"
 
 [[bin]]
 name = "codexplain"

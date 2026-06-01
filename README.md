@@ -31,6 +31,8 @@ JSON, code, diffs, logs, tests, and patches stay exact.
  📚 Docs                  Detailed guides split by category
 ───────────────────────  ─────────────────────────────────────
  ✅ Verification          Current quality gate commands
+───────────────────────  ─────────────────────────────────────
+ 📄 License               Attribution + commercial terms
 ```
 
 ## 🚀 30-Second Pitch
@@ -237,6 +239,19 @@ strict artifacts      preserved exactly
 color policy          sparse semantic highlights
 scope control         reversible project-local default
 ```
+
+## 📄 License
+
+Codexplain uses a custom source-available license:
+
+```text
+Personal, research, education, and internal non-commercial use: allowed.
+Public redistribution or public product use: attribution required.
+Commercial use without attribution, or substantial paid-product use:
+separate commercial agreement / revenue-share terms required.
+```
+
+See [LICENSE](LICENSE) for the full terms.
 
 ## 🧠 Design Principle
 

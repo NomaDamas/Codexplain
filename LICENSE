@@ -1,0 +1,56 @@
+Codexplain Source-Available Attribution and Commercial Share License
+Version 1.0
+
+Copyright (c) 2026 NomaDamas
+
+1. Permission
+
+You may use, copy, modify, study, and redistribute this software and its
+source code for personal, educational, research, evaluation, and internal
+non-commercial purposes.
+
+2. Attribution
+
+If you redistribute this software, publish a modified version, reference it in
+another project, or use it in a public-facing product, you must give reasonable
+credit to Codexplain and NomaDamas and include a link to the original project:
+
+https://github.com/NomaDamas/Codexplain
+
+3. Commercial Use
+
+Commercial use is allowed only if at least one of the following conditions is
+met:
+
+a. Attribution Option:
+   You clearly credit Codexplain and NomaDamas in the product, documentation,
+   website, marketplace listing, release notes, or other user-visible material.
+
+b. Revenue Share / Commercial Agreement Option:
+   If attribution is not provided, or if the software is used as a substantial
+   part of a paid product, hosted service, enterprise workflow, paid developer
+   tool, commercial plugin, or commercial automation system, you must obtain a
+   separate commercial agreement from NomaDamas. That agreement may include a
+   revenue-share, licensing fee, sponsorship, or other mutually agreed terms.
+
+4. No Misrepresentation
+
+You may not claim that you wrote the original Codexplain project, remove
+copyright notices, or imply endorsement by NomaDamas without written permission.
+
+5. No Warranty
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM,
+OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+6. Separate Permission
+
+For commercial licensing, revenue-share terms, attribution exceptions, or other
+permissions, contact the project owner through the repository:
+
+https://github.com/NomaDamas/Codexplain
