@@ -6,6 +6,7 @@ coverage/
 .codex/
 .codexplain/activate
 .codexplain/bin/
+.codexplain/patched-codex/
 .codexplain/state/
 .claudex/state/
 .ouroboros/

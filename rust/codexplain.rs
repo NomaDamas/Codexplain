@@ -5844,7 +5844,7 @@ fn tui_adapter_status_report(mode: &str, patched_status: String) -> String {
             "- fallback: exec/review shaping remains available; interactive TUI assistant-message recoloring requires a project-local patched Codex binary\n",
             "- rollback: codexplain tui-adapter off, or codexplain off --local to remove managed project files and blocks\n",
             "- build: codexplain tui-adapter build applies the assistant-color and /codexplain slash patches, then builds only the project-local patched Codex binary\n",
-            "- cleanup: codexplain build-clean --patched-codex removes only the project-local patched Codex target cache"
+            "- cleanup: codexplain build-clean --patched-codex removes only the project-local patched Codex Cargo target cache; the compact persisted binary stays available"
         ),
         mode,
         shim.display(),
@@ -6044,7 +6044,43 @@ fn build_patched_codex_binary() -> io::Result<()> {
             .arg("--bin")
             .arg("codex"),
         "cargo build -p codex-cli --bin codex",
-    )
+    )?;
+    persist_project_local_patched_codex_binary()
+}
+
+fn persisted_patched_codex_binary() -> PathBuf {
+    project_path(".codexplain/patched-codex/bin/codex")
+}
+
+fn built_patched_codex_binary_candidates() -> Vec<PathBuf> {
+    vec![
+        project_path(".codexplain/state/codex-upstream/codex-rs/target/release/codex"),
+        project_path(".codexplain/state/codex-upstream/codex-rs/target/debug/codex"),
+    ]
+}
+
+fn persist_project_local_patched_codex_binary() -> io::Result<()> {
+    let Some(source) = built_patched_codex_binary_candidates()
+        .into_iter()
+        .find(|path| is_executable_file(path))
+    else {
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            "patched Codex build finished but no executable codex binary was found",
+        ));
+    };
+    let destination = persisted_patched_codex_binary();
+    if let Some(parent) = destination.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::copy(&source, &destination)?;
+    #[cfg(unix)]
+    {
+        let mut permissions = fs::metadata(&destination)?.permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&destination, permissions)?;
+    }
+    Ok(())
 }
 
 fn ensure_project_local_patched_codex_binary() -> io::Result<String> {
@@ -7104,7 +7140,7 @@ applies `patches/codex-tui-assistant-color.patch` and
 `patches/codex-tui-codexplain-slash.patch` to the ignored project-local upstream
 clone and builds only the project-local patched Codex binary.
 
-The shim routes to `.codexplain/state/codex-upstream/codex-rs/target/release/codex` or `.codexplain/state/codex-upstream/codex-rs/target/debug/codex` when that binary exists and `tuiAssistantColor` is enabled.
+The shim routes to `.codexplain/patched-codex/bin/codex` first, then falls back to `.codexplain/state/codex-upstream/codex-rs/target/release/codex` or `.codexplain/state/codex-upstream/codex-rs/target/debug/codex` when that binary exists and `tuiAssistantColor` is enabled.
 
 Use this adapter when a host can pipe a completed answer into a post-response command:
 
@@ -7214,6 +7250,7 @@ codexplain_ensure_patched_tui() {
   case "${CODEXPLAIN_TUI_COLOR:-semantic}" in
     off|plain|none|no-color) return 0 ;;
   esac
+  [ -x "$ROOT/.codexplain/patched-codex/bin/codex" ] && return 0
   [ -x "$ROOT/.codexplain/state/codex-upstream/codex-rs/target/release/codex" ] && return 0
   [ -x "$ROOT/.codexplain/state/codex-upstream/codex-rs/target/debug/codex" ] && return 0
   "$ROOT/bin/codexplain" tui-adapter build >/dev/null 2>&1 || {
@@ -8072,14 +8109,10 @@ fn resolve_real_codex_binary() -> PathBuf {
 }
 
 fn local_patched_codex_binary() -> Option<PathBuf> {
-    let mut candidates = [
-        project_path(".codexplain/patched-codex/bin/codex"),
-        project_path(".codexplain/state/codex-upstream/codex-rs/target/release/codex"),
-        project_path(".codexplain/state/codex-upstream/codex-rs/target/debug/codex"),
-    ]
-    .into_iter()
-    .filter(|path| path.exists())
-    .collect::<Vec<_>>();
+    let mut candidates = std::iter::once(persisted_patched_codex_binary())
+        .chain(built_patched_codex_binary_candidates())
+        .filter(|path| path.exists())
+        .collect::<Vec<_>>();
     candidates.sort_by_key(|path| fs::metadata(path).and_then(|meta| meta.modified()).ok());
     candidates.pop()
 }
@@ -8908,14 +8941,14 @@ Color outputs: terminal, ansi, markdown, html, plain. Use --chat-color as an ali
 Scopes: --project/--local writes only this repository's managed Codexplain files and a managed zsh auto-activation block for this exact project root; --global writes only managed guidance under CODEX_HOME; --session prints the current-shell activation command because a child process cannot mutate its parent shell.
 Emoji cues: enabled by default as active semantic section/status markers such as 🧭 overview, ✅ success, ⚠️ warning, 🚨 danger, 🔎 evidence, 🛠️ fix, and 🚀 next step. Use --no-emoji-cues or settings-ui to turn them off.
 Color toggle: `codexplain color on` forces ANSI text color for Codexplain-shaped exec/review output and best-effort Codex TUI color env; `codexplain color off` restores plain output. `codexplain color rules` shows the semantic-sparse role map so colors do not become decorative noise.
-TUI assistant color: `codexplain tui-color on` enables project-local full assistant-message color when a patched Codex binary exists under .codexplain/state/codex-upstream/codex-rs/target/release/codex or target/debug/codex; `off` disables only that hook.
+TUI assistant color: `codexplain tui-color on` enables project-local full assistant-message color when a patched Codex binary exists under .codexplain/patched-codex/bin/codex, .codexplain/state/codex-upstream/codex-rs/target/release/codex, or target/debug/codex; `off` disables only that hook.
 TUI adapter: `codexplain tui-adapter status` reports project-local shim path, mode, active binary/fallback, patched binary status, rollback, and cleanup instructions. `codexplain tui-adapter build` applies the tracked Codex TUI assistant-color and native `/codexplain` slash patches, then builds only the project-local patched Codex binary.
 Slash control: bare `/codexplain` toggles project-local Codexplain on/off and is bridged to `codexplain slash toggle`; `/codexplain on|off|status|settings` remain explicit controls. `off` strictly removes the managed AGENTS block and `.codexplain/` while leaving unrelated Codex settings untouched.
 Status bar control: `codexplain statusbar` is the Rust control surface used by local app launchers. It toggles only project-local Codexplain files, updates profile/config controls, and leaves unrelated global Codex settings untouched.
 Settings UI: bare `codexplain`, `codexplain settings`, and `codexplain settings-ui` open a dependency-free Rust terminal UI for theme, frame, depth, abstraction, UX density, emoji cues, and color mode; `codexplain install-app` writes lightweight macOS/Linux/Windows launchers under .codexplain/app.
 Compatibility gate: `codexplain compat-check` validates project-local OMX/harness safety, managed on/off scopes, strict artifact preservation, ignored harness state, and width-safe renderer contracts.
 Quality gate: `codexplain quality-check --width 88` fails if generated output overflows, table body row dividers disappear, architecture boxes overflow or are too sparse, flow arrows/connectors break, expansion diagrams overflow, or two-path explanations are not numbered.
-Build cleanup: `codexplain build-clean --patched-codex` removes only the ignored project-local patched Codex Cargo target directory.
+Build cleanup: `codexplain build-clean --patched-codex` removes only the ignored project-local patched Codex Cargo target directory. The persisted `.codexplain/patched-codex/bin/codex` binary remains available so native `/codexplain` and TUI color do not require keeping a multi-GB Cargo cache.
 Index styles: decimal, zero-padded, alpha-lower, alpha-upper, roman-lower, roman-upper"
 }
 

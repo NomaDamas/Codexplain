@@ -55,6 +55,10 @@ these locations:
 - `.codexplain/state/codex-upstream/codex-rs/target/release/codex`
 - `.codexplain/state/codex-upstream/codex-rs/target/debug/codex`
 
+`tui-adapter build` should persist the final executable into
+`.codexplain/patched-codex/bin/codex`. The multi-GB Cargo `target/` cache is a
+temporary build cache and can be removed after the binary is copied.
+
 If no patched binary exists, `codexplain tui-color status` must report that
 ordinary `exec`/`review` shaping can still work but interactive assistant-message
 recoloring requires the hook/fork path.
@@ -77,9 +81,9 @@ recoloring requires the hook/fork path.
 - Turning Codexplain off restores the default Codex path for the project.
 - Adapter work never modifies unrelated repository files or unmanaged Codex
   configuration.
-- Any patched Codex build cache stays under `.codexplain/state` or
-  `.codexplain/patched-codex` and can be removed with
-  `codexplain build-clean --patched-codex`.
+- Any patched Codex build cache stays under `.codexplain/state` and can be
+  removed with `codexplain build-clean --patched-codex` without deleting the
+  persisted `.codexplain/patched-codex/bin/codex` executable.
 - If semantic assistant color cannot be implemented externally, the issue must
   explicitly move the remaining work to a Codex TUI renderer hook/fork.
 
