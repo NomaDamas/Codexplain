@@ -122,6 +122,33 @@ The next improvement should be a context score: color only the highest-signal
 terms per section, suppress repeated terms, and prefer outcome/risk/action over
 generic technical nouns.
 
+## Emoji Cues
+
+Emoji cues are enabled by default and make explanations scannable before the
+reader processes every word. They are semantic markers, not random decoration.
+
+```text
+ Emoji  Meaning
+━━━━━━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ 🧭     overview, architecture, direction
+──────  ─────────────────────────────────────────────
+ ✅     success, pass, complete
+──────  ─────────────────────────────────────────────
+ ⚠️     warning, risk, regression
+──────  ─────────────────────────────────────────────
+ 🚨     danger, fail, blocked, unsafe
+──────  ─────────────────────────────────────────────
+ 🔎     evidence, inspection, verification
+──────  ─────────────────────────────────────────────
+ 🛠️     fix, command, implementation action
+──────  ─────────────────────────────────────────────
+ 🚀     next step, release, launch
+```
+
+Use emojis actively at section and item boundaries, but always keep the text
+label. Exact artifacts such as JSON, code, diffs, logs, tests, and patches stay
+unchanged.
+
 ## Quality Gates
 
 ```bash

@@ -23,7 +23,7 @@ Useful flags:
 ───────────────────────────  ───────────────────────────────────────
  --color-output html          HTML span output for HTML-capable hosts
 ───────────────────────────  ───────────────────────────────────────
- --emoji-cues                 enable sparse emoji cues
+ --emoji-cues                 enable active semantic emoji cues
 ───────────────────────────  ───────────────────────────────────────
  --no-emoji-cues              disable emoji cues
 ```

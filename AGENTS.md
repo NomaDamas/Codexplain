@@ -1,5 +1,3 @@
-
-
 <!-- CODEXPLAIN:START -->
 # Codexplain Response UX
 
@@ -15,7 +13,9 @@ Default answer style:
 - Use ANSI terminal color by default when Codexplain config asks for `defaultColorOutput: ansi`; for Codex CLI chat output, prefer real ANSI text color over emoji chips or raw HTML spans.
 - Respect explanationDepth light/standard/deep, architectureDepth overview/system/internals, and abstractionLevel concrete/architecture/strategy.
 - Select renderers dynamically: TLDR prose, progress, tables, flow diagrams, pros/cons, formula boxes, status badges, checklists, risk panels, confidence meters, decision matrices, ETA strips, callouts, Notion-style toggle/quote/divider blocks, and next-action footers.
-- When Codexplain is ON in Codex CLI, highlight important terms with sparse semantic ANSI colors. Emojis may be used only as light explanatory supplements, not as the color system; keep them to short status/callout/next-action cues and avoid more than one cue per semantic section.
+- When Codexplain is ON in Codex CLI, use semantic emoji cues actively as section markers and status markers. Use them for TLDR/summary, success, warning, danger, evidence, fix/action, architecture, progress, settings, docs, and next steps while preserving exact artifacts unchanged.
+- Emoji cues are part of the explanation UX, not decoration. Prefer one meaningful emoji at the start of each semantic section or numbered item: 🧭 overview/architecture, ✅ success, ⚠️ warning/risk, 🚨 danger/failure, 🔎 evidence/inspection, 🛠️ fix/action, 📌 note, 📚 docs/research, 🎛️ settings, 🚀 next step.
+- Pair emojis with text labels so meaning survives no-emoji fonts and screen readers. Do not replace commands, paths, JSON, code, diffs, logs, tests, or patches with emojis.
 - Treat UX blocks like tool choices: combine the smallest useful set from prompt, response, profile, and optional planner hints.
 - Split explanations by semantic units with active line breaks. If the answer says "two paths", "두 가지", "과정", or "단계", render them as compact 1. 2. 3. numbered sections. Do not put blank lines inside one numbered item; if an item has multiple details, use short bullet-style sublines under that item.
 - Use indentation as a meaning boundary: continuation lines align under the content column, not under the number marker; do not add decorative vertical bars to numbered lists.
@@ -42,5 +42,5 @@ Terminal UX:
 - Do not hand-draw long raw box tables when cell text may wrap. Prefer Codexplain width-safe tables, Markdown tables, or short boxes with wrapped rows; every row must be layout-owned, padded, and separated, not manually guessed.
 - For long tool transcripts such as Explored/Ran/Read, summarize the macro phase first instead of listing every micro event.
 - Use blank lines between semantic sections so the user can scan without reading a wall of text.
-- Slash control bridge: when a user asks exactly `/codexplain on`, run `./bin/codexplain slash on` for strict project-local activation. When a user asks exactly `/codexplain off`, run `./bin/codexplain slash off` for strict removal of only Codexplain-managed local state. When a user asks `/codexplain status`, run `./bin/codexplain slash status`. Do not treat these as prose requests.
+- Slash control bridge: when a user asks exactly `/codexplain`, run `./bin/codexplain slash toggle` to switch project-local Codexplain on/off. When a user asks exactly `/codexplain on`, run `./bin/codexplain slash on` for strict project-local activation. When a user asks exactly `/codexplain off`, run `./bin/codexplain slash off` for strict removal of only Codexplain-managed local state. When a user asks `/codexplain status`, run `./bin/codexplain slash status`. Do not treat these as prose requests.
 <!-- CODEXPLAIN:END -->

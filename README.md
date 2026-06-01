@@ -65,10 +65,14 @@ rendering.
 Success, warning, danger, command, path, and artifact references get restrained
 highlighting. Ordinary nouns stay plain.
 
-4️⃣ **Project-local control**  
+4️⃣ **Meaningful emojis**  
+🧭 architecture, ✅ success, ⚠️ risk, 🚨 failure, 🔎 evidence, 🛠️ fix, and 🚀
+next-step markers make explanations easier to scan.
+
+5️⃣ **Project-local control**  
 `on`, `off`, and uninstall remove only Codexplain-managed state.
 
-5️⃣ **Custom explanation styles**  
+6️⃣ **Custom explanation styles**  
 Teams can add styles such as research-card, problem-diagnosis, checklist,
 Notion-style blocks, or their own triggers.
 

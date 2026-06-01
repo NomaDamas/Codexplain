@@ -3521,26 +3521,50 @@ fn workflow_progress_context(prompt: &str, response: &str) -> bool {
         || prompt.contains("사용자 정의 워크플로우")
 }
 
-fn workflow_progress_rows(model: &WorkflowProgressBlock) -> Vec<Vec<String>> {
+fn workflow_progress_rows(profile: &Profile, model: &WorkflowProgressBlock) -> Vec<Vec<String>> {
     let evidence = if model.evidence.is_empty() {
         "증거 없음".to_string()
     } else {
         model.evidence.join("; ")
     };
     vec![
-        vec!["유형".to_string(), model.workflow_type.clone()],
-        vec!["단계".to_string(), model.phase_label.clone()],
         vec![
-            "진척".to_string(),
+            emoji_label(profile, "architecture", "유형"),
+            model.workflow_type.clone(),
+        ],
+        vec![
+            emoji_label(profile, "time", "단계"),
+            model.phase_label.clone(),
+        ],
+        vec![
+            emoji_label(profile, "time", "진척"),
             format!("매크로 {}%", model.progress_percent),
         ],
-        vec!["막대".to_string(), model.progress_bar.clone()],
-        vec!["완료".to_string(), model.completed_step.clone()],
-        vec!["현재".to_string(), model.current_step.clone()],
-        vec!["다음".to_string(), model.next_step.clone()],
-        vec!["행동".to_string(), model.next_action.clone()],
-        vec!["근거".to_string(), evidence],
-        vec!["트리거".to_string(), model.trigger_source.clone()],
+        vec![
+            emoji_label(profile, "time", "막대"),
+            model.progress_bar.clone(),
+        ],
+        vec![
+            emoji_label(profile, "success", "완료"),
+            model.completed_step.clone(),
+        ],
+        vec![
+            emoji_label(profile, "inspect", "현재"),
+            model.current_step.clone(),
+        ],
+        vec![
+            emoji_label(profile, "next", "다음"),
+            model.next_step.clone(),
+        ],
+        vec![
+            emoji_label(profile, "fix", "행동"),
+            model.next_action.clone(),
+        ],
+        vec![emoji_label(profile, "inspect", "근거"), evidence],
+        vec![
+            emoji_label(profile, "note", "트리거"),
+            model.trigger_source.clone(),
+        ],
     ]
 }
 
@@ -3564,7 +3588,11 @@ fn progress_report(
         let status = progress_label(model.progress_percent);
         let headline = format!(
             "{}{}",
-            color(profile.theme, "heading", "진행상황: "),
+            color(
+                profile.theme,
+                "heading",
+                &format!("{}: ", emoji_label(profile, "time", "진행상황")),
+            ),
             color(profile.theme, role_for(status, "accent"), status)
         );
         return format!(
@@ -3572,7 +3600,7 @@ fn progress_report(
             model.progress_bar,
             table(
                 &["항목", "값"],
-                &workflow_progress_rows(&model),
+                &workflow_progress_rows(profile, &model),
                 profile.frame,
                 profile.theme,
                 true,
@@ -3586,7 +3614,11 @@ fn progress_report(
     let bar_width = width.saturating_sub(18).min(36).max(12);
     let headline = format!(
         "{}{}",
-        color(profile.theme, "heading", "진행상황: "),
+        color(
+            profile.theme,
+            "heading",
+            &format!("{}: ", emoji_label(profile, "time", "진행상황")),
+        ),
         color(profile.theme, role_for(status, "accent"), status)
     );
     let bar = render_progress_bar(percent, bar_width, profile.frame, profile.theme);
@@ -3601,10 +3633,13 @@ fn progress_report(
         )
     } else {
         let rows = vec![
-            vec!["현재".to_string(), compact(summary, 1)],
-            vec!["진척".to_string(), format!("{status} · {percent}%")],
+            vec![emoji_label(profile, "inspect", "현재"), compact(summary, 1)],
             vec![
-                "다음 행동".to_string(),
+                emoji_label(profile, "time", "진척"),
+                format!("{status} · {percent}%"),
+            ],
+            vec![
+                emoji_label(profile, "next", "다음 행동"),
                 "막힌 지점, 실패 로그, 남은 검증을 한 줄로 확인합니다.".to_string(),
             ],
         ];
@@ -3651,12 +3686,12 @@ fn checklist(profile: &Profile, summary: &str, width: usize) -> String {
     };
     let rows = vec![
         vec![
-            "완료".to_string(),
+            emoji_label(profile, "success", "완료"),
             "검증 가능한 사실과 출력 근거를 먼저 확인".to_string(),
         ],
-        vec!["진행".to_string(), current],
+        vec![emoji_label(profile, "inspect", "진행"), current],
         vec![
-            "남음".to_string(),
+            emoji_label(profile, "next", "남음"),
             "사용자 확인 또는 다음 명령 실행".to_string(),
         ],
     ];
@@ -3679,9 +3714,9 @@ fn risk_panel(profile: &Profile, response: &str, width: usize) -> String {
         "숨은 전제, 남은 검증, 저장공간 변화를 확인해야 합니다."
     };
     let rows = vec![
-        vec!["위험".to_string(), risk.to_string()],
+        vec![emoji_label(profile, "warning", "위험"), risk.to_string()],
         vec![
-            "대응".to_string(),
+            emoji_label(profile, "fix", "대응"),
             "증거를 확인하고 필요한 경우 범위를 좁혀 재실행합니다.".to_string(),
         ],
     ];
@@ -3851,11 +3886,26 @@ fn ux_emoji_for_role(profile: &Profile, role: &str) -> &'static str {
     }
     match role {
         "success" => "✅",
-        "danger" | "warning" => "⚠",
-        "next" => "➡",
+        "danger" => "🚨",
+        "warning" => "⚠️",
+        "next" => "🚀",
         "time" => "⏱",
         "inspect" => "🔎",
+        "fix" | "action" | "command" => "🛠️",
+        "architecture" | "overview" | "heading" => "🧭",
+        "docs" | "research" => "📚",
+        "settings" => "🎛️",
+        "note" => "📌",
         _ => "•",
+    }
+}
+
+fn emoji_label(profile: &Profile, role: &str, label: &str) -> String {
+    let emoji = ux_emoji_for_role(profile, role);
+    if emoji == "•" {
+        label.to_string()
+    } else {
+        format!("{emoji} {label}")
     }
 }
 
@@ -4274,29 +4324,14 @@ fn workflow_progress_block(
     );
     let headline = format!(
         "{} {}",
-        color(profile.theme, "heading", "Workflow"),
+        color(
+            profile.theme,
+            "heading",
+            &emoji_label(profile, "time", "Workflow")
+        ),
         model.progress_bar
     );
-    let evidence = if model.evidence.is_empty() {
-        "증거 없음".to_string()
-    } else {
-        model.evidence.join("; ")
-    };
-    let rows = vec![
-        vec!["유형".to_string(), model.workflow_type],
-        vec!["단계".to_string(), model.phase_label],
-        vec![
-            "진척".to_string(),
-            format!("매크로 {}%", model.progress_percent),
-        ],
-        vec!["막대".to_string(), model.progress_bar],
-        vec!["완료".to_string(), model.completed_step],
-        vec!["현재".to_string(), model.current_step],
-        vec!["다음".to_string(), model.next_step],
-        vec!["행동".to_string(), model.next_action],
-        vec!["근거".to_string(), evidence],
-        vec!["트리거".to_string(), model.trigger_source],
-    ];
+    let rows = workflow_progress_rows(profile, &model);
     format!(
         "{headline}\n{}",
         table(
@@ -6853,7 +6888,9 @@ Default answer style:
 - Use ANSI terminal color by default when Codexplain config asks for `defaultColorOutput: ansi`; for Codex CLI chat output, prefer real ANSI text color over emoji chips or raw HTML spans.
 - Respect explanationDepth light/standard/deep, architectureDepth overview/system/internals, and abstractionLevel concrete/architecture/strategy.
 - Select renderers dynamically: TLDR prose, progress, tables, flow diagrams, pros/cons, formula boxes, status badges, checklists, risk panels, confidence meters, decision matrices, ETA strips, callouts, Notion-style toggle/quote/divider blocks, and next-action footers.
-- When Codexplain is ON in Codex CLI, highlight important terms with sparse semantic ANSI colors. Emojis may be used only as light explanatory supplements, not as the color system; keep them to short status/callout/next-action cues and avoid more than one cue per semantic section.
+- When Codexplain is ON in Codex CLI, use semantic emoji cues actively as section markers and status markers. Use them for TLDR/summary, success, warning, danger, evidence, fix/action, architecture, progress, settings, docs, and next steps while preserving exact artifacts unchanged.
+- Emoji cues are part of the explanation UX, not decoration. Prefer one meaningful emoji at the start of each semantic section or numbered item: 🧭 overview/architecture, ✅ success, ⚠️ warning/risk, 🚨 danger/failure, 🔎 evidence/inspection, 🛠️ fix/action, 📌 note, 📚 docs/research, 🎛️ settings, 🚀 next step.
+- Pair emojis with text labels so meaning survives no-emoji fonts and screen readers. Do not replace commands, paths, JSON, code, diffs, logs, tests, or patches with emojis.
 - Treat UX blocks like tool choices: combine the smallest useful set from prompt, response, profile, and optional planner hints.
 - Split explanations by semantic units with active line breaks. If the answer says "two paths", "두 가지", "과정", or "단계", render them as compact 1. 2. 3. numbered sections. Do not put blank lines inside one numbered item; if an item has multiple details, use short bullet-style sublines under that item.
 - Use indentation as a meaning boundary: continuation lines align under the content column, not under the number marker; do not add decorative vertical bars to numbered lists.
@@ -8243,7 +8280,8 @@ fn settings_ui() -> io::Result<()> {
                     } else {
                         "off".to_string()
                     },
-                    "상태, 주의, 확인, 다음 행동에만 보조 이모지를 제한적으로 씁니다.".to_string(),
+                    "섹션, 상태, 근거, 해결, 다음 행동에 의미 이모지를 적극적으로 씁니다."
+                        .to_string(),
                 ],
                 vec![
                     "스타일 라이브러리".to_string(),
@@ -8616,7 +8654,7 @@ Storage-check output contract:
 Themes: none, ocean, forest, warm, sunset, grape, slate, rose, mono
 Color outputs: terminal, ansi, markdown, html, plain. Use --chat-color as an alias for --color-output ansi in Codex CLI.
 Scopes: --project/--local writes only this repository's managed Codexplain files and a managed zsh auto-activation block for this exact project root; --global writes only managed guidance under CODEX_HOME; --session prints the current-shell activation command because a child process cannot mutate its parent shell.
-Emoji cues: enabled by default as sparse status/warning/inspect/next-action supplements. Use --no-emoji-cues or settings-ui to turn them off.
+Emoji cues: enabled by default as active semantic section/status markers such as 🧭 overview, ✅ success, ⚠️ warning, 🚨 danger, 🔎 evidence, 🛠️ fix, and 🚀 next step. Use --no-emoji-cues or settings-ui to turn them off.
 Color toggle: `codexplain color on` forces ANSI text color for Codexplain-shaped exec/review output and best-effort Codex TUI color env; `codexplain color off` restores plain output. `codexplain color rules` shows the semantic-sparse role map so colors do not become decorative noise.
 TUI assistant color: `codexplain tui-color on` enables project-local full assistant-message color when a patched Codex binary exists under .codexplain/state/codex-upstream/codex-rs/target/release/codex or target/debug/codex; `off` disables only that hook.
 TUI adapter: `codexplain tui-adapter status` reports project-local shim path, mode, active binary/fallback, patched binary status, rollback, and cleanup instructions. `codexplain tui-adapter build` applies the tracked Codex TUI assistant-color and native `/codexplain` slash patches, then builds only the project-local patched Codex binary.
@@ -9198,7 +9236,7 @@ mod tests {
     }
 
     #[test]
-    fn emoji_cues_are_sparse_supplements_not_the_color_system() {
+    fn emoji_cues_are_active_semantic_section_markers() {
         let profile = Profile {
             theme: Theme::None,
             ux_density: 80,
@@ -9212,9 +9250,12 @@ mod tests {
         let combined = format!("{badge}\n{callout}\n{next}\n{confidence}");
 
         assert!(badge.starts_with("✅ [PASS]"), "{badge}");
-        assert!(callout.contains("⚠ 중요"), "{callout}");
-        assert!(next.contains("➡ 다음 행동:"), "{next}");
+        assert!(callout.contains("⚠️ 중요"), "{callout}");
+        assert!(next.contains("🚀 다음 행동:"), "{next}");
         assert!(confidence.contains("🔎 확신도"), "{confidence}");
+        assert_eq!(ux_emoji_for_role(&profile, "danger"), "🚨");
+        assert_eq!(ux_emoji_for_role(&profile, "fix"), "🛠️");
+        assert_eq!(ux_emoji_for_role(&profile, "architecture"), "🧭");
         assert_visible_lines_fit(&combined, 64);
     }
 
@@ -9231,7 +9272,7 @@ mod tests {
 
         assert!(next.contains("• 다음 행동:"), "{next}");
         assert!(confidence.contains("• 확신도"), "{confidence}");
-        assert!(!next.contains("➡"), "{next}");
+        assert!(!next.contains("🚀"), "{next}");
         assert!(!confidence.contains("🔎"), "{confidence}");
     }
 
@@ -11487,13 +11528,14 @@ after
             80,
         );
 
-        assert!(output.contains("진행상황: 진행 중"), "{output}");
+        assert!(output.contains("⏱ 진행상황: 진행 중"), "{output}");
         assert!(
             output.contains("[██████████████████████░░░░░░░░░░░░░░]  60%"),
             "{output}"
         );
-        assert!(output.contains("│ 진척      │ 진행 중 · 60%"), "{output}");
-        assert!(output.contains("│ 다음 행동 │"), "{output}");
+        assert!(output.contains("│ ⏱ 진척"), "{output}");
+        assert!(output.contains("진행 중 · 60%"), "{output}");
+        assert!(output.contains("│ 🚀 다음 행동 │"), "{output}");
     }
 
     #[test]
@@ -11544,19 +11586,19 @@ after
             88,
         );
 
-        assert!(output.contains("Workflow ["), "{output}");
+        assert!(output.contains("⏱ Workflow ["), "{output}");
         assert!(output.contains(" 75%"), "{output}");
-        assert!(output.contains("│ 유형"), "{output}");
-        assert!(output.contains("│ 단계"), "{output}");
-        assert!(output.contains("│ 완료"), "{output}");
-        assert!(output.contains("│ 현재"), "{output}");
-        assert!(output.contains("│ 다음"), "{output}");
-        assert!(output.contains("│ 근거"), "{output}");
+        assert!(output.contains("│ 🧭 유형"), "{output}");
+        assert!(output.contains("│ ⏱ 단계"), "{output}");
+        assert!(output.contains("│ ✅ 완료"), "{output}");
+        assert!(output.contains("│ 🔎 현재"), "{output}");
+        assert!(output.contains("│ 🚀 다음"), "{output}");
+        assert!(output.contains("│ 🔎 근거"), "{output}");
         assert!(output.contains("harness"), "{output}");
         assert!(output.contains("validation"), "{output}");
         assert!(output.contains("validation evidence"), "{output}");
         assert!(
-            output.contains("│ 트리거 │ explicit workflow prompt"),
+            output.contains("│ 📌 트리거 │ explicit workflow prompt"),
             "{output}"
         );
         assert_visible_lines_fit(&output, 88);
@@ -11781,13 +11823,13 @@ evidence: shared fields rendered|width-safe table output";
 
         assert!(output.contains("[RUNNING] 마무리 중"), "{output}");
         assert!(output.contains("체크포인트"), "{output}");
-        assert!(output.contains("│ 위험"), "{output}");
+        assert!(output.contains("│ ⚠️ 위험"), "{output}");
         assert!(output.contains("확신도"), "{output}");
         assert!(output.contains("│ 변경"), "{output}");
         assert!(output.contains("│ 선택"), "{output}");
-        assert!(output.contains("다음 행동:"), "{output}");
-        assert!(output.contains("ETA:"), "{output}");
-        assert!(output.contains("│ 주의"), "{output}");
+        assert!(output.contains("🚀 다음 행동:"), "{output}");
+        assert!(output.contains("⏱ ETA:"), "{output}");
+        assert!(output.contains("│ ⚠️ 중요"), "{output}");
     }
 
     #[test]
@@ -11804,9 +11846,9 @@ evidence: shared fields rendered|width-safe table output";
         );
 
         assert!(output.contains("[BLOCKED] 확인 필요"), "{output}");
-        assert!(output.contains("│ 위험"), "{output}");
-        assert!(output.contains("다음 행동:"), "{output}");
-        assert!(output.contains("│ 주의"), "{output}");
+        assert!(output.contains("│ ⚠️ 위험"), "{output}");
+        assert!(output.contains("🚀 다음 행동:"), "{output}");
+        assert!(output.contains("│ ⚠️ 중요"), "{output}");
         assert!(!output.contains("확신도"), "{output}");
     }
 
