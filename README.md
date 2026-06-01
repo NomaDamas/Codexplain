@@ -19,23 +19,35 @@ JSON, code, diffs, logs, tests, and patches stay exact.
 
 ## 🧭 Quick Map
 
-| Go here | What you get |
-|---|---|
-| [🚀 30-second pitch](#-30-second-pitch) | Why Codexplain exists |
-| [👀 Before / After](#-before--after) | The problems it fixes visually |
-| [⚡ Install](#-install) | Local setup and uninstall |
-| [📚 Docs](#-docs) | Detailed guides split by category |
-| [✅ Verification](#-verification) | Current quality gate commands |
+```text
+ Go here                  What you get
+━━━━━━━━━━━━━━━━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ 🚀 30-second pitch       Why Codexplain exists
+───────────────────────  ─────────────────────────────────────
+ 👀 Before / After        The problems it fixes visually
+───────────────────────  ─────────────────────────────────────
+ ⚡ Install               Local setup and uninstall
+───────────────────────  ─────────────────────────────────────
+ 📚 Docs                  Detailed guides split by category
+───────────────────────  ─────────────────────────────────────
+ ✅ Verification          Current quality gate commands
+```
 
 ## 🚀 30-Second Pitch
 
-| Pain | Codexplain fix |
-|---|---|
-| Dense prose | TLDR, sections, numbered flow |
-| Broken terminal tables | Width-safe renderer + row dividers |
-| File-by-file architecture dumps | Capability maps and flow diagrams |
-| Random rainbow highlighting | Sparse semantic attention cues |
-| Risky install/uninstall behavior | Project-local reversible adapter |
+```text
+ Pain                            Codexplain fix
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ Dense prose                     TLDR, sections, numbered flow
+──────────────────────────────  ───────────────────────────────────
+ Broken terminal tables          Width-safe renderer + row dividers
+──────────────────────────────  ───────────────────────────────────
+ File-by-file architecture dumps Capability maps and flow diagrams
+──────────────────────────────  ───────────────────────────────────
+ Random rainbow highlighting     Sparse semantic attention cues
+──────────────────────────────  ───────────────────────────────────
+ Risky install/uninstall         Project-local reversible adapter
+```
 
 ## ✨ What You Get
 
@@ -131,12 +143,17 @@ Next: run compat-check before release.
 
 ![Codexplain semantic highlight before and after](docs/codexplain-highlight-before-after.svg)
 
-| Meaning | Highlight role | Example terms |
-|---|---|---|
-| ✅ Success | green + bold | PASS, DONE, APPROVED |
-| ⚠️ Warning | amber + bold | risk, drift, regression |
-| 🚨 Danger | red + bold | FAIL, blocked, unsafe, OOM |
-| 🔎 Reference | cyan/blue | commands, paths, JSON/code/diff |
+```text
+ Meaning       Highlight role   Example terms
+━━━━━━━━━━━━  ━━━━━━━━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ ✅ Success    green + bold     PASS, DONE, APPROVED
+────────────  ───────────────  ───────────────────────────────
+ ⚠️ Warning    amber + bold     risk, drift, regression
+────────────  ───────────────  ───────────────────────────────
+ 🚨 Danger     red + bold       FAIL, blocked, unsafe, OOM
+────────────  ───────────────  ───────────────────────────────
+ 🔎 Reference  cyan/blue        commands, paths, JSON/code/diff
+```
 
 GitHub can sanitize inline CSS, so the SVG preview makes the
 highlight/no-highlight difference visible while the examples remain copyable.
@@ -173,28 +190,34 @@ codexplain install-codex --global --force
 
 ## 🎛️ Useful Commands
 
-| Command | Purpose |
-|---|---|
-| `codexplain settings-ui` | Open the terminal settings UI |
-| `codexplain color rules` | Show semantic color rules |
-| `codexplain style list` | List custom explanation styles |
-| `codexplain style add ...` | Add a team-specific explanation style |
-| `codexplain quality-check --width 88` | Validate renderer contracts |
-| `codexplain compat-check` | Validate project-local compatibility |
-| `codexplain tui-adapter status` | Inspect Codex TUI adapter state |
+```text
+ Command                              Purpose
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ codexplain settings-ui               Open the terminal settings UI
+───────────────────────────────────  ───────────────────────────────
+ codexplain color rules               Show semantic color rules
+───────────────────────────────────  ───────────────────────────────
+ codexplain style list                List custom explanation styles
+───────────────────────────────────  ───────────────────────────────
+ codexplain style add ...             Add a team-specific style
+───────────────────────────────────  ───────────────────────────────
+ codexplain quality-check --width 88  Validate renderer contracts
+───────────────────────────────────  ───────────────────────────────
+ codexplain compat-check              Validate local compatibility
+───────────────────────────────────  ───────────────────────────────
+ codexplain tui-adapter status        Inspect Codex TUI adapter state
+```
 
 ## 📚 Docs
 
-| Category | Link |
-|---|---|
-| 🏗️ Architecture | [docs/architecture.md](docs/architecture.md) |
-| ✨ Feature catalog | [docs/features.md](docs/features.md) |
-| ⚙️ Setup and lifecycle | [docs/setup-and-lifecycle.md](docs/setup-and-lifecycle.md) |
-| 🎛️ CLI reference | [docs/cli-reference.md](docs/cli-reference.md) |
-| 🎨 Explanation UX methodology | [docs/explanation-ux-methodology.md](docs/explanation-ux-methodology.md) |
-| 📚 Research basis | [docs/explanation-research.md](docs/explanation-research.md) |
-| 🧩 Codex TUI adapter roadmap | [docs/codex-tui-adapter-roadmap.md](docs/codex-tui-adapter-roadmap.md) |
-| 🔌 Upstream style hook proposal | [docs/upstream-codex-tui-style-hook.md](docs/upstream-codex-tui-style-hook.md) |
+- 🏗️ **Architecture**: [docs/architecture.md](docs/architecture.md)
+- ✨ **Feature catalog**: [docs/features.md](docs/features.md)
+- ⚙️ **Setup and lifecycle**: [docs/setup-and-lifecycle.md](docs/setup-and-lifecycle.md)
+- 🎛️ **CLI reference**: [docs/cli-reference.md](docs/cli-reference.md)
+- 🎨 **Explanation UX methodology**: [docs/explanation-ux-methodology.md](docs/explanation-ux-methodology.md)
+- 📚 **Research basis**: [docs/explanation-research.md](docs/explanation-research.md)
+- 🧩 **Codex TUI adapter roadmap**: [docs/codex-tui-adapter-roadmap.md](docs/codex-tui-adapter-roadmap.md)
+- 🔌 **Upstream style hook proposal**: [docs/upstream-codex-tui-style-hook.md](docs/upstream-codex-tui-style-hook.md)
 
 ## ✅ Verification
 

@@ -98,6 +98,30 @@ whole answer rainbow-colored. Ordinary nouns such as "renderer", "architecture",
 "Codexplain", and "TUI" are not colored inside normal prose unless they appear
 as structural labels.
 
+### Highlight Criteria
+
+The current highlight policy is a conservative baseline, not a claim of final
+optimality. It highlights meaning-bearing tokens only when they affect user
+attention or copy/paste safety.
+
+```text
+ Signal group              Why it gets color
+━━━━━━━━━━━━━━━━━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ Outcome                   PASS, FAIL, DONE, blocked, approved
+────────────────────────  ─────────────────────────────────────────────
+ Risk                      warning, drift, regression, unsafe, OOM
+────────────────────────  ─────────────────────────────────────────────
+ Exact artifact            JSON, code, diff, patch, log, test output
+────────────────────────  ─────────────────────────────────────────────
+ Action                    commands, flags, install/off/check commands
+────────────────────────  ─────────────────────────────────────────────
+ Location                  paths, config files, managed state
+```
+
+The next improvement should be a context score: color only the highest-signal
+terms per section, suppress repeated terms, and prefer outcome/risk/action over
+generic technical nouns.
+
 ## Quality Gates
 
 ```bash
