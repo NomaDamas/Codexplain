@@ -6600,6 +6600,7 @@ Terminal UX:
 - Do not hand-draw long raw box tables when cell text may wrap. Prefer Codexplain width-safe tables, Markdown tables, or short boxes with wrapped rows; every row must be layout-owned, padded, and separated, not manually guessed.
 - For long tool transcripts such as Explored/Ran/Read, summarize the macro phase first instead of listing every micro event.
 - Use blank lines between semantic sections so the user can scan without reading a wall of text.
+- Slash control bridge: when a user asks exactly `/codexplain on`, run `./bin/codexplain slash on` for strict project-local activation. When a user asks exactly `/codexplain off`, run `./bin/codexplain slash off` for strict removal of only Codexplain-managed local state. When a user asks `/codexplain status`, run `./bin/codexplain slash status`. Do not treat these as prose requests.
 <!-- CODEXPLAIN:END -->"#;
 
 const LOCAL_README: &str = r#"# Codexplain Local Adapter
@@ -6820,6 +6821,7 @@ Default answer style:
 - Every visible table row must be separated; never stack body rows directly without a row divider.
 - Process answers should use short numbered sections, with one idea per item and bullet-style sublines for multiple details.
 - Keep technical facts, commands, file paths, risks, and test evidence intact.
+- Slash control bridge: if a repository has Codexplain installed and a user asks exactly `/codexplain on`, `/codexplain off`, or `/codexplain status`, treat it as a control command and run the matching `codexplain slash <action>` command instead of answering with prose.
 <!-- CODEXPLAIN:END -->"#;
 
 fn codex_home_dir() -> PathBuf {
@@ -6964,6 +6966,11 @@ fn uninstall_local_codex_project(remove_profile: bool) -> io::Result<()> {
     uninstall_local_codex_project_at(&root, remove_profile)
 }
 
+fn uninstall_local_codex_project_strict() -> io::Result<()> {
+    let root = project_path(".");
+    uninstall_local_codex_project_strict_at(&root)
+}
+
 fn uninstall_local_codex_project_at(root: &Path, remove_profile: bool) -> io::Result<()> {
     let agents_path = root.join("AGENTS.md");
     remove_guidance_file_block(&agents_path)?;
@@ -6980,6 +6987,15 @@ fn uninstall_local_codex_project_at(root: &Path, remove_profile: bool) -> io::Re
     }
     remove_dir_if_empty(&codexplain_dir)?;
     println!("Uninstalled project-local Codexplain UX");
+    Ok(())
+}
+
+fn uninstall_local_codex_project_strict_at(root: &Path) -> io::Result<()> {
+    let agents_path = root.join("AGENTS.md");
+    remove_guidance_file_block(&agents_path)?;
+    let codexplain_dir = root.join(".codexplain");
+    remove_codexplain_dir_strict(&codexplain_dir)?;
+    println!("Strictly removed project-local Codexplain UX");
     Ok(())
 }
 
@@ -7149,6 +7165,70 @@ fn remove_dir_if_empty(path: &Path) -> io::Result<()> {
         Err(error) if error.kind() == io::ErrorKind::DirectoryNotEmpty => Ok(()),
         Err(error) => Err(error),
     }
+}
+
+fn remove_codexplain_dir_strict(path: &Path) -> io::Result<()> {
+    let Ok(metadata) = fs::symlink_metadata(path) else {
+        return Ok(());
+    };
+    if metadata.file_type().is_symlink() || metadata.is_file() {
+        return remove_file_if_exists(path);
+    }
+    fs::remove_dir_all(path)
+}
+
+fn slash_control(args: &[String]) -> io::Result<()> {
+    match args.get(1).map(String::as_str).unwrap_or("help") {
+        "on" | "enable" => {
+            install_local_codex_project()?;
+            println!("slash=/codexplain on");
+            println!("scope=project-local");
+            println!("strict=on");
+            println!("result=enabled");
+        }
+        "off" | "disable" => {
+            uninstall_local_codex_project_strict()?;
+            println!("slash=/codexplain off");
+            println!("scope=project-local");
+            println!("strict=on");
+            println!("result=disabled");
+        }
+        "status" => {
+            println!("contract=codexplain.slash.v1");
+            println!("slash=/codexplain status");
+            println!(
+                "project_local_adapter={}",
+                pass_fail(project_local_adapter_present_at(&project_path(".")))
+            );
+            println!(
+                "config={}",
+                pass_fail(project_path(".codexplain/config.json").exists())
+            );
+            println!(
+                "managed_agents_block={}",
+                pass_fail(
+                    fs::read_to_string(project_path("AGENTS.md"))
+                        .map(|value| value.contains(CODEX_GUIDANCE_START))
+                        .unwrap_or(false)
+                )
+            );
+        }
+        "help" | "-h" | "--help" => {
+            println!("contract=codexplain.slash.v1");
+            println!("/codexplain on     -> strict project-local activation");
+            println!(
+                "/codexplain off    -> strict project-local removal of Codexplain-managed state"
+            );
+            println!("/codexplain status -> project-local activation status");
+        }
+        other => {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("unknown /codexplain action: {other}"),
+            ));
+        }
+    }
+    Ok(())
 }
 fn replace_guidance_block(current: &str, block: &str) -> String {
     let Some(start) = current.find(CODEX_GUIDANCE_START) else {
@@ -8038,6 +8118,7 @@ fn usage() -> &'static str {
   codexplain codex --prompt <text> [--local-shape] [codex exec args...]
   codexplain on|install-codex [--project|--local] [--global] [--session] [--force]
   codexplain off|uninstall-codex [--project|--local] [--global] [--session] [--remove-profile]
+  codexplain slash on|off|status|help
   codexplain color on|off|status|rules
   codexplain tui-color on|full|off|status
   codexplain tui-adapter on|full|off|status|apply|build
@@ -8076,6 +8157,7 @@ Scopes: --project/--local writes only this repository's managed Codexplain files
 Color toggle: `codexplain color on` forces ANSI text color for Codexplain-shaped exec/review output and best-effort Codex TUI color env; `codexplain color off` restores plain output. `codexplain color rules` shows the semantic-sparse role map so colors do not become decorative noise.
 TUI assistant color: `codexplain tui-color on` enables project-local full assistant-message color when a patched Codex binary exists under .codexplain/state/codex-upstream/codex-rs/target/release/codex or target/debug/codex; `off` disables only that hook.
 TUI adapter: `codexplain tui-adapter status` reports project-local shim path, mode, active binary/fallback, patched binary status, rollback, and cleanup instructions. `codexplain tui-adapter build` applies the tracked Codex TUI color patch and builds only the project-local patched Codex binary.
+Slash control: `/codexplain on|off|status` is bridged by project guidance to `codexplain slash on|off|status`; `off` strictly removes the managed AGENTS block and `.codexplain/` while leaving unrelated Codex settings untouched.
 Status bar control: `codexplain statusbar` is the Rust control surface used by local app launchers. It toggles only project-local Codexplain files, updates profile/config controls, and leaves unrelated global Codex settings untouched.
 Settings UI: `codexplain settings-ui` opens a dependency-free Rust terminal UI for theme, frame, depth, abstraction, UX density, and color mode; `codexplain install-app` writes lightweight macOS/Linux/Windows launchers under .codexplain/app.
 Compatibility gate: `codexplain compat-check` validates project-local OMX/harness safety, managed on/off scopes, strict artifact preservation, ignored harness state, and width-safe renderer contracts.
@@ -8108,6 +8190,12 @@ fn main() {
         "on" | "install-codex" | "init" => {
             if let Err(error) = install_codex_project(&args) {
                 eprintln!("failed to install Codexplain files: {error}");
+                std::process::exit(1);
+            }
+        }
+        "slash" => {
+            if let Err(error) = slash_control(&args) {
+                eprintln!("failed to run Codexplain slash control: {error}");
                 std::process::exit(1);
             }
         }
@@ -9076,6 +9164,43 @@ after
         assert!(usage().contains("Settings UI"));
         assert!(usage().contains("Status bar control"));
         assert!(LOCAL_README.contains("codexplain install-app"));
+    }
+
+    #[test]
+    fn slash_control_guidance_and_usage_are_discoverable() {
+        assert!(usage().contains("codexplain slash on|off|status|help"));
+        assert!(CODEX_GUIDANCE.contains("/codexplain on"));
+        assert!(CODEX_GUIDANCE.contains("./bin/codexplain slash on"));
+        assert!(GLOBAL_CODEX_GUIDANCE.contains("codexplain slash <action>"));
+    }
+
+    #[test]
+    fn strict_slash_off_removes_only_codexplain_managed_local_state() {
+        let root = env::temp_dir().join(format!(
+            "codexplain-slash-strict-off-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join(".codexplain/styles")).unwrap();
+        fs::write(root.join("AGENTS.md"), "user notes\n").unwrap();
+        install_local_codex_project_at(&root).unwrap();
+        fs::write(root.join(".codexplain/ux-profile.json"), "{}").unwrap();
+        fs::write(
+            root.join(".codexplain/styles/custom.style"),
+            "name: custom\n",
+        )
+        .unwrap();
+        fs::write(root.join("keep.txt"), "keep").unwrap();
+
+        uninstall_local_codex_project_strict_at(&root).unwrap();
+
+        assert!(!root.join(".codexplain").exists());
+        assert_eq!(
+            fs::read_to_string(root.join("AGENTS.md")).unwrap(),
+            "user notes\n"
+        );
+        assert_eq!(fs::read_to_string(root.join("keep.txt")).unwrap(), "keep");
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
