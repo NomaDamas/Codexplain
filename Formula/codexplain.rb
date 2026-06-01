@@ -2,7 +2,7 @@ class Codexplain < Formula
   desc "Readable terminal explanation UX layer for Codex responses"
   homepage "https://github.com/NomaDamas/Codexplain"
   url "https://github.com/NomaDamas/Codexplain.git",
-      tag: "v0.18.14"
+      tag: "v0.18.15"
   license :cannot_represent
   head "https://github.com/NomaDamas/Codexplain.git", branch: "main"
 

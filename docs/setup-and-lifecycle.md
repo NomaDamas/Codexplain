@@ -112,7 +112,9 @@ patched TUI adapter because upstream Codex owns the slash-command registry.
 ## 6️⃣ Auto Update
 
 When the project-local shim is active, `codex` startup can check GitHub releases
-best-effort. Network failures are skipped so Codex still opens.
+best-effort. The development `bin/codexplain` wrapper uses the same best-effort
+check when the checkout is clean. Network failures are skipped so Codex and
+Codexplain still open.
 
 Disable for one command:
 
