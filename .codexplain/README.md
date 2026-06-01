@@ -83,7 +83,7 @@ applies `patches/codex-tui-assistant-color.patch` and
 `patches/codex-tui-codexplain-slash.patch` to the ignored project-local upstream
 clone and builds only the project-local patched Codex binary.
 
-The shim routes to `.codexplain/state/codex-upstream/codex-rs/target/release/codex` or `.codexplain/state/codex-upstream/codex-rs/target/debug/codex` when that binary exists and `tuiAssistantColor` is enabled.
+The shim routes to `.codexplain/patched-codex/bin/codex` first, then falls back to `.codexplain/state/codex-upstream/codex-rs/target/release/codex` or `.codexplain/state/codex-upstream/codex-rs/target/debug/codex` when that binary exists and `tuiAssistantColor` is enabled.
 
 Use this adapter when a host can pipe a completed answer into a post-response command:
 

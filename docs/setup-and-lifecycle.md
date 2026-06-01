@@ -92,8 +92,10 @@ When Codexplain guidance reaches the agent, these commands map to local control:
 /codexplain settings
 ```
 
-Bare `/codexplain` is a toggle. If Codexplain is enabled, it disables the
-project-local integration. If Codexplain is disabled, it enables it.
+Bare `/codexplain` is a toggle. If Codexplain UX is enabled, it disables the
+managed guidance/color UX but keeps the native slash bridge installed. If
+Codexplain UX is disabled, it enables the project-local guidance and renderer
+settings again. Use `codexplain off --local` only when you want strict uninstall.
 
 If the Codex host intercepts unknown slash commands before the prompt reaches
 the agent, use the direct CLI fallback:
