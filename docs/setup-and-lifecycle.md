@@ -152,9 +152,12 @@ Turn only the harness adapter off or on without uninstalling Codexplain:
 ```bash
 codexplain harness-adapter off
 codexplain harness-adapter on
+codexplain harness-adapter off --target lazycodex
+codexplain harness-adapter on --target gajae-code
 ```
 
-When off, the target shims pass stdin through unchanged.
+When a target is off, only that target shim passes stdin through unchanged. Other
+enabled harness shims continue to apply Codexplain explanation shaping.
 
 ## 7️⃣ Auto Update
 

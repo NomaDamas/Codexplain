@@ -5890,40 +5890,40 @@ const HARNESS_TARGETS: [HarnessTarget; 3] = [
 
 fn harness_adapter_command(args: &[String]) -> io::Result<()> {
     let action = args.get(1).map(String::as_str).unwrap_or("status");
+    let selected_targets = selected_harness_targets(args);
     match action {
         "init" | "install" | "on" | "enable" => {
-            write_harness_adapter_files_at(&project_path("."), true)?;
+            write_harness_adapter_files_for_targets_at(
+                &project_path("."),
+                &selected_targets,
+                true,
+            )?;
             println!(
                 "{}",
-                harness_adapter_status_report_at(
-                    &project_path("."),
-                    selected_harness_targets(args)
-                )
+                harness_adapter_status_report_at(&project_path("."), selected_targets)
             );
         }
         "off" | "disable" => {
-            write_harness_adapter_files_at(&project_path("."), false)?;
+            write_harness_adapter_files_for_targets_at(
+                &project_path("."),
+                &selected_targets,
+                false,
+            )?;
             println!(
                 "{}",
-                harness_adapter_status_report_at(
-                    &project_path("."),
-                    selected_harness_targets(args)
-                )
+                harness_adapter_status_report_at(&project_path("."), selected_targets)
             );
         }
         "status" | "--show" | "show" => {
             println!(
                 "{}",
-                harness_adapter_status_report_at(
-                    &project_path("."),
-                    selected_harness_targets(args)
-                )
+                harness_adapter_status_report_at(&project_path("."), selected_targets)
             );
         }
         "envelope" | "contract" | "probe" => {
             println!(
                 "{}",
-                harness_adapter_envelope_at(&project_path("."), selected_harness_targets(args))
+                harness_adapter_envelope_at(&project_path("."), selected_targets)
             );
         }
         "help" | "-h" | "--help" => {
@@ -5980,17 +5980,61 @@ fn harness_target_dir(root: &Path, target: HarnessTarget) -> PathBuf {
 }
 
 fn harness_adapter_enabled_at(root: &Path) -> bool {
+    HARNESS_TARGETS
+        .iter()
+        .any(|target| harness_target_enabled_at(root, *target))
+}
+
+fn harness_target_enabled_at(root: &Path, target: HarnessTarget) -> bool {
     fs::read_to_string(harness_adapter_config_path(root))
-        .map(|raw| !raw.contains(r#""enabled": false"#))
+        .map(|raw| {
+            extract_json_bool(&raw, target.id)
+                .or_else(|| extract_json_bool(&raw, "enabled"))
+                .unwrap_or(false)
+        })
         .unwrap_or(false)
 }
 
 fn write_harness_adapter_files_at(root: &Path, enabled: bool) -> io::Result<()> {
+    write_harness_adapter_files_for_targets_at(root, &HARNESS_TARGETS, enabled)
+}
+
+fn write_harness_adapter_files_for_targets_at(
+    root: &Path,
+    selected_targets: &[HarnessTarget],
+    enabled: bool,
+) -> io::Result<()> {
     let codexplain_dir = root.join(".codexplain");
     fs::create_dir_all(&codexplain_dir)?;
+    let current = fs::read_to_string(harness_adapter_config_path(root)).ok();
+    let selected_ids = selected_targets
+        .iter()
+        .map(|target| target.id)
+        .collect::<Vec<_>>();
+    let all_selected = selected_targets.len() == HARNESS_TARGETS.len();
+    let statuses = HARNESS_TARGETS
+        .iter()
+        .map(|target| {
+            let current_value = current
+                .as_deref()
+                .and_then(|raw| extract_json_bool(raw, target.id))
+                .or_else(|| {
+                    current
+                        .as_deref()
+                        .and_then(|raw| extract_json_bool(raw, "enabled"))
+                })
+                .unwrap_or(false);
+            let target_enabled = if all_selected || selected_ids.contains(&target.id) {
+                enabled
+            } else {
+                current_value
+            };
+            (*target, target_enabled)
+        })
+        .collect::<Vec<_>>();
     fs::write(
         harness_adapter_config_path(root),
-        harness_adapter_config_json(enabled),
+        harness_adapter_config_json_for_statuses(&statuses),
     )?;
     for target in HARNESS_TARGETS {
         let dir = harness_target_dir(root, target);
@@ -6019,13 +6063,39 @@ fn remove_harness_adapter_files_at(root: &Path) -> io::Result<()> {
 }
 
 fn harness_adapter_config_json(enabled: bool) -> String {
+    let statuses = HARNESS_TARGETS
+        .iter()
+        .map(|target| (*target, enabled))
+        .collect::<Vec<_>>();
+    harness_adapter_config_json_for_statuses(&statuses)
+}
+
+fn harness_adapter_config_json_for_statuses(statuses: &[(HarnessTarget, bool)]) -> String {
+    let any_enabled = statuses.iter().any(|(_, enabled)| *enabled);
+    let target_enabled = statuses
+        .iter()
+        .map(|(target, enabled)| {
+            format!(
+                "    \"{}\": {}",
+                target.id,
+                if *enabled { "true" } else { "false" }
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",\n");
     let targets = HARNESS_TARGETS
         .iter()
         .map(|target| {
+            let enabled = statuses
+                .iter()
+                .find(|(candidate, _)| candidate.id == target.id)
+                .map(|(_, enabled)| *enabled)
+                .unwrap_or(false);
             format!(
                 concat!(
                     "    {{\n",
                     "      \"id\": \"{}\",\n",
+                    "      \"enabled\": {},\n",
                     "      \"displayName\": \"{}\",\n",
                     "      \"upstreamUrl\": \"{}\",\n",
                     "      \"integrationPoint\": \"{}\",\n",
@@ -6035,6 +6105,7 @@ fn harness_adapter_config_json(enabled: bool) -> String {
                     "    }}"
                 ),
                 target.id,
+                if enabled { "true" } else { "false" },
                 target.display_name,
                 target.upstream_url,
                 target.integration_point,
@@ -6052,6 +6123,9 @@ fn harness_adapter_config_json(enabled: bool) -> String {
             "  \"enabled\": {},\n",
             "  \"contract\": \"codexplain.harness-adapter.v1\",\n",
             "  \"scope\": \"project-local\",\n",
+            "  \"targetEnabled\": {{\n",
+            "{}\n",
+            "  }},\n",
             "  \"postResponseInput\": \"plain text or JSON with prompt/response fields\",\n",
             "  \"strictArtifacts\": \"JSON, code, diffs, logs, and test output are preserved by Codexplain\",\n",
             "  \"targets\": [\n",
@@ -6059,7 +6133,8 @@ fn harness_adapter_config_json(enabled: bool) -> String {
             "  ]\n",
             "}}\n"
         ),
-        if enabled { "true" } else { "false" },
+        if any_enabled { "true" } else { "false" },
+        target_enabled,
         targets
     )
 }
@@ -6073,13 +6148,13 @@ fn harness_post_response_sh(target: HarnessTarget) -> String {
             "export CODEXPLAIN_PROJECT_DIR=\"$ROOT\"\n",
             "export CODEXPLAIN_HARNESS_TARGET=\"{}\"\n",
             "export CODEXPLAIN_HARNESS_ADAPTER_CONFIG=\"$ROOT/.codexplain/harness-adapter.json\"\n",
-            "if grep -Eq '\"enabled\"[[:space:]]*:[[:space:]]*false' \"$CODEXPLAIN_HARNESS_ADAPTER_CONFIG\" 2>/dev/null; then\n",
+            "if grep -Eq '\"{}\"[[:space:]]*:[[:space:]]*false' \"$CODEXPLAIN_HARNESS_ADAPTER_CONFIG\" 2>/dev/null; then\n",
             "  cat\n",
             "  exit 0\n",
             "fi\n",
             "exec codexplain post-response \"$@\"\n"
         ),
-        target.id
+        target.id, target.id
     )
 }
 
@@ -6115,12 +6190,14 @@ fn harness_adapter_status_report_at(root: &Path, targets: Vec<HarnessTarget>) ->
     ];
     for target in targets {
         let post_response = harness_target_dir(root, target).join("post-response");
+        let target_enabled = harness_target_enabled_at(root, target);
         let status = if post_response.exists() {
             "ready"
         } else {
             all_target_shims_ready = false;
             "missing"
         };
+        lines.push(format!("target.{}.enabled={target_enabled}", target.id));
         lines.push(format!("target.{}.state={status}", target.id));
         lines.push(format!(
             "target.{}.post_response={}",
@@ -6144,10 +6221,12 @@ fn harness_adapter_envelope_at(root: &Path, targets: Vec<HarnessTarget>) -> Stri
     let targets_json = targets
         .iter()
         .map(|target| {
+            let target_enabled = harness_target_enabled_at(root, *target);
             format!(
                 concat!(
                     "    {{\n",
                     "      \"id\": \"{}\",\n",
+                    "      \"enabled\": {},\n",
                     "      \"displayName\": \"{}\",\n",
                     "      \"upstreamUrl\": \"{}\",\n",
                     "      \"integrationPoint\": \"{}\",\n",
@@ -6157,6 +6236,7 @@ fn harness_adapter_envelope_at(root: &Path, targets: Vec<HarnessTarget>) -> Stri
                     "    }}"
                 ),
                 target.id,
+                if target_enabled { "true" } else { "false" },
                 target.display_name,
                 target.upstream_url,
                 target.integration_point,
@@ -7426,6 +7506,8 @@ codexplain harness-adapter status
 codexplain harness-adapter off
 codexplain harness-adapter on
 codexplain harness-adapter envelope --target lazycodex
+codexplain harness-adapter off --target lazycodex
+codexplain harness-adapter on --target gajae-code
 ```
 
 The managed harness adapter surface writes `.codexplain/harness-adapter.json`
@@ -7433,7 +7515,8 @@ and target-local shims under `.codexplain/harnesses/<target>/`. Supported
 targets are `oh-my-codex`, `lazycodex`, and `gajae-code`. Each target gets the
 same post-response boundary: pipe assistant text or JSON with `prompt` and
 `response` fields into `.codexplain/harnesses/<target>/post-response`. When the
-adapter is off, the shim passes stdin through unchanged.
+adapter or one target is off, only the disabled target shim passes stdin through
+unchanged.
 
 Open the project-local status control surface or install local app launchers:
 
@@ -10343,7 +10426,9 @@ Do not remove this.
         assert!(harness_adapter_config_json(true).contains("oh-my-codex"));
         assert!(harness_adapter_config_json(true).contains("lazycodex"));
         assert!(harness_adapter_config_json(true).contains("gajae-code"));
+        assert!(harness_adapter_config_json(true).contains(r#""targetEnabled""#));
         assert!(harness_adapter_config_json(false).contains(r#""enabled": false"#));
+        assert!(harness_adapter_config_json(false).contains(r#""lazycodex": false"#));
         assert!(session_activation_hint().contains("source ./.codexplain/activate"));
         assert!(!session_activation_hint().contains("Installed"));
         assert!(GLOBAL_CODEX_GUIDANCE.contains("CODEXPLAIN:START"));
@@ -10386,15 +10471,48 @@ Do not remove this.
         let status = harness_adapter_status_report_at(&root, HARNESS_TARGETS.to_vec());
         assert!(status.contains("enabled=true"), "{status}");
         assert!(
+            status.contains("target.oh-my-codex.enabled=true"),
+            "{status}"
+        );
+        assert!(
             status.contains("target.oh-my-codex.state=ready"),
             "{status}"
         );
         assert!(status.contains("target.lazycodex.state=ready"), "{status}");
         assert!(status.contains("target.gajae-code.state=ready"), "{status}");
 
+        let lazycodex = selected_harness_targets(&[
+            "harness-adapter".to_string(),
+            "off".to_string(),
+            "--target".to_string(),
+            "lazycodex".to_string(),
+        ]);
+        write_harness_adapter_files_for_targets_at(&root, &lazycodex, false).unwrap();
+        let mixed = harness_adapter_status_report_at(&root, HARNESS_TARGETS.to_vec());
+        assert!(mixed.contains("enabled=true"), "{mixed}");
+        assert!(mixed.contains("target.oh-my-codex.enabled=true"), "{mixed}");
+        assert!(mixed.contains("target.lazycodex.enabled=false"), "{mixed}");
+        assert!(mixed.contains("target.gajae-code.enabled=true"), "{mixed}");
+
+        let envelope = harness_adapter_envelope_at(&root, HARNESS_TARGETS.to_vec());
+        assert!(envelope.contains(r#""id": "lazycodex""#), "{envelope}");
+        assert!(envelope.contains(r#""enabled": false"#), "{envelope}");
+
         write_harness_adapter_files_at(&root, false).unwrap();
         let disabled = harness_adapter_status_report_at(&root, HARNESS_TARGETS.to_vec());
         assert!(disabled.contains("enabled=false"), "{disabled}");
+        assert!(
+            disabled.contains("target.oh-my-codex.enabled=false"),
+            "{disabled}"
+        );
+        assert!(
+            disabled.contains("target.lazycodex.enabled=false"),
+            "{disabled}"
+        );
+        assert!(
+            disabled.contains("target.gajae-code.enabled=false"),
+            "{disabled}"
+        );
         assert!(disabled.contains("result=pass"), "{disabled}");
 
         remove_harness_adapter_files_at(&root).unwrap();

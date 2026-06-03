@@ -110,6 +110,8 @@ codexplain harness-adapter status
 codexplain harness-adapter envelope --target all
 codexplain harness-adapter off
 codexplain harness-adapter on
+codexplain harness-adapter off --target lazycodex
+codexplain harness-adapter on --target gajae-code
 ```
 
 Targets:
@@ -124,8 +126,8 @@ Targets:
  gajae-code    assistant-message render boundary
 ```
 
-`off` preserves the generated shims and changes only the project-local adapter
-manifest so callers pass input through unchanged.
+`off --target <name>` preserves the generated shims and changes only that
+target's manifest flag, so only that harness passes input through unchanged.
 
 ## 7️⃣ Quality and Compatibility
 
