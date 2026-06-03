@@ -5914,6 +5914,13 @@ fn harness_adapter_command(args: &[String]) -> io::Result<()> {
                 harness_adapter_status_report_at(&project_path("."), selected_targets)
             );
         }
+        "toggle" => {
+            toggle_harness_adapter_files_for_targets_at(&project_path("."), &selected_targets)?;
+            println!(
+                "{}",
+                harness_adapter_status_report_at(&project_path("."), selected_targets)
+            );
+        }
         "status" | "--show" | "show" => {
             println!(
                 "{}",
@@ -5968,7 +5975,7 @@ fn normalize_harness_target(value: &str) -> Option<&'static str> {
 }
 
 fn harness_adapter_help() -> &'static str {
-    "codexplain harness-adapter init|on|off|status|envelope [--target oh-my-codex|lazycodex|gajae-code|all]"
+    "codexplain harness-adapter init|toggle|on|off|status|envelope [--target oh-my-codex|lazycodex|gajae-code|all]"
 }
 
 fn harness_adapter_config_path(root: &Path) -> PathBuf {
@@ -6047,6 +6054,16 @@ fn write_harness_adapter_files_for_targets_at(
         set_executable(&status)?;
     }
     Ok(())
+}
+
+fn toggle_harness_adapter_files_for_targets_at(
+    root: &Path,
+    selected_targets: &[HarnessTarget],
+) -> io::Result<()> {
+    let any_selected_enabled = selected_targets
+        .iter()
+        .any(|target| harness_target_enabled_at(root, *target));
+    write_harness_adapter_files_for_targets_at(root, selected_targets, !any_selected_enabled)
 }
 
 fn remove_harness_adapter_files_at(root: &Path) -> io::Result<()> {
@@ -6232,7 +6249,8 @@ fn harness_adapter_envelope_at(root: &Path, targets: Vec<HarnessTarget>) -> Stri
                     "      \"integrationPoint\": \"{}\",\n",
                     "      \"postResponseCommand\": \"{}\",\n",
                     "      \"statusCommand\": \"{}\",\n",
-                    "      \"onOffControl\": \"codexplain harness-adapter on|off --target {}\"\n",
+                    "      \"onOffControl\": \"codexplain harness-adapter on|off --target {}\",\n",
+                    "      \"slashControl\": \"/codexplain harness on|off {}\"\n",
                     "    }}"
                 ),
                 target.id,
@@ -6244,6 +6262,7 @@ fn harness_adapter_envelope_at(root: &Path, targets: Vec<HarnessTarget>) -> Stri
                     .join("post-response")
                     .display(),
                 harness_target_dir(root, *target).join("status").display(),
+                target.id,
                 target.id
             )
         })
@@ -6321,7 +6340,9 @@ fn codex_tui_slash_patch_already_applied() -> bool {
                     && content.contains("run_codexplain_slash_command(\"toggle\")")
                     && content.contains("\"toggle\" | \"on\"")
                     && content.contains("\"settings\" | \"setting\"")
-                    && content.contains("Usage: /codexplain [toggle|on|off|status|settings|help]")
+                    && content.contains("\"harness\" | \"harness-adapter\"")
+                    && content.contains("args(action_args)")
+                    && content.contains("/codexplain harness [toggle|on|off|status] [target]")
             })
             .unwrap_or(false)
 }
@@ -6345,6 +6366,10 @@ fn refresh_stale_codex_tui_slash_patch() -> io::Result<bool> {
             "let action = action.split_whitespace().next().unwrap_or(\"toggle\");",
         )
         .replace(
+            "let action = action.split_whitespace().next().unwrap_or(\"toggle\");",
+            "let action_args = action.split_whitespace().collect::<Vec<_>>();\n        let action = action_args.first().copied().unwrap_or(\"toggle\");",
+        )
+        .replace(
             "\"on\" | \"enable\" | \"off\" | \"disable\" | \"status\" | \"help\" | \"-h\" | \"--help\"",
             "\"toggle\" | \"on\" | \"enable\" | \"off\" | \"disable\" | \"status\" | \"help\" | \"-h\" | \"--help\"",
         )
@@ -6353,12 +6378,24 @@ fn refresh_stale_codex_tui_slash_patch() -> io::Result<bool> {
             "\"toggle\" | \"on\" | \"enable\" | \"off\" | \"disable\" | \"status\" | \"settings\" | \"setting\" | \"config\" | \"configure\" | \"help\" | \"-h\" | \"--help\"",
         )
         .replace(
+            "\"toggle\" | \"on\" | \"enable\" | \"off\" | \"disable\" | \"status\" | \"settings\" | \"setting\" | \"config\" | \"configure\" | \"help\" | \"-h\" | \"--help\"",
+            "\"toggle\" | \"on\" | \"enable\" | \"off\" | \"disable\" | \"status\" | \"settings\" | \"setting\" | \"config\" | \"configure\" | \"harness\" | \"harness-adapter\" | \"adapter\" | \"help\" | \"-h\" | \"--help\"",
+        )
+        .replace(
             "Usage: /codexplain [on|off|status|help]",
             "Usage: /codexplain [toggle|on|off|status|help]",
         )
         .replace(
             "Usage: /codexplain [toggle|on|off|status|help]",
             "Usage: /codexplain [toggle|on|off|status|settings|help]",
+        )
+        .replace(
+            "Usage: /codexplain [toggle|on|off|status|settings|help]",
+            "Usage: /codexplain [toggle|on|off|status|settings|help] or /codexplain harness [toggle|on|off|status] [target]",
+        )
+        .replace(
+            ".arg(\"slash\").arg(action).output()",
+            ".arg(\"slash\").args(action_args).output()",
         );
     if next != current {
         fs::write(slash_dispatch, next)?;
@@ -7467,7 +7504,7 @@ Terminal UX:
 - Do not hand-draw long raw box tables when cell text may wrap. Prefer Codexplain width-safe tables, Markdown tables, or short boxes with wrapped rows; every row must be layout-owned, padded, and separated, not manually guessed.
 - For long tool transcripts such as Explored/Ran/Read, summarize the macro phase first instead of listing every micro event.
 - Use blank lines between semantic sections so the user can scan without reading a wall of text.
-- Slash control bridge: when a user asks exactly `/codexplain`, run `./bin/codexplain slash toggle` to switch project-local Codexplain UX on/off while preserving the native slash bridge. When a user asks exactly `/codexplain on`, run `./bin/codexplain slash on` for project-local activation. When a user asks exactly `/codexplain off`, run `./bin/codexplain slash off` to disable Codexplain UX but keep the installed `/codexplain` control available. When a user asks `/codexplain status`, run `./bin/codexplain slash status`. Do not treat these as prose requests.
+- Slash control bridge: when a user asks exactly `/codexplain`, run `./bin/codexplain slash toggle` to switch project-local Codexplain UX on/off while preserving the native slash bridge. When a user asks exactly `/codexplain on`, run `./bin/codexplain slash on` for project-local activation. When a user asks exactly `/codexplain off`, run `./bin/codexplain slash off` to disable Codexplain UX but keep the installed `/codexplain` control available. When a user asks `/codexplain status`, run `./bin/codexplain slash status`. When a user asks `/codexplain harness ...`, run `./bin/codexplain slash harness ...` to control per-harness Codexplain adapters. Do not treat these as prose requests.
 - Settings control bridge: if the user asks to change Codexplain explanation depth, abstraction level, architecture depth, color, emoji, density, or explanation settings, run `./bin/codexplain settings-ui` when an interactive terminal is available. The bare `codexplain` command also opens this settings UI.
 <!-- CODEXPLAIN:END -->"#;
 
@@ -7504,12 +7541,16 @@ Harness adapters can be toggled without uninstalling Codexplain:
 
 ```bash
 codexplain harness-adapter init
+codexplain harness-adapter toggle
 codexplain harness-adapter status
 codexplain harness-adapter off
 codexplain harness-adapter on
 codexplain harness-adapter envelope --target lazycodex
 codexplain harness-adapter off --target lazycodex
 codexplain harness-adapter on --target gajae-code
+codexplain slash harness off lazycodex
+codexplain slash harness on gajae-code
+codexplain slash harness status all
 ```
 
 The managed harness adapter surface writes `.codexplain/harness-adapter.json`
@@ -8350,6 +8391,9 @@ fn slash_control(args: &[String]) -> io::Result<()> {
         "settings" | "setting" | "config" | "configure" => {
             println!("{}", slash_settings_guide());
         }
+        "harness" | "harness-adapter" | "adapter" => {
+            slash_harness_adapter_control(args)?;
+        }
         other => {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -8360,8 +8404,29 @@ fn slash_control(args: &[String]) -> io::Result<()> {
     Ok(())
 }
 
+fn slash_harness_adapter_control(args: &[String]) -> io::Result<()> {
+    let mut harness_args = vec!["harness-adapter".to_string()];
+    match args.get(2).map(String::as_str) {
+        Some(
+            "toggle" | "on" | "enable" | "off" | "disable" | "status" | "show" | "--show"
+            | "envelope" | "contract" | "probe" | "help" | "-h" | "--help",
+        ) => {
+            harness_args.extend(args.iter().skip(2).cloned());
+        }
+        Some(target) => {
+            harness_args.push("toggle".to_string());
+            harness_args.push(target.to_string());
+            harness_args.extend(args.iter().skip(3).cloned());
+        }
+        None => {
+            harness_args.push("status".to_string());
+        }
+    }
+    harness_adapter_command(&harness_args)
+}
+
 fn slash_help() -> &'static str {
-    "/codexplain toggles UX on/off; /codexplain on|off|status|settings|help"
+    "/codexplain toggles UX on/off; /codexplain on|off|status|settings|help; /codexplain harness [toggle|on|off|status] [oh-my-codex|lazycodex|gajae-code|all]"
 }
 
 fn slash_settings_guide() -> &'static str {
@@ -9424,10 +9489,11 @@ fn usage() -> &'static str {
   codexplain on|install-codex [--project|--local] [--global] [--session] [--force]
   codexplain off|uninstall-codex [--project|--local] [--global] [--session] [--remove-profile]
   codexplain slash [toggle|on|off|status|settings|help]
+  codexplain slash harness [toggle|on|off|status|envelope] [oh-my-codex|lazycodex|gajae-code|all]
   codexplain color on|off|status|rules
   codexplain tui-color on|full|off|status
   codexplain tui-adapter on|full|off|status|apply|build
-  codexplain harness-adapter init|on|off|status|envelope [--target oh-my-codex|lazycodex|gajae-code|all]
+  codexplain harness-adapter init|toggle|on|off|status|envelope [--target oh-my-codex|lazycodex|gajae-code|all]
   codexplain style add <name> --trigger <text> --renderers <tldr,table,flow,pros-cons,formula,cause-effect,problem-diagnosis,indexed,progress> --description <text> [--tone <tone>] [--example <text>]
   codexplain style list|show <name>|preview <name>|remove <name>
   codexplain feedback|rlhf --rating <1-5> --comment <text>
@@ -9465,8 +9531,8 @@ Emoji cues: enabled by default as active semantic section/status markers such as
 Color toggle: `codexplain color on` forces ANSI text color for Codexplain-shaped exec/review output and best-effort Codex TUI color env; `codexplain color off` restores plain output. `codexplain color rules` shows the semantic-sparse role map so colors do not become decorative noise.
 TUI assistant color: `codexplain tui-color on` enables project-local full assistant-message color when a patched Codex binary exists under .codexplain/patched-codex/bin/codex, .codexplain/state/codex-upstream/codex-rs/target/release/codex, or target/debug/codex; `off` disables only that hook.
 TUI adapter: `codexplain tui-adapter status` reports project-local shim path, mode, active binary/fallback, patched binary status, rollback, and cleanup instructions. `codexplain tui-adapter build` applies the tracked Codex TUI assistant-color and native `/codexplain` slash patches, then builds only the project-local patched Codex binary.
-Harness adapter: `codexplain harness-adapter init|on|off|status|envelope` manages a project-local contract for oh-my-codex, LazyCodex, and gajae-code. `off` leaves shims installed but makes them pass input through unchanged.
-Slash control: bare `/codexplain` toggles project-local Codexplain UX on/off and is bridged to `codexplain slash toggle`; `/codexplain on|off|status|settings` remain explicit controls. `off` disables the managed AGENTS guidance and color UX while preserving the local shim/native slash bridge; `codexplain off --local` remains the strict uninstall path.
+Harness adapter: `codexplain harness-adapter init|toggle|on|off|status|envelope` manages a project-local contract for oh-my-codex, LazyCodex, and gajae-code. `off` leaves shims installed but makes them pass input through unchanged.
+Slash control: bare `/codexplain` toggles project-local Codexplain UX on/off and is bridged to `codexplain slash toggle`; `/codexplain on|off|status|settings` remain explicit controls. `/codexplain harness off lazycodex` and `/codexplain harness on gajae-code` control per-harness adapters. `off` disables the managed AGENTS guidance and color UX while preserving the local shim/native slash bridge; `codexplain off --local` remains the strict uninstall path.
 Status bar control: `codexplain statusbar` is the Rust control surface used by local app launchers. It toggles only project-local Codexplain files, updates profile/config controls, and leaves unrelated global Codex settings untouched.
 Settings UI: bare `codexplain`, `codexplain settings`, and `codexplain settings-ui` open a dependency-free Rust terminal UI for theme, frame, depth, abstraction, UX density, emoji cues, and color mode; `codexplain install-app` writes lightweight macOS/Linux/Windows launchers under .codexplain/app.
 Compatibility gate: `codexplain compat-check` validates project-local OMX/harness safety, managed on/off scopes, strict artifact preservation, ignored harness state, and width-safe renderer contracts.
@@ -10499,6 +10565,17 @@ Do not remove this.
         let envelope = harness_adapter_envelope_at(&root, HARNESS_TARGETS.to_vec());
         assert!(envelope.contains(r#""id": "lazycodex""#), "{envelope}");
         assert!(envelope.contains(r#""enabled": false"#), "{envelope}");
+        assert!(
+            envelope.contains(r#""slashControl": "/codexplain harness on|off lazycodex""#),
+            "{envelope}"
+        );
+
+        toggle_harness_adapter_files_for_targets_at(&root, &lazycodex).unwrap();
+        let toggled = harness_adapter_status_report_at(&root, HARNESS_TARGETS.to_vec());
+        assert!(
+            toggled.contains("target.lazycodex.enabled=true"),
+            "{toggled}"
+        );
 
         write_harness_adapter_files_at(&root, false).unwrap();
         let disabled = harness_adapter_status_report_at(&root, HARNESS_TARGETS.to_vec());
@@ -10631,10 +10708,13 @@ Do not remove this.
     #[test]
     fn slash_control_guidance_and_usage_are_discoverable() {
         assert!(usage().contains("codexplain slash [toggle|on|off|status|settings|help]"));
+        assert!(usage().contains("codexplain slash harness"));
+        assert!(usage().contains("codexplain harness-adapter init|toggle|on|off"));
         assert!(usage().contains("codexplain settings|settings-ui"));
         assert!(usage().contains("managed zsh auto-activation block"));
         assert!(CODEX_GUIDANCE.contains("`/codexplain`"));
         assert!(CODEX_GUIDANCE.contains("slash toggle"));
+        assert!(CODEX_GUIDANCE.contains("/codexplain harness"));
         assert!(CODEX_GUIDANCE.contains("/codexplain on"));
         assert!(CODEX_GUIDANCE.contains("./bin/codexplain slash on"));
         assert!(CODEX_GUIDANCE.contains("codexplain settings-ui"));
@@ -10643,8 +10723,11 @@ Do not remove this.
         let patch = fs::read_to_string(project_path("patches/codex-tui-codexplain-slash.patch"))
             .expect("slash patch should be readable");
         assert!(patch.contains("run_codexplain_slash_command(\"toggle\")"));
-        assert!(patch.contains("[toggle|on|off|status|settings|help]"));
+        assert!(patch.contains("/codexplain harness [toggle|on|off|status] [target]"));
+        assert!(patch.contains("args(action_args)"));
+        assert!(patch.contains("\"harness\" | \"harness-adapter\""));
         assert!(patch.contains("\"settings\" | \"setting\""));
+        assert!(slash_help().contains("harness"));
         assert!(slash_help().contains("settings"));
         assert!(slash_enabled_guide().contains("settings UI"));
     }

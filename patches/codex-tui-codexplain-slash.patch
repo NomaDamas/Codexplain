@@ -35,13 +35,14 @@ index b479718..7c14bff 100644
      }
  
 +    fn run_codexplain_slash_command(&mut self, action: &str) {
-+        let action = action.split_whitespace().next().unwrap_or("toggle");
++        let action_args = action.split_whitespace().collect::<Vec<_>>();
++        let action = action_args.first().copied().unwrap_or("toggle");
 +        let allowed = matches!(
 +            action,
-+            "toggle" | "on" | "enable" | "off" | "disable" | "status" | "settings" | "setting" | "config" | "configure" | "help" | "-h" | "--help"
++            "toggle" | "on" | "enable" | "off" | "disable" | "status" | "settings" | "setting" | "config" | "configure" | "harness" | "harness-adapter" | "adapter" | "help" | "-h" | "--help"
 +        );
 +        if !allowed {
-+            self.add_error_message("Usage: /codexplain [toggle|on|off|status|settings|help]".to_string());
++            self.add_error_message("Usage: /codexplain [toggle|on|off|status|settings|help] or /codexplain harness [toggle|on|off|status] [target]".to_string());
 +            return;
 +        }
 +        let cwd = self
@@ -54,7 +55,7 @@ index b479718..7c14bff 100644
 +        } else {
 +            Command::new("codexplain")
 +        };
-+        let output = command.current_dir(&cwd).arg("slash").arg(action).output();
++        let output = command.current_dir(&cwd).arg("slash").args(action_args).output();
 +        match output {
 +            Ok(output) => {
 +                let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();

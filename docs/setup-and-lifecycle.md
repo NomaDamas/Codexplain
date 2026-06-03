@@ -154,10 +154,15 @@ codexplain harness-adapter off
 codexplain harness-adapter on
 codexplain harness-adapter off --target lazycodex
 codexplain harness-adapter on --target gajae-code
+codexplain slash harness off lazycodex
+codexplain slash harness on gajae-code
+codexplain slash harness status all
 ```
 
 When a target is off, only that target shim passes stdin through unchanged. Other
 enabled harness shims continue to apply Codexplain explanation shaping.
+The slash form is equivalent to the CLI form and works through the patched
+Codex TUI `/codexplain` bridge.
 
 ## 7️⃣ Auto Update
 

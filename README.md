@@ -224,6 +224,9 @@ codexplain install-codex --global --force
 ───────────────────────────────────  ───────────────────────────────
  codexplain harness-adapter status    Inspect harness adapter state
 ───────────────────────────────────  ───────────────────────────────
+ codexplain slash harness off lazycodex
+                                      Disable one harness adapter through slash
+───────────────────────────────────  ───────────────────────────────
  codexplain harness-adapter envelope  Print integration contract for harnesses
 ```
 

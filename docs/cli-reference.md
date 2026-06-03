@@ -106,12 +106,16 @@ binary managed by the adapter.
 
 ```bash
 codexplain harness-adapter init
+codexplain harness-adapter toggle
 codexplain harness-adapter status
 codexplain harness-adapter envelope --target all
 codexplain harness-adapter off
 codexplain harness-adapter on
 codexplain harness-adapter off --target lazycodex
 codexplain harness-adapter on --target gajae-code
+codexplain slash harness off lazycodex
+codexplain slash harness on gajae-code
+codexplain slash harness status all
 ```
 
 Targets:
@@ -128,6 +132,8 @@ Targets:
 
 `off --target <name>` preserves the generated shims and changes only that
 target's manifest flag, so only that harness passes input through unchanged.
+The same target controls are available through the native `/codexplain` bridge
+when the patched TUI adapter is active.
 
 ## 7️⃣ Quality and Compatibility
 
