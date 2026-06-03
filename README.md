@@ -221,6 +221,10 @@ codexplain install-codex --global --force
  codexplain compat-check              Validate local compatibility
 ───────────────────────────────────  ───────────────────────────────
  codexplain tui-adapter status        Inspect Codex TUI adapter state
+───────────────────────────────────  ───────────────────────────────
+ codexplain harness-adapter status    Inspect harness adapter state
+───────────────────────────────────  ───────────────────────────────
+ codexplain harness-adapter envelope  Print integration contract for harnesses
 ```
 
 ## 📚 Docs

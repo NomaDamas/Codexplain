@@ -36,6 +36,11 @@ Project-local setup manages only Codexplain-owned state:
 ───────────────────────────  ───────────────────────────────────────
  .codexplain/config.json      local color/TUI settings
 ───────────────────────────  ───────────────────────────────────────
+ .codexplain/harness-adapter.json
+                              shared harness adapter manifest
+───────────────────────────  ───────────────────────────────────────
+ .codexplain/harnesses/*      target-specific post-response shims
+───────────────────────────  ───────────────────────────────────────
  AGENTS.md managed block      local Codexplain response guidance
 ```
 
@@ -111,7 +116,47 @@ codexplain slash settings
 Native `/codexplain` inside the full-screen Codex TUI requires the project-local
 patched TUI adapter because upstream Codex owns the slash-command registry.
 
-## 6️⃣ Auto Update
+## 6️⃣ Harness Adapter
+
+Codexplain can expose one project-local intervention surface for multiple agent
+harnesses:
+
+```bash
+codexplain harness-adapter init
+codexplain harness-adapter status
+codexplain harness-adapter envelope --target oh-my-codex
+codexplain harness-adapter envelope --target lazycodex
+codexplain harness-adapter envelope --target gajae-code
+```
+
+Supported harness targets:
+
+| Target | Integration boundary |
+| --- | --- |
+| `oh-my-codex` | adapt envelope, probe, and status surfaces |
+| `lazycodex` | Codex hook command output boundaries |
+| `gajae-code` | assistant-message render boundary before Markdown rendering |
+
+Each target gets a stable post-response command:
+
+```bash
+.codexplain/harnesses/<target>/post-response
+```
+
+Pipe assistant text, or JSON containing `prompt` and `response`, into that
+command. Strict artifacts remain protected by the same Codexplain preservation
+rules used by `codexplain post-response`.
+
+Turn only the harness adapter off or on without uninstalling Codexplain:
+
+```bash
+codexplain harness-adapter off
+codexplain harness-adapter on
+```
+
+When off, the target shims pass stdin through unchanged.
+
+## 7️⃣ Auto Update
 
 When the project-local shim is active, `codex` startup can check GitHub releases
 best-effort. The development `bin/codexplain` wrapper uses the same best-effort
