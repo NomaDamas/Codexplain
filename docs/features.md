@@ -156,9 +156,14 @@ Use emojis actively at section and item boundaries, but always keep the text
 label. Exact artifacts such as JSON, code, diffs, logs, tests, and patches stay
 unchanged.
 
-When emoji cues are enabled, chat explanations are emoji-first. Markdown remains
-available for exact code fences, file links, compact tables, and renderer
-fallbacks, but it is not the primary explanation style.
+When emoji cues are enabled, normal chat explanations are emoji-first by
+contract. Major sections must use semantic emoji labels with text labels unless
+strict artifact preservation or a higher-priority host instruction requires
+otherwise. Markdown remains available for exact code fences, file links, compact
+tables, and renderer fallbacks, but it is not the primary explanation style.
+Codexplain guidance also installs a response-shape self-check: outcome first,
+semantic sections present, emoji labels present when enabled, exact artifacts
+preserved, and no unnecessary Markdown-heavy scaffolding.
 
 ## Quality Gates
 
