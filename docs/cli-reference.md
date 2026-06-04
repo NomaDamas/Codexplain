@@ -102,7 +102,40 @@ The stock Codex TUI renders assistant messages inside its own ratatui renderer.
 Full in-place TUI recoloring therefore requires the project-local patched Codex
 binary managed by the adapter.
 
-## 6️⃣ Quality and Compatibility
+## 6️⃣ Harness Adapter
+
+```bash
+codexplain harness-adapter init
+codexplain harness-adapter toggle
+codexplain harness-adapter status
+codexplain harness-adapter envelope --target all
+codexplain harness-adapter off
+codexplain harness-adapter on
+codexplain harness-adapter off --target lazycodex
+codexplain harness-adapter on --target gajae-code
+codexplain slash harness off lazycodex
+codexplain slash harness on gajae-code
+codexplain slash harness status all
+```
+
+Targets:
+
+```text
+ Target        Boundary
+━━━━━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ oh-my-codex   adapt envelope/probe/status surface
+────────────  ───────────────────────────────────────────────
+ lazycodex     Codex hook command output boundary
+────────────  ───────────────────────────────────────────────
+ gajae-code    assistant-message render boundary
+```
+
+`off --target <name>` preserves the generated shims and changes only that
+target's manifest flag, so only that harness passes input through unchanged.
+The same target controls are available through the native `/codexplain` bridge
+when the patched TUI adapter is active.
+
+## 7️⃣ Quality and Compatibility
 
 ```bash
 cargo fmt --check
