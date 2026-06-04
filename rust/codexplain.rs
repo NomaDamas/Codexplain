@@ -7458,6 +7458,9 @@ const CODEX_GUIDANCE_START: &str = "<!-- CODEXPLAIN:START -->";
 const CODEX_GUIDANCE_END: &str = "<!-- CODEXPLAIN:END -->";
 const SHELL_AUTO_START: &str = "# CODEXPLAIN_AUTO:START";
 const SHELL_AUTO_END: &str = "# CODEXPLAIN_AUTO:END";
+const GITHUB_REPO: &str = "NomaDamas/Codexplain";
+const GITHUB_REPO_URL: &str = "https://github.com/NomaDamas/Codexplain";
+const STAR_MARKER_VERSION: &str = "github-star-v1";
 const CODEX_GUIDANCE: &str = r#"<!-- CODEXPLAIN:START -->
 # Codexplain Response UX
 
@@ -7829,6 +7832,123 @@ fn codex_home_dir() -> PathBuf {
         .unwrap_or_else(|_| PathBuf::from(".codex"))
 }
 
+fn codexplain_home_dir() -> PathBuf {
+    env::var("CODEXPLAIN_HOME")
+        .map(PathBuf::from)
+        .or_else(|_| env::var("HOME").map(|home| PathBuf::from(home).join(".codexplain")))
+        .unwrap_or_else(|_| PathBuf::from(".codexplain"))
+}
+
+fn star_marker_path() -> PathBuf {
+    codexplain_home_dir().join(STAR_MARKER_VERSION)
+}
+
+fn star_prompt_already_handled() -> bool {
+    star_marker_path().exists()
+}
+
+fn mark_star_prompt_handled() -> io::Result<()> {
+    let marker = star_marker_path();
+    if let Some(parent) = marker.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(marker, GITHUB_REPO)
+}
+
+fn env_star_consent() -> Option<bool> {
+    for key in [
+        "CODEXPLAIN_STAR",
+        "CODEXPLAIN_GITHUB_STAR",
+        "CODEXPLAIN_AGENT_INSTALL",
+    ] {
+        if let Ok(value) = env::var(key) {
+            match value.trim().to_ascii_lowercase().as_str() {
+                "1" | "true" | "yes" | "y" | "on" | "auto" | "agent" => return Some(true),
+                "0" | "false" | "no" | "n" | "off" | "never" | "skip" => return Some(false),
+                _ => {}
+            }
+        }
+    }
+    None
+}
+
+fn github_star_with_gh_cli() -> io::Result<bool> {
+    let status = Command::new("gh")
+        .args([
+            "api",
+            "--method",
+            "PUT",
+            "/user/starred/NomaDamas/Codexplain",
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()?;
+    Ok(status.success())
+}
+
+fn print_github_star_fallback(context: &str) {
+    println!("Codexplain GitHub star ({context})");
+    println!("repo={GITHUB_REPO_URL}");
+    println!("terminal_command=gh api --method PUT /user/starred/{GITHUB_REPO}");
+    println!("note=GitHub CLI 인증이 없으면 터미널에서 자동 star를 완료할 수 없습니다.");
+}
+
+fn offer_github_star(context: &str) -> io::Result<()> {
+    if star_prompt_already_handled() {
+        return Ok(());
+    }
+
+    if let Some(consent) = env_star_consent() {
+        if consent {
+            match github_star_with_gh_cli() {
+                Ok(true) => {
+                    println!("Codexplain GitHub star: applied via gh CLI");
+                    mark_star_prompt_handled()?;
+                }
+                Ok(false) | Err(_) => {
+                    print_github_star_fallback(context);
+                }
+            }
+        } else {
+            mark_star_prompt_handled()?;
+        }
+        return Ok(());
+    }
+
+    if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
+        print_github_star_fallback(context);
+        return Ok(());
+    }
+
+    println!("Codexplain is open source: {GITHUB_REPO_URL}");
+    print!("스타를 누르시겠습니까? 누르시면 힘이 됩니다. 오픈소스 생태계에 힘이 됩니다. [y/N] ");
+    io::stdout().flush()?;
+
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
+    match input.trim().to_ascii_lowercase().as_str() {
+        "y" | "yes" | "1" | "true" | "on" => match github_star_with_gh_cli() {
+            Ok(true) => {
+                println!("Codexplain GitHub star: applied via gh CLI");
+                mark_star_prompt_handled()?;
+            }
+            Ok(false) | Err(_) => {
+                print_github_star_fallback(context);
+            }
+        },
+        _ => {
+            println!("Codexplain GitHub star: skipped");
+            mark_star_prompt_handled()?;
+        }
+    }
+    Ok(())
+}
+
+fn postinstall_onboarding() -> io::Result<()> {
+    offer_github_star("postinstall")
+}
+
 fn set_executable(path: &Path) -> io::Result<()> {
     #[cfg(unix)]
     {
@@ -7842,6 +7962,7 @@ fn set_executable(path: &Path) -> io::Result<()> {
 fn install_codex_project(args: &[String]) -> io::Result<()> {
     if args.iter().any(|arg| arg == "--session") {
         print_session_activation_hint();
+        offer_github_star("install-session")?;
         return Ok(());
     }
 
@@ -7858,6 +7979,7 @@ fn install_codex_project(args: &[String]) -> io::Result<()> {
     if install_global {
         install_global_codex_guidance()?;
     }
+    offer_github_star("install-codex")?;
     Ok(())
 }
 
@@ -9521,6 +9643,7 @@ fn usage() -> &'static str {
   codexplain
   codexplain settings|settings-ui
   codexplain install-app
+  codexplain postinstall
   codexplain compat-check
   codexplain quality-check [--width <n>]
   codexplain demo
@@ -9552,6 +9675,7 @@ Harness adapter: `codexplain harness-adapter init|toggle|on|off|status|envelope`
 Slash control: bare `/codexplain` toggles project-local Codexplain UX on/off and is bridged to `codexplain slash toggle`; `/codexplain on|off|status|settings` remain explicit controls. `/codexplain harness off lazycodex` and `/codexplain harness on gajae-code` control per-harness adapters. `off` disables the managed AGENTS guidance and color UX while preserving the local shim/native slash bridge; `codexplain off --local` remains the strict uninstall path.
 Status bar control: `codexplain statusbar` is the Rust control surface used by local app launchers. It toggles only project-local Codexplain files, updates profile/config controls, and leaves unrelated global Codex settings untouched.
 Settings UI: bare `codexplain`, `codexplain settings`, and `codexplain settings-ui` open a dependency-free Rust terminal UI for theme, frame, depth, abstraction, UX density, emoji cues, and color mode; `codexplain install-app` writes lightweight macOS/Linux/Windows launchers under .codexplain/app.
+GitHub star onboarding: npm postinstall and first project install ask once in the terminal. If `gh` is authenticated, `y` runs `gh api --method PUT /user/starred/NomaDamas/Codexplain` without opening a browser. Set `CODEXPLAIN_STAR=yes` or `CODEXPLAIN_AGENT_INSTALL=1` for agent/non-interactive yes.
 Compatibility gate: `codexplain compat-check` validates project-local OMX/harness safety, managed on/off scopes, strict artifact preservation, ignored harness state, and width-safe renderer contracts.
 Quality gate: `codexplain quality-check --width 88` fails if generated output overflows, table body row dividers disappear, architecture boxes overflow or are too sparse, flow arrows/connectors break, expansion diagrams overflow, or two-path explanations are not numbered.
 Build cleanup: `codexplain build-clean --patched-codex` removes only the ignored project-local patched Codex Cargo target directory. The persisted `.codexplain/patched-codex/bin/codex` binary remains available so native `/codexplain` and TUI color do not require keeping a multi-GB Cargo cache. The shim runs this cleanup opportunistically on launch and does not auto-build the patched TUI unless `CODEXPLAIN_TUI_AUTO_BUILD=1`.
@@ -9579,6 +9703,11 @@ fn main() {
         }
         "post-response" => post_response(&args),
         "codex" => std::process::exit(run_codex(&args[1..])),
+        "postinstall" => {
+            if let Err(error) = postinstall_onboarding() {
+                eprintln!("failed to run Codexplain postinstall onboarding: {error}");
+            }
+        }
         "on" | "install-codex" | "init" => {
             if let Err(error) = install_codex_project(&args) {
                 eprintln!("failed to install Codexplain files: {error}");
@@ -9718,6 +9847,9 @@ fn main() {
             }
         }
         "settings" | "settings-ui" => {
+            if let Err(error) = offer_github_star("first-run") {
+                eprintln!("failed to run Codexplain star onboarding: {error}");
+            }
             if let Err(error) = settings_ui() {
                 eprintln!("failed to run Codexplain settings UI: {error}");
                 std::process::exit(1);

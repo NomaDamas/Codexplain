@@ -1,6 +1,6 @@
 {
   "name": "codexplain",
-  "version": "0.18.18",
+  "version": "0.18.19",
   "description": "Readable explanation UX layer for Codex responses",
   "bin": {
     "codexplain": "bin/codexplain",
@@ -23,7 +23,7 @@
   "scripts": {
     "test": "cargo test",
     "check": "cargo fmt --check && cargo test",
-    "postinstall": "cargo build --release",
+    "postinstall": "cargo build --release && cargo run --release -- postinstall",
     "demo": "cargo run --quiet -- demo",
     "build:rust": "cargo build --release",
     "test:rust": "cargo test",
